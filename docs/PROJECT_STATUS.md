@@ -4,8 +4,8 @@ Last updated: 2026-08-14
 
 ## Current milestone
 
-**MILESTONE 1 COMPLETE. MILESTONE 2 COMPLETE (2026-08-14).** Next up: **M3
-— web dashboard**.
+**MILESTONE 1 COMPLETE. MILESTONE 2 COMPLETE. MILESTONE 3 COMPLETE
+(2026-08-14).** Next up: **M4 — integrated remote page**.
 
 ## Completed
 
@@ -41,8 +41,52 @@ Last updated: 2026-08-14
 
 ## In progress
 
-**M3 — web dashboard** not yet started. React/Vite skeleton exists
-(`web/src/App.tsx` is a placeholder) but no real pages/components yet.
+**M4 — integrated remote page** not yet started. `/remote/:id` currently
+shows a placeholder (see "Completed (M3 detail)") pointing users at the
+already-running per-workstation noVNC deploys instead of an embedded
+viewer. M4 replaces that with a real noVNC viewer resolved through the
+backend (per [ARCHITECTURE.md](ARCHITECTURE.md): frontend sends only
+`workstationId`, backend resolves IP — no `/ws/vnc/:workstationId` proxy
+exists yet, so this is genuinely not built, not just unwired).
+
+## Completed (M3 detail)
+
+- **MILESTONE 3 COMPLETE (2026-08-14).** Web dashboard built and deployed
+  live:
+  - Deployed as its own Dockge stack `vncgi-remote-web`, running
+    `ghcr.io/rajnlove/dreamers-remote-web:latest` (nginx serving the Vite
+    build), port `8000:80`. Live at `http://192.29.11.92:8000`.
+  - `web/src/pages/Dashboard.tsx` — fetches `GET /api/workstations` once,
+    polls `GET /api/workstations/status` every 5s, renders one
+    `WorkstationCard` per workstation (green/red dot, name, IP,
+    ONLINE/OFFLINE label).
+  - `web/src/components/WorkstationCard.tsx` — shows a `REMOTE` link
+    (`/remote/:id`) when online, a `WAKE` button when offline (currently
+    just alerts "not implemented yet" — real Wake-on-LAN is M5).
+  - `web/src/pages/RemotePage.tsx` — placeholder route, fetches the single
+    workstation via `GET /api/workstations/:id` and tells the user the
+    real noVNC viewer is M4; not a dead end, just honest about scope.
+  - `web/src/api/workstations.ts` — calls the backend directly at
+    `http://192.29.11.92:8080` (hardcoded default, overridable via
+    `VITE_API_BASE_URL` at build time — no nginx reverse proxy set up, see
+    architecture note below).
+  - **Backend change required and shipped**: added permissive CORS
+    middleware to `server/src/index.ts` (`Access-Control-Allow-Origin: *`)
+    since the dashboard (port 8000) and API (port 8080) are different
+    origins. Acceptable for a LAN-only app per
+    [SECURITY.md](SECURITY.md); redeployed to `vncgi-remote-server` via
+    Dockge's Update button, confirmed header present and existing
+    workstation data survived the redeploy (bind-mounted SQLite).
+  - Verified live in-browser: dashboard shows both real workstations as
+    ONLINE with correct IPs, clicking REMOTE navigates to `/remote/1` and
+    correctly resolves `CGI-01` / `192.29.11.94` from the live API.
+  - Architecture note for whoever picks up M4: the frontend calling the
+    backend's LAN IP:port directly (no reverse proxy) is a deliberate V1
+    simplification, not a workaround to revisit lightly — changing it
+    means either adding an nginx `/api` proxy (requires the web and server
+    containers to share a Docker network, which two independent Dockge
+    stacks don't by default) or keeping direct calls and formalizing the
+    env var. Not blocking M4.
 
 ## Completed (M2 detail)
 
@@ -162,16 +206,15 @@ Until provided, nothing depends on a guessed value.
 
 ## Next task
 
-1. Start M3 (web dashboard): build the workstation list page in `web/`
-   against the now-live API at `http://192.29.11.92:8080/api/workstations`
-   — online/offline indicators, Remote/Wake buttons per
-   [ROADMAP.md](ROADMAP.md)'s M3 description. Reference for what's live:
-   ```bash
-   curl http://192.29.11.92:8080/api/workstations/status
-   ```
-   `ghcr.io/rajnlove/dreamers-remote-web:latest` already builds in CI (has
-   skeleton content only) — once M3 has real dashboard code, push it and a
-   new image will build automatically; deploy it as its own Dockge stack.
+1. Start M4 (integrated remote page): backend needs a
+   `POST /api/workstations/:id/session` (or similar) plus a WebSocket
+   proxy (`/ws/vnc/:workstationId`) that resolves the workstation's
+   IP/port server-side (per [ARCHITECTURE.md](ARCHITECTURE.md) and
+   [SECURITY.md](SECURITY.md) — frontend must never send a host/IP
+   directly). Frontend: replace `RemotePage`'s placeholder with an
+   embedded noVNC viewer pointed at that proxy, defaulting Scaling Mode to
+   `Local Scaling` (see M1 note), plus fullscreen/disconnect/reconnect and
+   Ctrl+Alt+Del if feasible.
 2. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
    Windows service, not interactive process — fix instructions already
    handed to user) and check `192.29.11.93` for the same issue.
