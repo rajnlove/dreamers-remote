@@ -4,7 +4,8 @@ Last updated: 2026-08-14
 
 ## Current milestone
 
-**MILESTONE 1 COMPLETE.** Now starting **M2 — Backend workstation manager**.
+**MILESTONE 1 COMPLETE. MILESTONE 2 COMPLETE (2026-08-14).** Next up: **M3
+— web dashboard**.
 
 ## Completed
 
@@ -40,26 +41,33 @@ Last updated: 2026-08-14
 
 ## In progress
 
-- **M2 — Backend workstation manager**: Express API + SQLite + CRUD + TCP
-  status probe, code written **and live-verified (2026-08-14)**. This dev
-  machine still has no Node/npm, so verification happened on TrueNAS
-  itself: Node 18.20.4/npm 9.2.0 installed (via `apt-get`, with `sudo`) into
-  the `code-server` app's container (using its TrueNAS-provided Container
-  Shell), the full `server/src` tree written there, then:
-  - `npm install` — 122 packages, 0 vulnerabilities.
-  - `npm run typecheck` (`tsc --noEmit`) — **0 errors**.
-  - `npm test` — **16/16 tests pass** (validation + TCP probe suites).
-  - `npm run build` — clean compile to `dist/`.
-  - `node dist/index.js` then `curl localhost:8080/health` →
-    `{"status":"ok"}`.
-  - `POST /api/workstations` with a real workstation body → correctly
-    persisted (id 1, `CGI-01`, `192.29.11.94`).
-  - `GET /api/workstations/1/status` → `{"online":true,...}` — the TCP
-    probe genuinely connected to `192.29.11.94:5900` over the LAN from
-    TrueNAS, not a mock.
-  This was a throwaway verification in `/tmp` inside the code-server
-  container, not a deployment — the app dataset/real deployment location is
-  still unset (see "Info still needed"). What's in the repo (`server/src/`):
+**M3 — web dashboard** not yet started. React/Vite skeleton exists
+(`web/src/App.tsx` is a placeholder) but no real pages/components yet.
+
+## Completed (M2 detail)
+
+- **MILESTONE 2 COMPLETE (2026-08-14).** Express API + SQLite + CRUD + TCP
+  status probe — written, tested, and **now actually deployed and serving
+  real data**, not just verified in a throwaway location:
+  - Deployed as its own Dockge stack `vncgi-remote-server` on TrueNAS,
+    running `ghcr.io/rajnlove/dreamers-remote-server:latest` (built by the
+    same CI pipeline as the `novnc` image), port `8080:8080`, SQLite
+    persisted via bind mount `./data:/data`.
+    `GET http://192.29.11.92:8080/health` → `{"status":"ok"}`.
+  - Both real workstations registered through the live API:
+    `POST /api/workstations` → `CGI-01` (id 1, `192.29.11.94`) and
+    `COMP-01` (id 2, `192.29.11.93`), both `mac_address` still the
+    `00:00:00:00:00:00` placeholder (real MACs still needed, see "Info
+    still needed").
+    `GET /api/workstations/status` →
+    `[{"id":1,"name":"CGI-01","online":true},{"id":2,"name":"COMP-01","online":true}]`
+    — the TCP probe correctly reports both as online, live from the
+    running deployment.
+  - Earlier verification steps (all passed, see git history for detail):
+    `npm install` (122 packages, 0 vulnerabilities), `npm run typecheck`
+    (0 errors), `npm test` (16/16 pass), `npm run build`, plus an identical
+    rerun from the real GitHub clone (not just a throwaway `/tmp` copy).
+  - What's in the repo (`server/src/`):
   - `server/src/database/db.ts` — opens `better-sqlite3` at
     `env.databaseFile`, creates the `workstations` table if missing
     (`id, name, hostname, ip, mac_address, vnc_port, location, description,
@@ -92,12 +100,6 @@ Last updated: 2026-08-14
 
 ## Known issues / blockers
 
-- **`docker/server.Dockerfile` builds successfully in CI** (part of the same
-  green GitHub Actions run that built `novnc`/`web`), confirming the
-  `apk add python3 make g++` fix for `better-sqlite3`'s native addon works.
-  Not yet actually *run* as a container anywhere though — the image exists
-  on GHCR (`ghcr.io/rajnlove/dreamers-remote-server:latest`) but hasn't been
-  deployed to a Dockge stack or hit with a live request the way `novnc` has.
 - **Git deployment path RESOLVED (2026-08-14):** repo pushed to
   `https://github.com/rajnlove/dreamers-remote` (public, deliberately kept
   public after discussing tradeoffs with user — no secrets in the repo, so
@@ -116,20 +118,19 @@ Last updated: 2026-08-14
   (+ a `:<git-sha>` tag). Dockge only ever needs to pull a tagged image —
   no on-TrueNAS build step required. **First run confirmed green
   (2026-08-14)** — all 3 images built and verified publicly pullable from
-  GHCR. **`novnc` image wired into both Dockge stacks (2026-08-14)** —
-  `vncgi-remote` and `vncgi-remote-93` now run
-  `ghcr.io/rajnlove/dreamers-remote-novnc:latest` instead of `dougw/novnc`
-  (see "Completed"). `server`/`web` images are built by CI but not yet
-  deployed to any stack — that's the next step.
+  GHCR. **`novnc` and `server` images deployed and live (2026-08-14)** —
+  see "Completed" for both. `web` image builds in CI but has nothing real
+  inside it yet (skeleton only) — not deployed, not useful to deploy until
+  M3 has actual dashboard code.
 - `web/` still only has skeleton scaffolding (package.json, tsconfig,
-  placeholder page) — no application code yet. That's expected; M3 builds
-  the dashboard once M2's API is verified working.
+  placeholder page) — no application code yet. That's the next milestone.
 
 ## Confirmed environment info
 
-- **TrueNAS host IP: `192.29.11.92`** (confirmed by user 2026-08-14). App
-  will be reachable at `http://192.29.11.92:<port>` once deployed there;
-  M1 noVNC POC will be at `http://192.29.11.92:6080/vnc.html`.
+- **TrueNAS host IP: `192.29.11.92`** (confirmed by user 2026-08-14).
+  Backend API live at `http://192.29.11.92:8080`; noVNC at
+  `http://192.29.11.92:6080/vnc.html` (`.94`) and
+  `http://192.29.11.92:6081/vnc.html` (`.93`).
 - **Workstation `192.29.11.94`** (confirmed by user 2026-08-14), UltraVNC
   installed, port `5900` confirmed open, RFB handshake verified live via
   M1 test (see below). **Known issue**: UltraVNC was running as an
@@ -148,50 +149,34 @@ Last updated: 2026-08-14
 
 ## Info still needed from user (do not guess these)
 
-- TrueNAS app port to bind on for the future server/web (defaulting to
-  `8080` for the API, `6080` is now taken by the M1 `vncgi-remote` Dockge
-  stack).
-- TrueNAS pool name + dataset path for `DATA_ROOT` — pool candidates seen
-  are `pool_cgivn_share` and `pool_cgivn_work` (latter already used for
-  Apps), not yet told which to use for this project's data.
-- `192.29.11.93` / `192.29.11.94`: MAC addresses (needed later for
-  Wake-on-LAN, not blocking M1).
-- **A real code-deployment path to TrueNAS for M2+** (git remote + SSH
-  clone is the recommended default — see "Known issues" above — but not
-  yet confirmed/set up).
+- Real MAC addresses for `192.29.11.93` / `192.29.11.94` — currently
+  registered with placeholder `00:00:00:00:00:00`. Not blocking CRUD/status
+  (works fine today), but required before M5 Wake-on-LAN can work.
+- TrueNAS pool name + dataset path if/when the `server`'s SQLite data should
+  move off the Dockge stack's default bind-mount location (`./data`, inside
+  wherever Dockge stores `vncgi-remote-server`) onto a proper named
+  dataset — pool candidates seen are `pool_cgivn_share` and
+  `pool_cgivn_work` (latter already used for Apps).
 
-Until provided, `.env.example` documents these as placeholders and nothing
-depends on a guessed value.
+Until provided, nothing depends on a guessed value.
 
 ## Next task
 
-1. Deploy `ghcr.io/rajnlove/dreamers-remote-server:latest` as its own Dockge
-   stack (env: `APP_PORT`, `DATABASE_FILE=/data/dreamers-remote.sqlite`,
-   volume for `/data` so the SQLite file persists across redeploys) and hit
-   `GET /health` to confirm it runs the same way the `/tmp` and real-clone
-   verifications did.
-2. Once it's running, register the two real workstations through the API
-   (MAC addresses are placeholders below — **replace with real ones**,
-   needed for M5 Wake-on-LAN; not required for CRUD/status to work today):
+1. Start M3 (web dashboard): build the workstation list page in `web/`
+   against the now-live API at `http://192.29.11.92:8080/api/workstations`
+   — online/offline indicators, Remote/Wake buttons per
+   [ROADMAP.md](ROADMAP.md)'s M3 description. Reference for what's live:
    ```bash
-   curl -X POST http://192.29.11.92:<port>/api/workstations \
-     -H "Content-Type: application/json" \
-     -d '{"name":"CGI-01","hostname":"CGI-01","ip":"192.29.11.94","mac_address":"00:00:00:00:00:00","vnc_port":5900,"location":"Studio"}'
-
-   curl -X POST http://192.29.11.92:<port>/api/workstations \
-     -H "Content-Type: application/json" \
-     -d '{"name":"COMP-01","hostname":"COMP-01","ip":"192.29.11.93","mac_address":"00:00:00:00:00:00","vnc_port":5900,"location":"Studio"}'
-
-   curl http://192.29.11.92:<port>/api/workstations/status
+   curl http://192.29.11.92:8080/api/workstations/status
    ```
-3. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
+   `ghcr.io/rajnlove/dreamers-remote-web:latest` already builds in CI (has
+   skeleton content only) — once M3 has real dashboard code, push it and a
+   new image will build automatically; deploy it as its own Dockge stack.
+2. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
    Windows service, not interactive process — fix instructions already
    handed to user) and check `192.29.11.93` for the same issue.
-4. Start M3 (web dashboard) once the server stack above is confirmed
-   running against real data — `ghcr.io/rajnlove/dreamers-remote-web:latest`
-   already builds in CI too, just needs its own Dockge stack.
-5. Start M3 (web dashboard) once the M2 API above is confirmed working
-   against real data.
+3. Get real MAC addresses for `192.29.11.93`/`.94` from the user and PATCH
+   them onto workstation ids 1/2 before M5 (Wake-on-LAN).
 
 ## Important commands
 
