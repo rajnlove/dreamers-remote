@@ -1,6 +1,8 @@
+import http from "node:http";
 import express from "express";
 import { env } from "./config/env.js";
 import { workstationsRouter } from "./api/workstations.js";
+import { setupVncProxy } from "./remote/wsProxy.js";
 import { ConflictError, NotFoundError, ValidationError } from "./workstation/errors.js";
 
 const app = express();
@@ -38,6 +40,9 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ error: "Internal server error" });
 });
 
-app.listen(env.port, () => {
+const server = http.createServer(app);
+setupVncProxy(server);
+
+server.listen(env.port, () => {
   console.log(`dreamers-remote-server listening on :${env.port}`);
 });

@@ -147,3 +147,97 @@ body {
 .back-link:hover {
   color: var(--text);
 }
+
+.remote-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.remote-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.remote-header h1 {
+  margin: 0.25rem 0 0;
+}
+
+.remote-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.remote-toolbar .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+.status-pill {
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.status-connected {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.status-connecting {
+  color: var(--text-dim);
+}
+
+.status-disconnected {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.remote-screen {
+  flex: 1;
+  background: black;
+  position: relative;
+  overflow: hidden;
+}
+
+.password-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.password-form {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 260px;
+}
+
+.password-form label {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.password-form input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: var(--text);
+  font-family: inherit;
+}
