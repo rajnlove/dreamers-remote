@@ -3,6 +3,11 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
+  // @novnc/novnc uses top-level await (H264 WebCodecs feature-detection);
+  // esbuild's default legacy-ish target list doesn't support that syntax.
+  build: {
+    target: "esnext",
+  },
   server: {
     port: 5173,
     proxy: {
