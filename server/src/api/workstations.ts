@@ -9,8 +9,11 @@ import {
 import { checkTcpPort } from "../workstation/status.js";
 import { validateCreateInput, validateUpdateInput } from "../workstation/validation.js";
 import { NotFoundError, ValidationError } from "../workstation/errors.js";
+import { sendMagicPacket } from "../wol/wol.js";
 
 export const workstationsRouter = Router();
+
+const UNSET_MAC = "00:00:00:00:00:00";
 
 function parseId(raw: string): number {
   const id = Number(raw);
@@ -76,6 +79,21 @@ workstationsRouter.patch("/:id", (req, res, next) => {
     const updated = updateWorkstation(id, input);
     if (!updated) throw new NotFoundError("Workstation not found");
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+workstationsRouter.post("/:id/wake", async (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    const ws = getWorkstation(id);
+    if (!ws) throw new NotFoundError("Workstation not found");
+    if (ws.mac_address.toUpperCase() === UNSET_MAC) {
+      throw new ValidationError("mac_address is not set for this workstation");
+    }
+    await sendMagicPacket(ws.mac_address);
+    res.json({ sent: true });
   } catch (err) {
     next(err);
   }

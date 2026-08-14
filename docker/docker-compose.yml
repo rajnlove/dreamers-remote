@@ -13,19 +13,25 @@ services:
       - "${NOVNC_PORT:-6080}:6080"
     restart: unless-stopped
 
-  # Milestone 2+ backend API. Builds and runs now, but has no workstation
-  # logic yet beyond GET /health — see docs/PROJECT_STATUS.md.
+  # Backend API + WebSocket VNC proxy + Wake-on-LAN sender.
+  # network_mode: host is required for M5's Wake-on-LAN: a UDP broadcast
+  # magic packet sent from inside Docker's default bridge network never
+  # reaches the physical LAN (it's confined to the bridge's own isolated
+  # subnet). Host networking puts the container directly on the LAN
+  # interface, same as UltraVNC's broadcast-based discovery would expect.
+  # If host networking isn't available in your environment, Wake-on-LAN
+  # will silently fail to reach real hardware even though the API call
+  # itself succeeds — see docs/PROJECT_STATUS.md.
   server:
     build:
       context: ..
       dockerfile: docker/server.Dockerfile
+    network_mode: host
     environment:
       APP_PORT: 8080
       DATABASE_FILE: ${DATABASE_FILE:-/data/dreamers-remote.sqlite}
     volumes:
       - ${DATA_ROOT:-./data}:/data
-    ports:
-      - "${APP_PORT:-8080}:8080"
     restart: unless-stopped
 
   # Milestone 3+ dashboard. Builds and runs now as a placeholder page.
