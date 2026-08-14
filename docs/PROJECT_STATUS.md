@@ -108,8 +108,12 @@ Last updated: 2026-08-14
   `docker/web.Dockerfile`, `docker/novnc.Dockerfile` on every push to
   `main` and publishes to GHCR as `ghcr.io/rajnlove/dreamers-remote-{server,web,novnc}:latest`
   (+ a `:<git-sha>` tag). Dockge only ever needs to pull a tagged image —
-  no on-TrueNAS build step required. Pushed; first run not yet confirmed
-  green (see Next task).
+  no on-TrueNAS build step required. **First run confirmed green
+  (2026-08-14)** — all 3 images built and verified publicly pullable from
+  GHCR (anonymous registry token, HTTP 200 on manifest fetch for all
+  three). Not yet wired into a Dockge stack — the `vncgi-remote`/
+  `vncgi-remote-93` stacks still run the pre-built `dougw/novnc` image, not
+  our own `ghcr.io/.../dreamers-remote-novnc`.
 - `web/` still only has skeleton scaffolding (package.json, tsconfig,
   placeholder page) — no application code yet. That's expected; M3 builds
   the dashboard once M2's API is verified working.
