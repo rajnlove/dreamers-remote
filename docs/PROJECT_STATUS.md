@@ -1,11 +1,10 @@
 # Project Status
 
-Last updated: 2026-08-14
+Last updated: 2026-08-15
 
 ## Current milestone
 
-**MILESTONE 1 COMPLETE. MILESTONE 2 COMPLETE. MILESTONE 3 COMPLETE.
-MILESTONE 4 COMPLETE (2026-08-14).** Next up: **M5 — Wake-on-LAN**.
+**MILESTONES 1-5 COMPLETE.** Next up: **M6 — Authentication**.
 
 ## Completed
 
@@ -41,9 +40,56 @@ MILESTONE 4 COMPLETE (2026-08-14).** Next up: **M5 — Wake-on-LAN**.
 
 ## In progress
 
-**M5 — Wake-on-LAN** not yet started. No `/api/workstations/:id/wake`
-endpoint, no magic-packet sending code in `server/`. The `WAKE` button on
-offline cards just shows a "not implemented" alert (see M3 detail).
+**M6 — Authentication** not yet started. Anyone on the LAN who can reach
+`http://192.29.11.92:8000` can see the dashboard and remote into any
+workstation — no login, no sessions. Per [ROADMAP.md](ROADMAP.md), M6 adds
+a single admin account (hashed password, sessions); M7 (permissions) and
+M8 (audit log) come after that.
+
+## Completed (M5 detail)
+
+- **MILESTONE 5 COMPLETE (2026-08-15).** Wake-on-LAN wired end-to-end:
+  - `server/src/wol/wol.ts` — `buildMagicPacket(mac)` constructs the
+    standard 102-byte packet (6× `0xFF` + MAC repeated 16×);
+    `sendMagicPacket` broadcasts it over UDP (`dgram`, port 9, no new npm
+    dependency — Node's built-in `dgram` module was enough). Packet
+    construction is unit tested (`wol.test.ts`, 4 tests: correct length,
+    correct byte layout, hyphen-separated MAC input, rejects malformed
+    input); the actual UDP send isn't unit tested since it needs a real
+    network.
+  - `POST /api/workstations/:id/wake` — looks up the workstation, 400s
+    with a clear message if `mac_address` is still the unset
+    `00:00:00:00:00:00` placeholder, otherwise sends the packet and
+    returns `{ sent: true }`.
+  - `web/src/components/WorkstationCard.tsx` — `WAKE` button now calls
+    the real endpoint (pending state while sending, alert with the
+    backend's actual error message on failure — e.g. surfaces "mac_address
+    is not set" verbatim instead of a generic HTTP error).
+  - **Real infrastructure gotcha found and fixed**: a UDP broadcast sent
+    from inside Docker's default bridge network never reaches the
+    physical LAN (broadcast is scoped to the bridge's own isolated
+    subnet). Fixed by setting `network_mode: host` on the `server` service
+    in both `docker/docker-compose.yml` (repo reference) and the live
+    `vncgi-remote-server` Dockge stack (edited directly via a JS
+    `HTMLTextAreaElement` value-setter + `input`/`change` event dispatch
+    on Dockge's compose editor — much more reliable for this editor than
+    the character-by-character keydown simulation used earlier for
+    xterm-based shells). `network_mode: host` and `ports:` are mutually
+    exclusive in Compose, so the `ports:` mapping was removed too — with
+    host networking the container binds `APP_PORT` directly on the host,
+    no publish mapping needed.
+  - **Verified live after redeploy**: `curl -i -X POST
+    http://192.29.11.92:8080/api/workstations/1/wake` → `HTTP/1.1 400`,
+    body `{"error":"mac_address is not set for this workstation"}` —
+    confirms the endpoint, validation, and host-networked container all
+    work correctly end-to-end. Existing SQLite data survived the
+    networking change (still shows both workstations, both online).
+  - **Not yet verified**: an actual magic packet reaching real hardware
+    and waking it, since both registered workstations still have the
+    `00:00:00:00:00:00` placeholder MAC (see "Info still needed" — this
+    has been an open item since M2). Once real MACs are set via `PATCH
+    /api/workstations/:id`, this should be tested for real: power off a
+    workstation, click WAKE, confirm it boots.
 
 ## Completed (M4 detail)
 
@@ -267,10 +313,16 @@ Until provided, nothing depends on a guessed value.
 2. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
    Windows service, not interactive process — fix instructions already
    handed to user) and check `192.29.11.93` for the same issue.
-3. Get real MAC addresses for `192.29.11.93`/`.94` from the user and PATCH
-   them onto workstation ids 1/2, then start M5: add
-   `POST /api/workstations/:id/wake` (magic packet via `mac_address`) and
-   wire the dashboard's `WAKE` button to it.
+3. Get real MAC addresses for `192.29.11.93`/`.94` from the user, `PATCH`
+   them onto workstation ids 1/2, then do a real Wake-on-LAN test (power
+   off a workstation, click WAKE, confirm it boots) — the code path is
+   verified up to the point of sending the packet, but nothing has
+   actually woken real hardware yet.
+4. Start M6 (authentication): single admin account, hashed password
+   (use a real library — e.g. `bcrypt`/`argon2`, per
+   [CLAUDE.md](../CLAUDE.md)'s "don't write your own crypto" rule),
+   sessions. Right now the dashboard and remote access have zero access
+   control — anyone on the LAN can reach `http://192.29.11.92:8000`.
 
 ## Important commands
 
