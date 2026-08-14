@@ -1,0 +1,40 @@
+services:
+  # Milestone 1 proof of concept: browser -> noVNC -> websockify -> UltraVNC.
+  # This is the only service required to validate remote access works.
+  novnc:
+    build:
+      context: ..
+      dockerfile: docker/novnc.Dockerfile
+    environment:
+      VNC_TARGET_HOST: ${VNC_TARGET_HOST}
+      VNC_TARGET_PORT: ${VNC_TARGET_PORT:-5900}
+      NOVNC_LISTEN_PORT: 6080
+    ports:
+      - "${NOVNC_PORT:-6080}:6080"
+    restart: unless-stopped
+
+  # Milestone 2+ backend API. Builds and runs now, but has no workstation
+  # logic yet beyond GET /health — see docs/PROJECT_STATUS.md.
+  server:
+    build:
+      context: ..
+      dockerfile: docker/server.Dockerfile
+    environment:
+      APP_PORT: 8080
+      DATABASE_FILE: ${DATABASE_FILE:-/data/dreamers-remote.sqlite}
+    volumes:
+      - ${DATA_ROOT:-./data}:/data
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  # Milestone 3+ dashboard. Builds and runs now as a placeholder page.
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    depends_on:
+      - server

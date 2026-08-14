@@ -1,0 +1,22 @@
+[
+  {
+    "name": "COMP-01",
+    "hostname": "COMP-01",
+    "ip": "192.29.11.95",
+    "mac_address": "00:00:00:00:00:00",
+    "vnc_port": 5900,
+    "location": "Studio",
+    "description": "Compositing workstation",
+    "enabled": true
+  },
+  {
+    "name": "CGI-01",
+    "hostname": "CGI-01",
+    "ip": "192.29.11.94",
+    "mac_address": "00:00:00:00:00:00",
+    "vnc_port": 5900,
+    "location": "Studio",
+    "description": "CGI workstation",
+    "enabled": true
+  }
+]

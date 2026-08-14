@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+docker/novnc-entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
