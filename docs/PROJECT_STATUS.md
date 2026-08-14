@@ -13,8 +13,17 @@ Last updated: 2026-08-14
   skeleton (`server/`, `web/`, `docker/`, `config/`, `scripts/`).
 - M1 — `docker/docker-compose.yml` proof-of-concept: `noVNC` + `websockify`
   container proxying to a configurable UltraVNC target (`VNC_TARGET_HOST` /
-  `VNC_TARGET_PORT` in `.env`). Never actually built/run (no Docker on the
-  dev machine) — see "Known issues" for the follow-up needed.
+  `VNC_TARGET_PORT` in `.env`).
+- **`docker/novnc.Dockerfile` confirmed working in production (2026-08-14):**
+  both Dockge stacks now run the real
+  `ghcr.io/rajnlove/dreamers-remote-novnc:latest` image (built by CI, see
+  below) instead of the placeholder `dougw/novnc`:
+  - `vncgi-remote`: `ghcr.io/rajnlove/dreamers-remote-novnc:latest`, port
+    `6080:6080`, `VNC_TARGET_HOST=192.29.11.94`, `VNC_TARGET_PORT=5900`.
+  - `vncgi-remote-93`: same image, port `6081:6080`,
+    `VNC_TARGET_HOST=192.29.11.93`.
+  Both verified with `curl` (HTTP 200 on `/`). The repo's own Dockerfile is
+  no longer just theoretical — it's what's actually running.
 - M1 — `scripts/test-host.sh`, `scripts/test-vnc.sh` for checking a
   workstation is reachable before wiring it into the app.
 - **MILESTONE 1 COMPLETE (2026-08-14)** — live end-to-end remote confirmed
@@ -83,15 +92,12 @@ Last updated: 2026-08-14
 
 ## Known issues / blockers
 
-- **M2 backend was verified in a throwaway location, not its real deployment
-  path.** `npm install`/`typecheck`/`test`/`build`/live API calls all passed
-  (see "In progress"), but that was in `/tmp` inside the `code-server`
-  container on TrueNAS — not the actual `server/` checkout in this repo,
-  and not through Docker/`server.Dockerfile`. Still needed: get this repo
-  itself onto TrueNAS (see deployment note below) and rerun the same
-  verification through `docker/server.Dockerfile` to confirm the container
-  build (with its `apk add python3 make g++` step for `better-sqlite3`)
-  works too — that path is still unverified.
+- **`docker/server.Dockerfile` builds successfully in CI** (part of the same
+  green GitHub Actions run that built `novnc`/`web`), confirming the
+  `apk add python3 make g++` fix for `better-sqlite3`'s native addon works.
+  Not yet actually *run* as a container anywhere though — the image exists
+  on GHCR (`ghcr.io/rajnlove/dreamers-remote-server:latest`) but hasn't been
+  deployed to a Dockge stack or hit with a live request the way `novnc` has.
 - **Git deployment path RESOLVED (2026-08-14):** repo pushed to
   `https://github.com/rajnlove/dreamers-remote` (public, deliberately kept
   public after discussing tradeoffs with user — no secrets in the repo, so
@@ -110,10 +116,11 @@ Last updated: 2026-08-14
   (+ a `:<git-sha>` tag). Dockge only ever needs to pull a tagged image —
   no on-TrueNAS build step required. **First run confirmed green
   (2026-08-14)** — all 3 images built and verified publicly pullable from
-  GHCR (anonymous registry token, HTTP 200 on manifest fetch for all
-  three). Not yet wired into a Dockge stack — the `vncgi-remote`/
-  `vncgi-remote-93` stacks still run the pre-built `dougw/novnc` image, not
-  our own `ghcr.io/.../dreamers-remote-novnc`.
+  GHCR. **`novnc` image wired into both Dockge stacks (2026-08-14)** —
+  `vncgi-remote` and `vncgi-remote-93` now run
+  `ghcr.io/rajnlove/dreamers-remote-novnc:latest` instead of `dougw/novnc`
+  (see "Completed"). `server`/`web` images are built by CI but not yet
+  deployed to any stack — that's the next step.
 - `web/` still only has skeleton scaffolding (package.json, tsconfig,
   placeholder page) — no application code yet. That's expected; M3 builds
   the dashboard once M2's API is verified working.
@@ -158,34 +165,31 @@ depends on a guessed value.
 
 ## Next task
 
-1. Get this repo's actual `server/` directory onto TrueNAS (not just a
-   throwaway copy) and rerun `npm install && npm run typecheck && npm test
-   && npm run build` there to confirm the checked-in code matches what was
-   verified — then move on to verifying `docker/server.Dockerfile` builds
-   correctly too. Still blocked on a real deployment mechanism (git remote
-   + SSH clone recommended, see "Info still needed").
-2. Once it's running from the real repo, register the two real workstations
-   through the API (MAC
-   addresses are placeholders below — **replace with real ones**, needed
-   for M5 Wake-on-LAN; not required for CRUD/status to work today):
+1. Deploy `ghcr.io/rajnlove/dreamers-remote-server:latest` as its own Dockge
+   stack (env: `APP_PORT`, `DATABASE_FILE=/data/dreamers-remote.sqlite`,
+   volume for `/data` so the SQLite file persists across redeploys) and hit
+   `GET /health` to confirm it runs the same way the `/tmp` and real-clone
+   verifications did.
+2. Once it's running, register the two real workstations through the API
+   (MAC addresses are placeholders below — **replace with real ones**,
+   needed for M5 Wake-on-LAN; not required for CRUD/status to work today):
    ```bash
-   curl -X POST http://localhost:8080/api/workstations \
+   curl -X POST http://192.29.11.92:<port>/api/workstations \
      -H "Content-Type: application/json" \
      -d '{"name":"CGI-01","hostname":"CGI-01","ip":"192.29.11.94","mac_address":"00:00:00:00:00:00","vnc_port":5900,"location":"Studio"}'
 
-   curl -X POST http://localhost:8080/api/workstations \
+   curl -X POST http://192.29.11.92:<port>/api/workstations \
      -H "Content-Type: application/json" \
      -d '{"name":"COMP-01","hostname":"COMP-01","ip":"192.29.11.93","mac_address":"00:00:00:00:00:00","vnc_port":5900,"location":"Studio"}'
 
-   curl http://localhost:8080/api/workstations/status
+   curl http://192.29.11.92:<port>/api/workstations/status
    ```
 3. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
    Windows service, not interactive process — fix instructions already
    handed to user) and check `192.29.11.93` for the same issue.
-4. Decide and set up a real deployment path to TrueNAS (git remote + SSH
-   clone recommended) so `server/` can actually be built there via
-   `docker/server.Dockerfile` — Dockge alone can't build custom images from
-   source.
+4. Start M3 (web dashboard) once the server stack above is confirmed
+   running against real data — `ghcr.io/rajnlove/dreamers-remote-web:latest`
+   already builds in CI too, just needs its own Dockge stack.
 5. Start M3 (web dashboard) once the M2 API above is confirmed working
    against real data.
 
