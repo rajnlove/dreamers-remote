@@ -92,21 +92,24 @@ Last updated: 2026-08-14
   verification through `docker/server.Dockerfile` to confirm the container
   build (with its `apk add python3 make g++` step for `better-sqlite3`)
   works too — that path is still unverified.
-- **The repo's own `docker/novnc.Dockerfile` build has still never been
-  executed anywhere** (only the pre-built `dougw/novnc` substitute has been
-  live-tested, via Dockge). First real verification step for whoever picks
-  this up: get the repo onto a machine with Docker (see deployment note
-  below) and run
-  `docker compose --project-directory . -f docker/docker-compose.yml build novnc`
-  to confirm the custom Dockerfile actually builds, before relying on it
-  over the pre-built image long-term.
-- **No git-based deployment path to TrueNAS yet.** For M1 this didn't
-  matter (Dockge's UI was used directly instead of `git clone` + `docker
-  compose`), but M2's server needs its actual source code (not just a
-  pre-built public image) on TrueNAS to build `docker/server.Dockerfile` —
-  Dockge has no file upload/build-context support and its Console feature
-  is deliberately disabled (safety setting, left as-is). Needs a real
-  answer: git remote + TrueNAS SSH clone, or another mechanism.
+- **Git deployment path RESOLVED (2026-08-14):** repo pushed to
+  `https://github.com/rajnlove/dreamers-remote` (public, deliberately kept
+  public after discussing tradeoffs with user — no secrets in the repo, so
+  the added complexity of a private repo + PAT-based auth on TrueNAS wasn't
+  worth it). Cloned successfully into the `code-server` app's container on
+  TrueNAS (`~/dreamers-remote`) via its Container Shell; `npm install` +
+  `typecheck` + `test` all pass identically from the real clone (16/16
+  tests), matching the earlier throwaway `/tmp` verification.
+- **Docker build gap RESOLVED via CI (2026-08-14):** since nothing on
+  TrueNAS can `docker build` our custom Dockerfiles (`code-server`'s
+  container has `git` but no Docker CLI/socket; Dockge has real Docker
+  access but no build/file-upload capability), added
+  `.github/workflows/docker-build.yml` — builds `docker/server.Dockerfile`,
+  `docker/web.Dockerfile`, `docker/novnc.Dockerfile` on every push to
+  `main` and publishes to GHCR as `ghcr.io/rajnlove/dreamers-remote-{server,web,novnc}:latest`
+  (+ a `:<git-sha>` tag). Dockge only ever needs to pull a tagged image —
+  no on-TrueNAS build step required. Pushed; first run not yet confirmed
+  green (see Next task).
 - `web/` still only has skeleton scaffolding (package.json, tsconfig,
   placeholder page) — no application code yet. That's expected; M3 builds
   the dashboard once M2's API is verified working.
