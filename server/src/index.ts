@@ -6,6 +6,15 @@ import { ConflictError, NotFoundError, ValidationError } from "./workstation/err
 const app = express();
 app.use(express.json());
 
+// LAN-only app (see docs/SECURITY.md) — permissive CORS so the dashboard,
+// served from a different origin/port, can call this API.
+app.use((_req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });

@@ -1,8 +1,14 @@
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import Dashboard from "./pages/Dashboard";
+import RemotePage from "./pages/RemotePage";
+
 export default function App() {
   return (
-    <div style={{ fontFamily: "sans-serif", padding: "2rem", color: "#e5e5e5", background: "#111" }}>
-      <h1>Dreamers Remote</h1>
-      <p>Dashboard lands in Milestone 3. See docs/PROJECT_STATUS.md for current milestone.</p>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/remote/:id" element={<RemotePage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
