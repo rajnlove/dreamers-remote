@@ -4,8 +4,8 @@ Last updated: 2026-08-14
 
 ## Current milestone
 
-**MILESTONE 1 COMPLETE. MILESTONE 2 COMPLETE. MILESTONE 3 COMPLETE
-(2026-08-14).** Next up: **M4 — integrated remote page**.
+**MILESTONE 1 COMPLETE. MILESTONE 2 COMPLETE. MILESTONE 3 COMPLETE.
+MILESTONE 4 COMPLETE (2026-08-14).** Next up: **M5 — Wake-on-LAN**.
 
 ## Completed
 
@@ -41,13 +41,66 @@ Last updated: 2026-08-14
 
 ## In progress
 
-**M4 — integrated remote page** not yet started. `/remote/:id` currently
-shows a placeholder (see "Completed (M3 detail)") pointing users at the
-already-running per-workstation noVNC deploys instead of an embedded
-viewer. M4 replaces that with a real noVNC viewer resolved through the
-backend (per [ARCHITECTURE.md](ARCHITECTURE.md): frontend sends only
-`workstationId`, backend resolves IP — no `/ws/vnc/:workstationId` proxy
-exists yet, so this is genuinely not built, not just unwired).
+**M5 — Wake-on-LAN** not yet started. No `/api/workstations/:id/wake`
+endpoint, no magic-packet sending code in `server/`. The `WAKE` button on
+offline cards just shows a "not implemented" alert (see M3 detail).
+
+## Completed (M4 detail)
+
+- **MILESTONE 4 COMPLETE (2026-08-14).** Real noVNC viewer, proxied
+  through the backend — not a redirect to the separate per-workstation
+  Dockge stacks from M1 anymore:
+  - `server/src/remote/wsProxy.ts` — WebSocket endpoint at
+    `/ws/vnc/:id`, attached to the shared `http.Server` (not a separate
+    Express route, since it needs the raw `upgrade` event). Validates the
+    id against the DB (404s if unknown or `enabled: false`), resolves
+    `ip`/`vnc_port` server-side, then bridges WS binary frames to a raw
+    `net.Socket` to UltraVNC in both directions, buffering client->server
+    bytes until the TCP leg connects. Frontend never sends a host/IP —
+    only the id in the URL — per [ARCHITECTURE.md](ARCHITECTURE.md) and
+    [SECURITY.md](SECURITY.md).
+  - `web/src/pages/RemotePage.tsx` — replaced the M3 placeholder with a
+    real `@novnc/novnc` `RFB` instance connected to
+    `${WS_BASE_URL}/ws/vnc/:id`. `scaleViewport = true` by default (no
+    more manual "Local Scaling" gear-icon step from M1). Toolbar: live
+    connection status pill, Ctrl+Alt+Del, fullscreen (Fullscreen API),
+    disconnect/reconnect (remounts the RFB instance). VNC password is
+    collected via a small in-page overlay form on the RFB
+    `credentialsrequired` event and sent straight to `rfb.sendCredentials`
+    — never touches our REST API or gets logged, per the V1 tradeoff
+    documented in [SECURITY.md](SECURITY.md).
+  - `web/src/types/novnc.d.ts` — `@novnc/novnc` ships no TypeScript
+    types; added a minimal ambient module declaration covering only what
+    RemotePage uses.
+  - **Build fix required and shipped**: `@novnc/novnc` uses top-level
+    `await` (H264 WebCodecs feature detection), which esbuild's default
+    target list rejects. Fixed by setting `build.target: "esnext"` in
+    `web/vite.config.ts`.
+  - **CI caught a real bug before deployment**: the first push (commit
+    `d471a96`) failed the `web` Docker build in GitHub Actions on exactly
+    that top-level-await error — reproduced locally on TrueNAS via the
+    `code-server` Container Shell (`git pull && npm run build`) to get a
+    readable error message (GitHub's job-log API needs auth this session
+    didn't have), fixed, verified the fix builds clean in the same shell,
+    then pushed and confirmed CI green before touching any Dockge stack.
+  - **Verified live end-to-end**: `vncgi-remote-server` and
+    `vncgi-remote-web` stacks updated to the new images via Dockge's
+    Update button (existing SQLite data survived, per M3). Opened the
+    dashboard, clicked REMOTE on `COMP-01` (`192.29.11.93`) — the
+    WebSocket proxy connected through to real UltraVNC, RFB handshake
+    succeeded, and the custom password overlay appeared requesting
+    credentials. Did not enter the password (agent policy: never handle
+    credentials) — connection setup verified up to that point, which is
+    the part that depends on this milestone's code; password entry and
+    the resulting desktop render depend on the user, not on anything
+    built this session.
+  - **`CGI-01` (`192.29.11.94`) hit UltraVNC's own brute-force lockout**
+    ("Security negotiation failed... rejected too many attempts") during
+    this same test, almost certainly from the many connection attempts
+    made across this session's earlier M1 testing. Not a bug in this
+    milestone's code — confirmed by `COMP-01` connecting cleanly through
+    the identical code path. Needs either a wait for UltraVNC's lockout
+    timer to expire or a service restart on `.94` to clear it.
 
 ## Completed (M3 detail)
 
@@ -206,20 +259,18 @@ Until provided, nothing depends on a guessed value.
 
 ## Next task
 
-1. Start M4 (integrated remote page): backend needs a
-   `POST /api/workstations/:id/session` (or similar) plus a WebSocket
-   proxy (`/ws/vnc/:workstationId`) that resolves the workstation's
-   IP/port server-side (per [ARCHITECTURE.md](ARCHITECTURE.md) and
-   [SECURITY.md](SECURITY.md) — frontend must never send a host/IP
-   directly). Frontend: replace `RemotePage`'s placeholder with an
-   embedded noVNC viewer pointed at that proxy, defaulting Scaling Mode to
-   `Local Scaling` (see M1 note), plus fullscreen/disconnect/reconnect and
-   Ctrl+Alt+Del if feasible.
+1. User enters the VNC password in the overlay for `COMP-01` (`.93`) to
+   confirm the desktop actually renders (connection-through-proxy is
+   verified; password entry and desktop paint were left to the user, see
+   M4 detail). Restart the UltraVNC service on `192.29.11.94` (or wait out
+   the lockout timer) so `CGI-01` can be tested too.
 2. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
    Windows service, not interactive process — fix instructions already
    handed to user) and check `192.29.11.93` for the same issue.
 3. Get real MAC addresses for `192.29.11.93`/`.94` from the user and PATCH
-   them onto workstation ids 1/2 before M5 (Wake-on-LAN).
+   them onto workstation ids 1/2, then start M5: add
+   `POST /api/workstations/:id/wake` (magic packet via `mac_address`) and
+   wire the dashboard's `WAKE` button to it.
 
 ## Important commands
 
