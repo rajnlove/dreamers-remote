@@ -14,8 +14,7 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-6 (2026-08-15) — code complete, pending build/deploy
-verification.**
+**MILESTONE P2-6 COMPLETE (2026-08-15) — full live verification passed.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -247,13 +246,21 @@ verification.**
     badge shows agent online/offline separately from the existing VNC
     online dot. **Existing REMOTE/WAKE button logic is untouched** —
     still driven by `vncOnline` alone, exactly as before P2-6.
-  - **Not yet build-verified**: same as P2-5, no Node/npm locally: CI
-    is the real gate. Not yet deployed/live-tested either — needs both
-    `vncgi-remote-server` (API changes) and `vncgi-remote-web`
-    (dashboard changes) redeployed via Dockge, unlike P2-1 through P2-5
-    which only touched the server or the agent alone.
+  - **CI green (run #8, commit `470cc0b`)** — both server and web
+    TypeScript builds passed. **Deployed and live-verified**: both
+    `vncgi-remote-server` and `vncgi-remote-web` redeployed via Dockge's
+    Update button (first time a Phase 2 milestone needed both — P2-1
+    through P2-5 only ever touched one). Ran the agent again on
+    `CGI-Render` to send a fresh heartbeat, then confirmed on the real
+    dashboard: `CGI-Render`'s card shows a green AGENT badge with live
+    CPU/RAM/dual-GPU/VRAM/temp bars (`Intel i9-9900X`, 2x RTX 3090, real
+    numbers matching the agent's own log output); the other 3
+    workstations (no Agent installed) show a dim AGENT badge and no
+    metrics section, exactly as designed; **REMOTE/WAKE buttons work
+    unchanged on all 4 cards** — confirms P2-6 didn't regress the
+    existing VNC flow.
 
-Next: after CI + live verification, **P2-7** (workstation detail page,
+Next: **P2-7** (workstation detail page,
 `/workstations/:id`).
 
 ## Completed
@@ -692,11 +699,14 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Deploy P2-6 and verify live** — push, wait for CI, redeploy BOTH
-   `vncgi-remote-server` and `vncgi-remote-web` via Dockge (**Update**,
-   not just Deploy), confirm the dashboard shows real CPU/RAM/GPU
-   metrics for `CGI-Render` (the one workstation currently paired with
-   an Agent) and that REMOTE/WAKE still work unchanged.
+3. **Start Phase 2 P2-7** (workstation detail page, `/workstations/:id`)
+   — P2-6 is fully live-verified and done, see "Phase 2 — Dreamers
+   Agent" above. Note: `CGI-Render`'s Agent is only running via
+   `dotnet run` when someone manually starts it for a test — it is
+   **not installed as a persistent Windows Service yet** (agent policy:
+   the user needs to run `DreamersAgent.exe install` themselves, see
+   `agent/README.md`). Until then, its dashboard metrics will go stale
+   (AGENT badge dims) whenever nobody's actively running it.
 
 ## Important commands
 
