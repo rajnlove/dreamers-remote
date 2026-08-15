@@ -378,12 +378,39 @@ IP different ports counts as same-site for SameSite purposes).
   issue found on `.94` — should be checked with the same diagnostic
   commands, likely has the same misconfiguration since both were probably
   set up the same way.
+- **Two new workstations added to the fleet (2026-08-15)**:
+  - **`CGI-Render`** (id 3, `192.29.11.95`, hostname `DESKTOP-FE5VNUN`) —
+    this is the machine this Claude Code session itself runs on. UltraVNC
+    installed **by the user** (agent policy: never download/run
+    installers or modify system/security settings, even on request —
+    same boundary applied here as for git push and Dockge logins). Agent
+    helped only with read-only diagnostics (locating `winvnc.exe`,
+    confirming `uvnc_service` was `Running` and port `5900`
+    `LISTENING`, checking the firewall rule already existed) and with
+    registering the workstation via the API once VNC was confirmed
+    working. Installed correctly as a Windows service from the start
+    (`uvnc_service`, not an interactive process) — the `.93`/`.94`
+    service misconfiguration was not repeated here.
+  - **`CGI-DUC`** (id 4, `192.29.11.98`) — added at user's request,
+    real MAC confirmed via `ipconfig /all` cross-checked against the
+    adapter actually carrying `192.29.11.98`.
 
 ## Info still needed from user (do not guess these)
 
-- Real MAC addresses for `192.29.11.93` / `192.29.11.94` — currently
-  registered with placeholder `00:00:00:00:00:00`. Not blocking CRUD/status
-  (works fine today), but required before M5 Wake-on-LAN can work.
+- ~~Real MAC addresses for `192.29.11.93` / `192.29.11.94`~~ **RESOLVED
+  (2026-08-15)** — user ran `ipconfig /all` on each machine and supplied
+  the real Physical Address of the adapter actually carrying that
+  workstation's LAN IP (not just any adapter listed — `CGI-DUC`'s first
+  answer was accidentally the MAC of a disconnected Wi-Fi adapter, caught
+  and corrected by cross-checking which adapter's IPv4 matched). All four
+  registered workstations now have real MACs, `PATCH`ed via
+  `/api/workstations/:id`:
+  - `CGI-01` (id 1, `192.29.11.94`): `30:68:93:68:B4:62`
+  - `COMP-01` (id 2, `192.29.11.93`): `48:DF:37:16:B7:35`
+  - `CGI-Render` (id 3, `192.29.11.95`, new — this machine): `48:DF:37:0B:DD:31`
+  - `CGI-DUC` (id 4, `192.29.11.98`, new): `14:02:EC:7D:70:00`
+  Real Wake-on-LAN hasn't been tested against real hardware yet (power
+  off, click WAKE, confirm it boots) — still open, see "Next task".
 - TrueNAS pool name + dataset path if/when the `server`'s SQLite data should
   move off the Dockge stack's default bind-mount location (`./data`, inside
   wherever Dockge stores `vncgi-remote-server`) onto a proper named
@@ -402,10 +429,10 @@ Until provided, nothing depends on a guessed value.
 2. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
    Windows service, not interactive process — fix instructions already
    handed to user) and check `192.29.11.93` for the same issue.
-3. Get real MAC addresses for `192.29.11.93`/`.94` from the user, `PATCH`
-   them onto workstation ids 1/2, then do a real Wake-on-LAN test (power
-   off a workstation, click WAKE, confirm it boots) — the code path is
-   verified up to the point of sending the packet, but nothing has
+3. **Real MACs now in place for all 4 workstations** (see "Info still
+   needed" above) — do a real Wake-on-LAN test (power off a workstation,
+   click WAKE, confirm it boots) for at least one of them; the code path
+   is verified up to the point of sending the packet, but nothing has
    actually woken real hardware yet.
 4. **Change the admin password** — `admin`/`admin` was only ever meant as
    a throwaway first-boot placeholder (M6 login confirmed working live
