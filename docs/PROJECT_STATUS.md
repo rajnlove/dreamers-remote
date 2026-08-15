@@ -14,8 +14,8 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-5 (2026-08-15) — code complete, agent side build+test
-verified, server side pending live deploy + end-to-end test.**
+**MILESTONE P2-5 COMPLETE (2026-08-15) — full live end-to-end
+verification passed.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -188,15 +188,37 @@ verified, server side pending live deploy + end-to-end test.**
       `agent.json` to match.
   - **Build+test-verified (agent side)**: `dotnet build` → 0
     warnings/0 errors, `dotnet test` → 26/26 passed (8 new tests).
-    **Server side NOT build-verified locally** (no Node/npm on this
-    machine, same limitation noted throughout this project) — written
-    carefully, reviewed by hand, but CI's `npm run build` inside
-    `docker/server.Dockerfile` is the real gate, same pattern as M1-M6.
-  - **Not yet done**: an actual live end-to-end test (issue a real
-    token, run `register`, confirm a heartbeat arrives and updates
-    `last_seen`) — needs the server side deployed first. See "Next task".
+    Server side not build-verified locally (no Node/npm on this
+    machine) — written carefully, reviewed by hand; **CI confirmed it
+    (run #7, commit `36d8530`, green)**.
+  - **LIVE END-TO-END TEST PASSED (2026-08-15)**, on real infrastructure
+    end to end: pushed → CI green → redeployed `vncgi-remote-server` via
+    Dockge's **Update** button (pulled the new image; a mid-session
+    network drop on `CGI-Render`'s studio-LAN NIC delayed this, unrelated
+    to the code — see below) → issued a real registration token for
+    `CGI-Render` (id 3) via `POST /api/workstations/3/agent-token` using
+    an authenticated browser session → ran `DreamersAgent.exe register
+    <token>` for real on `CGI-Render` → "Registered successfully" →
+    ran the agent, watched it send two real heartbeats
+    (`POST /api/agent/heartbeat` → `200`, ~13-143ms) → confirmed via
+    `GET /api/workstations/3` that `agent_id`, `agent_version` (`1.0.0.0`),
+    `os` (`Microsoft Windows 11 Pro for Workstations`), and `last_seen`
+    all updated correctly, and `agent_credential_hash` is a hash, never
+    the plaintext credential. Every piece of the P2-5 design — token
+    issuance, one-time registration, DPAPI-stored credential, heartbeat
+    auth via `X-Agent-Id`/`X-Agent-Credential` headers, in-memory metrics
+    cache — is now proven working against real infrastructure, not just
+    unit tests.
+  - **Unrelated infra hiccup hit mid-milestone, not a code bug**: this
+    machine's studio-LAN NIC (`Ethernet 4`, the same HPE 10Gb card
+    discussed in the Wake-on-LAN investigation) silently dropped link
+    partway through, making `192.29.11.92` unreachable (ping and TCP
+    connect both failed) until the user checked `Get-NetAdapter` and
+    found it — cable/switch-port issue, not a TrueNAS or app problem.
+    Worth remembering if `192.29.11.92` seems to vanish again: check
+    `Get-NetAdapter` locally before assuming the server is down.
 
-Next: after live end-to-end verification, **P2-6** (Dashboard
+Next: **P2-6** (Dashboard
 integration — show metrics on workstation cards, `agentOnline` derived
 from heartbeat freshness, must not touch the existing Remote button/flow).
 
@@ -636,13 +658,10 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Deploy P2-5's server changes and run a live end-to-end test** —
-   push, wait for CI, redeploy `vncgi-remote-server` via Dockge (use
-   **Update**, not just Deploy — see the CORS gotcha earlier in this
-   file), then: issue a registration token for a workstation, run
-   `DreamersAgent.exe register <token>` on that machine, confirm a
-   heartbeat arrives (`last_seen` updates). See "Phase 2 — Dreamers
-   Agent" above for what P2-5 already implements.
+3. **Start Phase 2 P2-6** (Dashboard integration — show metrics on
+   workstation cards, `agentOnline` derived from heartbeat freshness,
+   must not touch the existing Remote button/flow) — P2-5 is fully
+   live-verified and done, see "Phase 2 — Dreamers Agent" above.
 
 ## Important commands
 
