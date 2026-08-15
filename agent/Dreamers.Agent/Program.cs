@@ -20,9 +20,13 @@ var dataDirectory = AgentConfigStore.DefaultDataDirectory;
 var configStore = new AgentConfigStore(dataDirectory);
 var config = configStore.LoadOrCreate();
 
+var processesConfigStore = new MonitoredProcessesConfigStore(dataDirectory);
+var processesConfig = processesConfigStore.LoadOrCreate();
+
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddSingleton(config);
+builder.Services.AddSingleton(processesConfig);
 builder.Services.AddSingleton<MetricsCollector>();
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);

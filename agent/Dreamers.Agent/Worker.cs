@@ -65,6 +65,22 @@ public sealed class Worker : BackgroundService
                 {
                     _logger.LogDebug("No GPUs reported (no NVIDIA GPU or NVML unavailable)");
                 }
+
+                if (snapshot.Disks.Count > 0)
+                {
+                    var diskSummary = string.Join(" | ", snapshot.Disks.Select(d =>
+                        $"{d.Name} {d.UsedMb}/{d.TotalMb}MB ({d.UsagePercent:F1}%)"));
+                    _logger.LogInformation("Disks: {DiskSummary}", diskSummary);
+                }
+
+                var runningApps = snapshot.Processes.Where(p => p.Running).ToList();
+                _logger.LogInformation(
+                    "Apps: {RunningCount}/{TotalCount} running{RunningSummary}",
+                    runningApps.Count,
+                    snapshot.Processes.Count,
+                    runningApps.Count > 0
+                        ? " — " + string.Join(", ", runningApps.Select(p => $"{p.Name} (pid {p.Pid}, {p.RamMb}MB)"))
+                        : string.Empty);
             }
             catch (Exception ex)
             {

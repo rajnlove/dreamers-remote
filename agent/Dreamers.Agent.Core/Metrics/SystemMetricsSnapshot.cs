@@ -13,4 +13,9 @@ public sealed class SystemMetricsSnapshot
 
     /// <summary>Empty (not null) when there are no NVIDIA GPUs or NVML is unavailable.</summary>
     public IReadOnlyList<GpuSnapshot> Gpus { get; set; } = Array.Empty<GpuSnapshot>();
+
+    public IReadOnlyList<DiskSnapshot> Disks { get; set; } = Array.Empty<DiskSnapshot>();
+
+    /// <summary>One entry per configured monitored_processes.json pattern, whether running or not.</summary>
+    public IReadOnlyList<ProcessSnapshot> Processes { get; set; } = Array.Empty<ProcessSnapshot>();
 }

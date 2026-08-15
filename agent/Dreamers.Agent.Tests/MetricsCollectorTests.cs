@@ -1,3 +1,4 @@
+using Dreamers.Agent.Core.Configuration;
 using Dreamers.Agent.Core.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -10,12 +11,13 @@ namespace Dreamers.Agent.Tests;
 // agent itself.
 public class MetricsCollectorTests
 {
+    private static MetricsCollector CreateCollector() =>
+        new(NullLogger<MetricsCollector>.Instance, new MonitoredProcessesConfig());
+
     [Fact]
     public void Collect_ReturnsRealHostnameAndArchitecture()
     {
-        var collector = new MetricsCollector(NullLogger<MetricsCollector>.Instance);
-
-        var snapshot = collector.Collect();
+        var snapshot = CreateCollector().Collect();
 
         Assert.Equal(Environment.MachineName, snapshot.Hostname);
         Assert.False(string.IsNullOrWhiteSpace(snapshot.Architecture));
@@ -25,9 +27,7 @@ public class MetricsCollectorTests
     [Fact]
     public void Collect_ReturnsPositiveUptime()
     {
-        var collector = new MetricsCollector(NullLogger<MetricsCollector>.Instance);
-
-        var snapshot = collector.Collect();
+        var snapshot = CreateCollector().Collect();
 
         Assert.NotNull(snapshot.Uptime);
         Assert.True(snapshot.Uptime > TimeSpan.Zero);
@@ -36,9 +36,7 @@ public class MetricsCollectorTests
     [Fact]
     public void Collect_ReturnsMemoryWithinSaneBounds()
     {
-        var collector = new MetricsCollector(NullLogger<MetricsCollector>.Instance);
-
-        var snapshot = collector.Collect();
+        var snapshot = CreateCollector().Collect();
 
         Assert.NotNull(snapshot.Memory);
         Assert.True(snapshot.Memory!.TotalMb > 0);
@@ -49,9 +47,7 @@ public class MetricsCollectorTests
     [Fact]
     public void Collect_ReturnsCpuWithMatchingLogicalProcessorCount()
     {
-        var collector = new MetricsCollector(NullLogger<MetricsCollector>.Instance);
-
-        var snapshot = collector.Collect();
+        var snapshot = CreateCollector().Collect();
 
         Assert.NotNull(snapshot.Cpu);
         Assert.Equal(Environment.ProcessorCount, snapshot.Cpu!.LogicalProcessorCount);
@@ -71,5 +67,28 @@ public class MetricsCollectorTests
 
         Assert.NotNull(second.UtilizationPercent);
         Assert.InRange(second.UtilizationPercent!.Value, 0, 100);
+    }
+
+    [Fact]
+    public void Collect_ReturnsAtLeastOneFixedDriveWithSaneBounds()
+    {
+        var snapshot = CreateCollector().Collect();
+
+        Assert.NotEmpty(snapshot.Disks);
+        foreach (var disk in snapshot.Disks)
+        {
+            Assert.True(disk.TotalMb > 0);
+            Assert.True(disk.UsedMb <= disk.TotalMb);
+            Assert.InRange(disk.UsagePercent, 0, 100);
+        }
+    }
+
+    [Fact]
+    public void Collect_ReturnsOneProcessEntryPerConfiguredPattern()
+    {
+        var snapshot = CreateCollector().Collect();
+
+        Assert.Equal(new MonitoredProcessesConfig().ProcessNames.Count, snapshot.Processes.Count);
+        Assert.All(snapshot.Processes, p => Assert.False(string.IsNullOrWhiteSpace(p.Name)));
     }
 }

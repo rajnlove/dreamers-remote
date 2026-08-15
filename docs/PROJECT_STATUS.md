@@ -14,8 +14,7 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-3 COMPLETE (2026-08-15) — build+run-verified against real
-dual-GPU hardware.**
+**MILESTONE P2-4 COMPLETE (2026-08-15) — build+run-verified.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -88,8 +87,38 @@ dual-GPU hardware.**
   an actual non-NVIDIA machine. Worth a spot-check later if one becomes
   available, not blocking.
 
-Next: **P2-4** (disk + process monitoring — local drives total/used/
-free, and a configurable list of monitored VFX process names).
+- **P2-4**: added `DiskCollector` (`DriveInfo.GetDrives()`, filters to
+  `DriveType.Fixed` + `IsReady` — no NAS shares, no directory scanning,
+  per Phase 2 scope) and `ProcessCollector` (checks a configurable list
+  of VFX process names/patterns against `Process.GetProcesses()`; a
+  trailing `*` in a pattern like `Nuke*.exe` does a prefix match, since
+  Nuke's exe name embeds its version). The monitored list persists to
+  `C:\ProgramData\DreamersRemote\monitored_processes.json` via
+  `MonitoredProcessesConfigStore` (same load-or-create-with-defaults
+  pattern as `AgentConfigStore`; hand-edits are preserved, a corrupted
+  file falls back to defaults instead of crashing) with the exact
+  default list from the Phase 2 spec (`AfterFX.exe`, `Cinema4D.exe`,
+  `houdini.exe`, `houdinifx.exe`, `hbatch.exe`, `hython.exe`,
+  `Nuke*.exe`, `maya.exe`, `3dsmax.exe`, `blender.exe`). Both wired into
+  `MetricsCollector` with the same per-collector isolation as
+  CPU/RAM/GPU. Per-process detail (PID, RAM, start time) is
+  best-effort — wrapped in its own try/catch since `Process.StartTime`
+  can throw Access Denied for some processes even when other properties
+  succeed.
+  Build+run-verified on `CGI-Render`: `dotnet build` → 0 warnings/0
+  errors, `dotnet test` → 22/22 passed (8 new tests), `dotnet run`
+  logged all 7 real local drives (`C:` through `J:`, actual sizes) and
+  correctly reported `0/10` monitored apps running (none of the listed
+  VFX apps were open at the time — the "not running" path, not the
+  "running" one, though `ProcessCollectorTests` exercises "running" too
+  by matching the test process itself).
+
+Next: **P2-5** (Agent ↔ Server communication — registration, heartbeat +
+metrics, `agentOnline` derived from heartbeat freshness). This is the
+first Phase 2 milestone that touches the server side and the pairing/
+auth design from `SECURITY.md` — bigger step than P2-1 through P2-4,
+worth planning before diving in rather than treating it as "just another
+collector."
 
 ## Completed
 
@@ -527,8 +556,10 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Start Phase 2 P2-4** (disk + process monitoring) — P2-3 is
-   build+run-verified and done, see "Phase 2 — Dreamers Agent" above.
+3. **Plan Phase 2 P2-5** (Agent ↔ Server communication) before coding —
+   P2-4 is build+run-verified and done, see "Phase 2 — Dreamers Agent"
+   above. P2-5 is the first Phase 2 milestone touching the server side
+   and the token-pairing/DPAPI auth design from `SECURITY.md`.
 
 ## Important commands
 

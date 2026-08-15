@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Dreamers.Agent.Core.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Dreamers.Agent.Core.Metrics;
@@ -15,9 +16,17 @@ public sealed class MetricsCollector
     private readonly CpuCollector _cpuCollector;
     private readonly MemoryCollector _memoryCollector;
     private readonly GpuCollector _gpuCollector;
+    private readonly DiskCollector _diskCollector;
+    private readonly ProcessCollector _processCollector;
 
-    public MetricsCollector(ILogger<MetricsCollector> logger)
-        : this(logger, new CpuCollector(), new MemoryCollector(), new GpuCollector())
+    public MetricsCollector(ILogger<MetricsCollector> logger, MonitoredProcessesConfig processesConfig)
+        : this(
+            logger,
+            new CpuCollector(),
+            new MemoryCollector(),
+            new GpuCollector(),
+            new DiskCollector(),
+            new ProcessCollector(processesConfig))
     {
     }
 
@@ -25,12 +34,16 @@ public sealed class MetricsCollector
         ILogger<MetricsCollector> logger,
         CpuCollector cpuCollector,
         MemoryCollector memoryCollector,
-        GpuCollector gpuCollector)
+        GpuCollector gpuCollector,
+        DiskCollector diskCollector,
+        ProcessCollector processCollector)
     {
         _logger = logger;
         _cpuCollector = cpuCollector;
         _memoryCollector = memoryCollector;
         _gpuCollector = gpuCollector;
+        _diskCollector = diskCollector;
+        _processCollector = processCollector;
     }
 
     public SystemMetricsSnapshot Collect()
@@ -93,6 +106,24 @@ public sealed class MetricsCollector
             // affect CPU/RAM/OS reporting, which is why this is last and
             // still wrapped just like everything else.
             _logger.LogWarning(ex, "GPU collector failed");
+        }
+
+        try
+        {
+            snapshot.Disks = _diskCollector.Collect();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Disk collector failed");
+        }
+
+        try
+        {
+            snapshot.Processes = _processCollector.Collect();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Process collector failed");
         }
 
         return snapshot;
