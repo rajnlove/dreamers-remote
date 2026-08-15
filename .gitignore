@@ -8,6 +8,8 @@ bin/
 obj/
 *.user
 agent/publish/
+agent/dist/
+agent/*.zip
 
 .env
 .env.*
