@@ -4,8 +4,10 @@ Last updated: 2026-08-15
 
 ## Current milestone
 
-**MILESTONES 1-5 COMPLETE. M6 (Authentication) code deployed
-(2026-08-15), pending user login confirmation** — see "In progress" below.
+**MILESTONES 1-6 COMPLETE.** Dashboard and remote access are now
+authenticated end-to-end. See "Next task" for what's left (VNC password
+confirmation, UltraVNC service fixes, real MACs for Wake-on-LAN, and
+changing the throwaway `admin`/`admin` password).
 
 ## Completed
 
@@ -39,14 +41,11 @@ Last updated: 2026-08-15
   browser setting, not persisted — **M4's `/remote/:id` page should default
   to Local Scaling** so users don't have to set it manually each time.
 
-## In progress — M6 Authentication (mid-implementation, 2026-08-15)
+## Completed (M6 detail)
 
-**State: code written locally, NOT committed/pushed, NOT deployed.**
-Server side fully verified on TrueNAS (typecheck clean, 24/24 tests pass,
-build clean). Web side files written locally but web build not yet
-re-verified after the last edit. Whoever resumes this should: verify web
-build, then `git add -A && git commit && git push`, wait for CI, then
-follow the deploy steps below.
+- **MILESTONE 6 COMPLETE (2026-08-15).** Dashboard and `/ws/vnc/:id`
+  proxy are both authenticated — single admin account, session cookies,
+  login confirmed working live by the user at `http://192.29.11.92:8000`.
 
 **Design**: single admin account seeded from env vars on first boot
 (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), password hashed with Node's built-in
@@ -119,15 +118,15 @@ not Deploy (recreates from cache), when a new image was just pushed to
 GHCR** — Deploy is only sufficient for compose/env-var-only changes to
 a stack whose image hasn't changed.
 
-**Not yet verified**: actually submitting `admin`/`admin` and confirming
-a session is created — per agent policy, credentials/passwords are never
-entered by the agent even when user-supplied, same rule already applied
-in M4 for the VNC password. **User needs to log in for real** at
-`http://192.29.11.92:8000` to confirm the full flow, then **change the
-password** (procedure: update `ADMIN_PASSWORD` in Dockge env vars, then
-either delete the `users` table row or wipe the SQLite file so
-`seedAdminUser` reseeds on next restart — no in-app change-password flow
-exists yet).
+**Confirmed live by user (2026-08-15)**: logged in for real with
+`admin`/`admin` at `http://192.29.11.92:8000`, reached the dashboard.
+Full auth flow (login → session cookie → protected API + WS proxy)
+verified end-to-end. **Still outstanding**: `admin`/`admin` is a
+throwaway first-login credential (user's own explicit choice, with an
+explicit ask to be reminded to change it) — no in-app change-password
+flow exists yet, so change it via Dockge `ADMIN_PASSWORD` env var +
+wiping the `users` table row (or the whole SQLite file) so
+`seedAdminUser` reseeds on next restart.
 
 **Known easy-to-miss gotcha already solved once, don't redo the mistake**:
 CORS changed from `Access-Control-Allow-Origin: *` to reflecting
@@ -408,15 +407,11 @@ Until provided, nothing depends on a guessed value.
    off a workstation, click WAKE, confirm it boots) — the code path is
    verified up to the point of sending the packet, but nothing has
    actually woken real hardware yet.
-4. **M6 deployed (2026-08-15), needs user confirmation**: log in for real
-   at `http://192.29.11.92:8000` with `admin`/`admin` to confirm the full
-   auth flow works end-to-end (server side and page rendering already
-   verified; actual credential submission left to the user per agent
-   policy — see "In progress" above).
-5. **Change the admin password** after confirming login works — `admin`/
-   `admin` was only ever meant as a first-boot placeholder. No in-app
-   change-password flow exists yet; see the procedure noted in "In
-   progress" above.
+4. **Change the admin password** — `admin`/`admin` was only ever meant as
+   a throwaway first-boot placeholder (M6 login confirmed working live
+   2026-08-15). No in-app change-password flow exists yet; see the
+   procedure noted in "Completed (M6 detail)" above (update
+   `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
 
 ## Important commands
 
