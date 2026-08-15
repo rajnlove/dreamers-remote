@@ -14,7 +14,8 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-4 COMPLETE (2026-08-15) — build+run-verified.**
+**MILESTONE P2-5 (2026-08-15) — code complete, agent side build+test
+verified, server side pending live deploy + end-to-end test.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -113,12 +114,91 @@ are independent of Phase 2 — Phase 2 does not block on them.
   "running" one, though `ProcessCollectorTests` exercises "running" too
   by matching the test process itself).
 
-Next: **P2-5** (Agent ↔ Server communication — registration, heartbeat +
-metrics, `agentOnline` derived from heartbeat freshness). This is the
-first Phase 2 milestone that touches the server side and the pairing/
-auth design from `SECURITY.md` — bigger step than P2-1 through P2-4,
-worth planning before diving in rather than treating it as "just another
-collector."
+- **P2-5 (code complete, 2026-08-15) — implements the exact design from
+  `SECURITY.md`**:
+  - **Server** (`server/src/agent/`, `server/src/api/agent.ts`):
+    - `crypto.ts` — `generateSecret`/`hashSecret`/`secretMatchesHash`.
+      SHA-256, not scrypt: registration tokens and agent credentials are
+      already high-entropy random secrets, not human passwords, so the
+      slow-hash reasoning behind `auth/password.ts`'s scrypt doesn't
+      apply here. 5 unit tests.
+    - `database/db.ts` — **real migration**, not just `CREATE TABLE IF
+      NOT EXISTS` (which only affects brand-new databases): a new
+      `ensureColumn()` helper checks `PRAGMA table_info` and
+      `ALTER TABLE ADD COLUMN`s if missing, idempotent, runs on every
+      boot. Adds `agent_id` (unique, nullable), `agent_credential_hash`,
+      `last_seen`, `agent_version`, `os` to `workstations`; new
+      `agent_registration_tokens` table.
+    - `registrationTokens.ts` — admin issues a 15-minute single-use
+      token (`POST /api/workstations/:id/agent-token`, behind the
+      existing `requireAuth` session middleware); `consumeRegistrationToken`
+      validates + marks it used in one step.
+    - `agentRepository.ts` — `pairAgent` (stores the credential
+      **hashed**, never plaintext), `verifyAgentCredential` (deliberately
+      doesn't distinguish "unknown agent" from "wrong credential" in its
+      return value, to avoid leaking which agent ids exist),
+      `recordHeartbeat`.
+    - `middleware.ts` — `requireAgentAuth`, reads `X-Agent-Id` +
+      `X-Agent-Credential` headers. Completely separate from the
+      session-cookie `requireAuth` used by `/api/workstations/*` — a
+      leaked agent credential can only send heartbeats for its own
+      workstation, never reach the rest of the API or the VNC proxy.
+    - `metricsCache.ts` — **in-memory only**, deliberately not persisted
+      to SQLite every heartbeat (would turn SQLite into a time-series
+      DB, explicitly against the project's minimalism — see
+      `ROADMAP.md`). Lost on server restart; repopulates within one
+      heartbeat interval.
+    - `POST /api/agent/register` / `POST /api/agent/heartbeat` — mounted
+      at `/api/agent`, **not** behind `requireAuth` (the Agent has no
+      user session; each route authenticates itself).
+    - Deliberately deferred to P2-6 (not built now, to avoid scope
+      creep): an `isAgentOnline(lastSeen)` helper and exposing any of
+      this through `/api/workstations` responses — P2-5 is ingestion
+      only, P2-6 is "put it on the dashboard."
+  - **Agent** (`agent/Dreamers.Agent.Core/{Credentials,Server}/`):
+    - `AgentCredentialStore` — the credential is encrypted at rest via
+      **Windows DPAPI** (`LocalMachine` scope, since the service runs as
+      `LocalSystem` rather than a specific interactive user), never
+      plaintext on disk. 4 unit tests (round-trip, "file doesn't contain
+      the plaintext", corrupted-file fallback).
+    - `ServerClient` — typed `HttpClient` wrapper for
+      `RegisterAsync`/`SendHeartbeatAsync`; `HeartbeatPayload` maps
+      `SystemMetricsSnapshot` to the wire format (mainly: `TimeSpan
+      Uptime` → `double UptimeSeconds`, since the server has no reason
+      to parse .NET's `TimeSpan` string format).
+    - `DreamersAgent.exe register <token>` — new CLI command, calls
+      `/api/agent/register` once and stores the returned credential via
+      DPAPI. Matches the `SECURITY.md` pairing flow: admin issues a
+      token from the dashboard, runs this once on the workstation.
+    - `Worker.cs` — after collecting + logging metrics locally (as
+      before), sends the same snapshot as a heartbeat **if and only if**
+      a credential exists; a missing credential logs one warning
+      ("not registered yet") rather than erroring every tick. Heartbeat
+      failures (server down, network blip) are caught and logged as
+      warnings — local metrics collection/logging already happened
+      regardless, so a bad heartbeat never affects the agent's own
+      health. Same per-collector-style isolation philosophy as
+      `MetricsCollector`, just at the network layer.
+    - **Bug caught and fixed while wiring this up**: `AgentConfig`'s
+      default `ServerUrl` had been `https://192.29.11.92:8080` since
+      P2-1 — wrong, since the deployed server is plain HTTP (no TLS cert
+      configured, see `SECURITY.md`). Every registration/heartbeat
+      attempt would have failed outright. Fixed the default for future
+      installs, and hand-patched `CGI-Render`'s already-existing
+      `agent.json` to match.
+  - **Build+test-verified (agent side)**: `dotnet build` → 0
+    warnings/0 errors, `dotnet test` → 26/26 passed (8 new tests).
+    **Server side NOT build-verified locally** (no Node/npm on this
+    machine, same limitation noted throughout this project) — written
+    carefully, reviewed by hand, but CI's `npm run build` inside
+    `docker/server.Dockerfile` is the real gate, same pattern as M1-M6.
+  - **Not yet done**: an actual live end-to-end test (issue a real
+    token, run `register`, confirm a heartbeat arrives and updates
+    `last_seen`) — needs the server side deployed first. See "Next task".
+
+Next: after live end-to-end verification, **P2-6** (Dashboard
+integration — show metrics on workstation cards, `agentOnline` derived
+from heartbeat freshness, must not touch the existing Remote button/flow).
 
 ## Completed
 
@@ -556,10 +636,13 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Plan Phase 2 P2-5** (Agent ↔ Server communication) before coding —
-   P2-4 is build+run-verified and done, see "Phase 2 — Dreamers Agent"
-   above. P2-5 is the first Phase 2 milestone touching the server side
-   and the token-pairing/DPAPI auth design from `SECURITY.md`.
+3. **Deploy P2-5's server changes and run a live end-to-end test** —
+   push, wait for CI, redeploy `vncgi-remote-server` via Dockge (use
+   **Update**, not just Deploy — see the CORS gotcha earlier in this
+   file), then: issue a registration token for a workstation, run
+   `DreamersAgent.exe register <token>` on that machine, confirm a
+   heartbeat arrives (`last_seen` updates). See "Phase 2 — Dreamers
+   Agent" above for what P2-5 already implements.
 
 ## Important commands
 

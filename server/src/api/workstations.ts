@@ -10,6 +10,7 @@ import { checkTcpPort } from "../workstation/status.js";
 import { validateCreateInput, validateUpdateInput } from "../workstation/validation.js";
 import { NotFoundError, ValidationError } from "../workstation/errors.js";
 import { sendMagicPacket } from "../wol/wol.js";
+import { createRegistrationToken } from "../agent/registrationTokens.js";
 
 export const workstationsRouter = Router();
 
@@ -94,6 +95,20 @@ workstationsRouter.post("/:id/wake", async (req, res, next) => {
     }
     await sendMagicPacket(ws.mac_address);
     res.json({ sent: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin-only (this router is mounted behind requireAuth in index.ts).
+// Issues a short-lived, single-use token the Agent trades for a
+// long-lived credential via POST /api/agent/register. See docs/SECURITY.md.
+workstationsRouter.post("/:id/agent-token", (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    const ws = getWorkstation(id);
+    if (!ws) throw new NotFoundError("Workstation not found");
+    res.json(createRegistrationToken(id));
   } catch (err) {
     next(err);
   }

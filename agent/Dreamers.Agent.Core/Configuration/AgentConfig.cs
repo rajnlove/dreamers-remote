@@ -10,7 +10,10 @@ public sealed class AgentConfig
 {
     public string AgentId { get; set; } = string.Empty;
 
-    public string ServerUrl { get; set; } = "https://192.29.11.92:8080";
+    // Plain HTTP, not HTTPS: the deployed server has no TLS cert configured
+    // (LAN-only V1, see docs/SECURITY.md) — using https:// here would make
+    // every registration/heartbeat call fail outright.
+    public string ServerUrl { get; set; } = "http://192.29.11.92:8080";
 
     public int UpdateIntervalSeconds { get; set; } = 5;
 }

@@ -3,6 +3,7 @@ import express from "express";
 import { env } from "./config/env.js";
 import { workstationsRouter } from "./api/workstations.js";
 import { authRouter } from "./api/auth.js";
+import { agentRouter } from "./api/agent.js";
 import { setupVncProxy } from "./remote/wsProxy.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { requireAuth } from "./auth/middleware.js";
@@ -40,6 +41,10 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/workstations", requireAuth, workstationsRouter);
+// Not behind requireAuth — the Agent has no user session. Each route
+// authenticates itself (registration token / agent credential). See
+// docs/SECURITY.md and api/agent.ts.
+app.use("/api/agent", agentRouter);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof ValidationError) {

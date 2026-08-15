@@ -17,6 +17,9 @@
          reliable way to get both in one query without hand-rolled SMBIOS/
          registry parsing. Windows-only, matches this project's target. -->
     <PackageReference Include="System.Management" Version="8.0.0" />
+    <!-- Windows DPAPI wrapper — protects the agent credential at rest
+         without inventing our own crypto (see docs/SECURITY.md). -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
 </Project>
