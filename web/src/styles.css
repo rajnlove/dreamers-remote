@@ -368,3 +368,54 @@ body {
   width: 6px;
   height: 6px;
 }
+
+/* Phase 2 (P2-7) — workstation detail page */
+
+.card-title-link {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.card-title-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.detail-body {
+  padding: 1.5rem 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 700px;
+}
+
+.detail-section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  row-gap: 0.4rem;
+  column-gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.detail-label {
+  color: var(--text-dim);
+}
+
+.detail-gpu {
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-gpu:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}

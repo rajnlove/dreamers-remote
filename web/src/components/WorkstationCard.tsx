@@ -47,7 +47,9 @@ export default function WorkstationCard({ workstation, status }: Props) {
     <div className="card">
       <div className="card-title">
         <span className={`dot ${dotClass}`} title={`VNC: ${statusLabel}`} />
-        {workstation.name}
+        <Link className="card-title-link" to={`/workstations/${workstation.id}`}>
+          {workstation.name}
+        </Link>
         <span
           className={`agent-badge ${agentOnline ? "agent-badge-online" : "agent-badge-offline"}`}
           title={agentOnline ? "Agent: ONLINE" : "Agent: OFFLINE hoặc chưa cài"}

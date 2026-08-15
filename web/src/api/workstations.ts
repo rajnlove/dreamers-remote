@@ -29,6 +29,11 @@ export function getWorkstation(id: number): Promise<Workstation> {
   return request<Workstation>(`/api/workstations/${id}`);
 }
 
+/** Single-workstation version of getWorkstationsStatus, for the detail page. */
+export function getWorkstationMetrics(id: number): Promise<WorkstationStatus> {
+  return request<WorkstationStatus>(`/api/workstations/${id}/metrics`);
+}
+
 export function wakeWorkstation(id: number): Promise<{ sent: boolean }> {
   return request<{ sent: boolean }>(`/api/workstations/${id}/wake`, { method: "POST" });
 }

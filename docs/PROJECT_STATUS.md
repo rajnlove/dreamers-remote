@@ -14,7 +14,8 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-6 COMPLETE (2026-08-15) — full live verification passed.**
+**MILESTONE P2-7 (2026-08-15) — code complete, pending build/deploy
+verification.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -278,8 +279,31 @@ are independent of Phase 2 — Phase 2 does not block on them.
   target workstations (a self-contained publish needs nothing
   pre-installed to run).
 
-Next: **P2-7** (workstation detail page,
-`/workstations/:id`).
+- **P2-7 (code complete, 2026-08-15)** — workstation detail page:
+  - **Server**: `GET /api/workstations/:id/metrics` — single-workstation
+    version of `/status` (same `vncOnline`/`agentOnline`/`lastSeen`/
+    `metrics` shape), so the detail page doesn't fetch every
+    workstation's metrics just to show one. Both routes now share a
+    `buildStatusEntry()` helper instead of duplicating the mapping logic.
+  - **Web**: new `/workstations/:id` route → `WorkstationDetail.tsx`.
+    Overview (hostname/IP/OS/agent version/uptime/last seen, plus VNC
+    and Agent online status separately), then CPU/RAM/GPU (one block
+    per GPU)/Storage/Applications sections — all conditionally rendered
+    based on what the cached metrics actually contain, matching the
+    resilience philosophy from the collectors themselves. Polls every
+    5s like the dashboard. Workstation card titles on the dashboard are
+    now links into this page. **RESTART/SHUTDOWN buttons are shown but
+    disabled** with a tooltip explaining they're not implemented yet —
+    deliberately not building them now, since that's P2-8's job
+    (structured command whitelist, server-side auth/permission check,
+    confirmation dialog, audit log — real design work, not just wiring
+    up a button). REMOTE button reuses the existing route unchanged.
+  - Not yet build-verified (no Node locally) or deployed/live-tested.
+
+Next: after CI + live verification, **P2-8** (Restart/Shutdown commands
+— structured command whitelist only, never arbitrary shell; auth +
+permission check server-side; confirmation dialog client-side; audit
+log entry per command executed).
 
 ## Completed
 
@@ -717,9 +741,10 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Start Phase 2 P2-7** (workstation detail page, `/workstations/:id`)
-   — P2-6 is fully live-verified and done, see "Phase 2 — Dreamers
-   Agent" above.
+3. **Deploy P2-7 and verify live** — push, wait for CI, redeploy BOTH
+   `vncgi-remote-server` and `vncgi-remote-web` via Dockge (**Update**),
+   click into a workstation card's name from the dashboard, confirm the
+   detail page loads real CPU/RAM/GPU/disk/app data and polls live.
 
 ## Important commands
 

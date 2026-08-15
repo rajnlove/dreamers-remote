@@ -13,6 +13,7 @@ import { sendMagicPacket } from "../wol/wol.js";
 import { createRegistrationToken } from "../agent/registrationTokens.js";
 import { isAgentOnline } from "../agent/onlineStatus.js";
 import { getMetrics } from "../agent/metricsCache.js";
+import type { Workstation } from "../workstation/types.js";
 
 export const workstationsRouter = Router();
 
@@ -36,19 +37,34 @@ workstationsRouter.get("/", (_req, res) => {
 // workstation can be vncOnline without agentOnline (no Agent installed
 // yet) or vice versa (Agent up, UltraVNC down) — the dashboard should
 // show both, not collapse them into one status.
+async function buildStatusEntry(ws: Workstation) {
+  return {
+    id: ws.id,
+    name: ws.name,
+    vncOnline: ws.enabled ? await checkTcpPort(ws.ip, ws.vnc_port) : false,
+    agentOnline: isAgentOnline(ws.last_seen),
+    lastSeen: ws.last_seen,
+    metrics: getMetrics(ws.id) ?? null,
+  };
+}
+
 workstationsRouter.get("/status", async (_req, res) => {
   const workstations = listWorkstations();
-  const results = await Promise.all(
-    workstations.map(async (ws) => ({
-      id: ws.id,
-      name: ws.name,
-      vncOnline: ws.enabled ? await checkTcpPort(ws.ip, ws.vnc_port) : false,
-      agentOnline: isAgentOnline(ws.last_seen),
-      lastSeen: ws.last_seen,
-      metrics: getMetrics(ws.id) ?? null,
-    })),
-  );
+  const results = await Promise.all(workstations.map(buildStatusEntry));
   res.json(results);
+});
+
+// Single-workstation version of /status, for the detail page (P2-7) —
+// avoids fetching every workstation's metrics just to show one.
+workstationsRouter.get("/:id/metrics", async (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    const ws = getWorkstation(id);
+    if (!ws) throw new NotFoundError("Workstation not found");
+    res.json(await buildStatusEntry(ws));
+  } catch (err) {
+    next(err);
+  }
 });
 
 workstationsRouter.get("/:id/status", async (req, res, next) => {
