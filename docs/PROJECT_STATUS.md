@@ -14,45 +14,55 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-1 COMPLETE (2026-08-15) — build-verified.** User
-installed .NET 8 SDK (8.0.424) on the `CGI-Render` machine; `dotnet
-build agent/Dreamers.Agent.sln` → 0 warnings/0 errors, `dotnet test` →
-6/6 passed, `dotnet run --project Dreamers.Agent` run twice confirmed:
-correct console+file log output, `agent.json` created with the expected
-schema, and — the important one — **AgentId identical across both
-runs** (`da68d811-df66-4d07-9f9a-95c99d2158cf`), proving persistence
-works, not regeneration. Did **not** run `DreamersAgent.exe install` —
-creating a live Windows Service is treated the same as "modifying
-system settings" (same boundary held all session for UltraVNC etc.),
-left for the user to run themselves per `agent/README.md` whenever they
-want a real installed instance. Next: **P2-2** (CPU/RAM/OS/uptime
-collectors).
+**MILESTONE P2-2 COMPLETE (2026-08-15) — build+run-verified.**
 
-- **P2-0 done**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`,
-  `SECURITY.md`, this file) with the Phase 2 design — separate
-  subsystem, does not touch the VNC remote-desktop path, three
-  independent online signals (`machineOnline`/`agentOnline`/
-  `vncOnline`), agent identity is a persistent UUID (never IP-based),
-  token-based pairing + DPAPI-protected local credential storage for
-  agent auth (see `SECURITY.md`).
-- **P2-1 code complete**: `agent/Dreamers.Agent` (.NET 8 Worker Service,
+- **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
+  this file) with the Phase 2 design — separate subsystem, does not
+  touch the VNC remote-desktop path, three independent online signals
+  (`machineOnline`/`agentOnline`/`vncOnline`), agent identity is a
+  persistent UUID (never IP-based), token-based pairing +
+  DPAPI-protected local credential storage for agent auth (see
+  `SECURITY.md`).
+- **P2-1**: `agent/Dreamers.Agent` (.NET 8 Worker Service,
   `DreamersAgent.exe` — service host, `install`/`uninstall`/`start`/
-  `stop` CLI wrapping `sc.exe`, `Worker.cs` tick loop), `agent/Dreamers.Agent.Core`
+  `stop` CLI wrapping `sc.exe`), `agent/Dreamers.Agent.Core`
   (`AgentConfig`/`AgentConfigStore` — identity + config persistence to
   `C:\ProgramData\DreamersRemote\agent.json`, generates the UUID once
   and never regenerates it; `RollingFileLogger*` — daily-rotating file
-  logger, 14-day retention, never throws even if a write fails),
-  `agent/Dreamers.Agent.Tests` (6 unit tests covering config persistence
-  edge cases and the file logger). `agent/README.md` has the exact
-  build/test/install procedure.
-  **Cannot be built or run on this machine** — no .NET SDK installed
-  locally (checked: same situation as Node/Docker earlier in this
-  project; agent policy is to never install SDKs/tools itself, even
-  when asked directly — held even under direct pushback this session).
-  Code was written carefully against documented .NET 8 APIs but **has
-  not actually been compiled** — treat as "should work," not "verified
-  working," until someone runs `agent/README.md`'s build/test steps.
-  Next up after that verification: P2-2 (CPU/RAM/OS/uptime collectors).
+  logger, 14-day retention, never throws even if a write fails).
+  **Build-verified (2026-08-15)** after the user installed .NET 8 SDK
+  (8.0.424) on the `CGI-Render` machine: `dotnet build` → 0
+  warnings/errors, `dotnet test` → 6/6 passed, `dotnet run` run twice
+  confirmed identical `AgentId` across restarts (persistence, not
+  regeneration) and correct console+file logging. Did **not** run
+  `DreamersAgent.exe install` — creating a live Windows Service is
+  treated as "modifying system settings" (same boundary held all
+  session for UltraVNC etc.), left for the user to run themselves per
+  `agent/README.md` whenever they want a real installed instance.
+- **P2-2**: added `agent/Dreamers.Agent.Core/Metrics/`: `CpuCollector`
+  (stateful — `GetSystemTimes` P/Invoke, delta-based utilization; first
+  sample always returns `null` since there's nothing to diff against
+  yet, by design), `MemoryCollector` and `OperatingSystemInfo` (WMI
+  `Win32_OperatingSystem`), `CpuIdentity` (WMI `Win32_Processor`, cached
+  at startup since name/core count don't change at runtime),
+  `SystemUptime` (`GetTickCount64` P/Invoke), `AgentVersionReader`.
+  `MetricsCollector` orchestrates all of them with **per-collector
+  try/catch isolation** — a failing collector logs a warning and leaves
+  its section `null` in the snapshot rather than crashing the tick (the
+  pattern P2-3's GPU/NVML collector will reuse, since that's the one
+  actually expected to fail on non-NVIDIA machines). Both
+  `Dreamers.Agent.Core` and `Dreamers.Agent` retargeted from `net8.0` to
+  **`net8.0-windows`** to fix 12 `CA1416` platform-compatibility
+  warnings from the WMI calls — correct anyway, since this project is
+  Windows-only by design. Verified live on `CGI-Render`: `dotnet build`
+  → 0 warnings/0 errors, `dotnet test` → 11/11 passed (5 new tests),
+  `dotnet run` logged real data — `Intel(R) Core(TM) i9-9900X CPU @
+  3.50GHz` (20 logical/10 physical cores), first tick correctly showed
+  `CpuUsage=n/a (first sample)`, second tick showed a sane `3.2%`, RAM
+  `12840/65210MB (19.7%)`, real OS caption/uptime.
+
+Next: **P2-3** (GPU/NVML monitoring, multi-GPU support, must not crash
+on non-NVIDIA machines).
 
 ## Completed
 
@@ -490,9 +500,8 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Start Phase 2 P2-2** (CPU/RAM/OS/hostname/uptime collectors) —
-   P2-1 is build-verified and done, see "Phase 2 — Dreamers Agent"
-   above.
+3. **Start Phase 2 P2-3** (GPU/NVML monitoring) — P2-2 is
+   build+run-verified and done, see "Phase 2 — Dreamers Agent" above.
 
 ## Important commands
 

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Dreamers.Agent;
 using Dreamers.Agent.Core.Configuration;
 using Dreamers.Agent.Core.Logging;
+using Dreamers.Agent.Core.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
@@ -22,6 +23,7 @@ var config = configStore.LoadOrCreate();
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddSingleton(config);
+builder.Services.AddSingleton<MetricsCollector>();
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
 
