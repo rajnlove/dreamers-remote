@@ -5,8 +5,8 @@ Last updated: 2026-08-15
 ## Current milestone
 
 **MILESTONES 1-6 COMPLETE.** Dashboard and remote access are now
-authenticated end-to-end. See "Next task" for what's left (VNC password
-confirmation, UltraVNC service fixes, real MACs for Wake-on-LAN, and
+authenticated end-to-end, 4 workstations registered with real MACs. See
+"Next task" for what's left (Wake-on-LAN hardware investigation, on hold;
 changing the throwaway `admin`/`admin` password).
 
 ## Completed
@@ -421,20 +421,26 @@ Until provided, nothing depends on a guessed value.
 
 ## Next task
 
-1. User enters the VNC password in the overlay for `COMP-01` (`.93`) to
-   confirm the desktop actually renders (connection-through-proxy is
-   verified; password entry and desktop paint were left to the user, see
-   M4 detail). Restart the UltraVNC service on `192.29.11.94` (or wait out
-   the lockout timer) so `CGI-01` can be tested too.
-2. Fix the UltraVNC service misconfiguration on `192.29.11.94` (install as
-   Windows service, not interactive process — fix instructions already
-   handed to user) and check `192.29.11.93` for the same issue.
-3. **Real MACs now in place for all 4 workstations** (see "Info still
-   needed" above) — do a real Wake-on-LAN test (power off a workstation,
-   click WAKE, confirm it boots) for at least one of them; the code path
-   is verified up to the point of sending the packet, but nothing has
-   actually woken real hardware yet.
-4. **Change the admin password** — `admin`/`admin` was only ever meant as
+1. **Wake-on-LAN real-hardware test — ON HOLD (2026-08-15), deprioritized
+   by user.** Tested against `COMP-01` and `CGI-DUC`: the server confirms
+   `{"sent": true}` for every wake request (magic packet construction +
+   UDP broadcast is verified working, not a bug in this app), but neither
+   machine actually powered on. Both use the same NIC family
+   (`HPE Ethernet 10Gb 2-port 561FLR-T`, a FlexibleLOM card) for their
+   studio-LAN connection — investigated live: `CGI-DUC` had "Wake on
+   PCIe" enabled in BIOS and still didn't wake. Suspected causes, not yet
+   confirmed one way or the other: (a) this NIC/driver may not expose a
+   "Wake on Magic Packet" option at all (check Device Manager → NIC →
+   Advanced tab — if the option isn't listed, the card doesn't support
+   it), (b) HPE boards often use a distinct BIOS setting
+   (`S5 Wake on LAN` under Advanced Power Management, separate from
+   generic "Wake on PCIe"), (c) Windows Fast Startup can interfere, (d) a
+   BIOS change may need one full Windows boot + clean shutdown cycle
+   before it takes effect. **User asked to set this aside for now** —
+   pick back up by checking (a) first, since that determines whether this
+   is even possible on the current hardware without moving the studio-LAN
+   cable to a different (WOL-capable) NIC.
+2. **Change the admin password** — `admin`/`admin` was only ever meant as
    a throwaway first-boot placeholder (M6 login confirmed working live
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
