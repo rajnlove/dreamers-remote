@@ -4,7 +4,8 @@ Last updated: 2026-08-15
 
 ## Current milestone
 
-**MILESTONES 1-5 COMPLETE.** Next up: **M6 — Authentication**.
+**MILESTONES 1-5 COMPLETE. M6 (Authentication) code deployed
+(2026-08-15), pending user login confirmation** — see "In progress" below.
 
 ## Completed
 
@@ -89,10 +90,25 @@ Static review of all M6 files done (no local Node/npm available to run
 `tsc`/tests directly — CI's `npm run build` inside `docker/web.Dockerfile`
 is the real gate). No issues found.
 
-Remaining before deploy: `vncgi-remote-server`'s Dockge env vars need
-`ADMIN_USERNAME=admin` / `ADMIN_PASSWORD=admin` added (currently has
-`APP_PORT`, `DATABASE_FILE` only), then redeploy `vncgi-remote-server`
-AND `vncgi-remote-web` (Update button) and log in for real to confirm.
+**DEPLOYED (2026-08-15)**: `vncgi-remote-server` Dockge env vars now
+include `ADMIN_USERNAME=admin`, `ADMIN_PASSWORD=admin`, and a freshly
+generated `SESSION_SECRET` (64-char random hex, replacing the insecure
+dev default) — added via Dockge's compose editor, deployed with the
+"Deploy" button (container recreated, confirmed `running` and `GET
+/health` returns `200 {"status":"ok"}`). `vncgi-remote-web` updated to
+the latest image via the "Update" button (nginx workers restarted).
+`http://192.29.11.92:8000` confirmed live-rendering the new login page
+(USERNAME/PASSWORD fields, LOG IN button) instead of the old dashboard.
+
+**Not yet verified**: actually submitting `admin`/`admin` and confirming
+a session is created — per agent policy, credentials/passwords are never
+entered by the agent even when user-supplied, same rule already applied
+in M4 for the VNC password. **User needs to log in for real** at
+`http://192.29.11.92:8000` to confirm the full flow, then **change the
+password** (procedure: update `ADMIN_PASSWORD` in Dockge env vars, then
+either delete the `users` table row or wipe the SQLite file so
+`seedAdminUser` reseeds on next restart — no in-app change-password flow
+exists yet).
 
 **Known easy-to-miss gotcha already solved once, don't redo the mistake**:
 CORS changed from `Access-Control-Allow-Origin: *` to reflecting
@@ -373,11 +389,15 @@ Until provided, nothing depends on a guessed value.
    off a workstation, click WAKE, confirm it boots) — the code path is
    verified up to the point of sending the packet, but nothing has
    actually woken real hardware yet.
-4. Start M6 (authentication): single admin account, hashed password
-   (use a real library — e.g. `bcrypt`/`argon2`, per
-   [CLAUDE.md](../CLAUDE.md)'s "don't write your own crypto" rule),
-   sessions. Right now the dashboard and remote access have zero access
-   control — anyone on the LAN can reach `http://192.29.11.92:8000`.
+4. **M6 deployed (2026-08-15), needs user confirmation**: log in for real
+   at `http://192.29.11.92:8000` with `admin`/`admin` to confirm the full
+   auth flow works end-to-end (server side and page rendering already
+   verified; actual credential submission left to the user per agent
+   policy — see "In progress" above).
+5. **Change the admin password** after confirming login works — `admin`/
+   `admin` was only ever meant as a first-boot placeholder. No in-app
+   change-password flow exists yet; see the procedure noted in "In
+   progress" above.
 
 ## Important commands
 
