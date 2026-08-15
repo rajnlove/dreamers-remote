@@ -38,13 +38,68 @@ Last updated: 2026-08-15
   browser setting, not persisted — **M4's `/remote/:id` page should default
   to Local Scaling** so users don't have to set it manually each time.
 
-## In progress
+## In progress — M6 Authentication (mid-implementation, 2026-08-15)
 
-**M6 — Authentication** not yet started. Anyone on the LAN who can reach
-`http://192.29.11.92:8000` can see the dashboard and remote into any
-workstation — no login, no sessions. Per [ROADMAP.md](ROADMAP.md), M6 adds
-a single admin account (hashed password, sessions); M7 (permissions) and
-M8 (audit log) come after that.
+**State: code written locally, NOT committed/pushed, NOT deployed.**
+Server side fully verified on TrueNAS (typecheck clean, 24/24 tests pass,
+build clean). Web side files written locally but web build not yet
+re-verified after the last edit. Whoever resumes this should: verify web
+build, then `git add -A && git commit && git push`, wait for CI, then
+follow the deploy steps below.
+
+**Design**: single admin account seeded from env vars on first boot
+(`ADMIN_USERNAME`/`ADMIN_PASSWORD`), password hashed with Node's built-in
+`crypto.scrypt` (no new native dependency), `express-session` for cookie
+sessions (MemoryStore — fine for one instance, no Redis). Both the REST
+API (`requireAuth` middleware) and the `/ws/vnc/:id` proxy (manually
+invoking the same `sessionMiddleware` inside the raw `upgrade` handler,
+since that bypasses Express's normal pipeline) are protected — protecting
+only the REST side would leave the VNC proxy reachable by guessing a
+small workstation id.
+
+**Files changed (all local only as of this writing)**:
+- New: `server/src/auth/{password,password.test,users,session,middleware}.ts`,
+  `server/src/api/auth.ts`, `web/src/api/auth.ts`, `web/src/pages/Login.tsx`.
+- Modified: `server/src/database/db.ts` (added `users` table),
+  `server/src/config/env.ts` (added `sessionSecret`/`adminUsername`/
+  `adminPassword`), `server/src/remote/wsProxy.ts` (session check before
+  upgrade), `server/src/index.ts` (session middleware, CORS now reflects
+  origin + credentials instead of `*`, mounts `/api/auth`, protects
+  `/api/workstations`, seeds admin on boot), `server/package.json` (added
+  `express-session` + `@types/express-session`, test script includes
+  `src/auth/*.test.ts`), `.env.example` (added `ADMIN_USERNAME`/
+  `ADMIN_PASSWORD`), `web/src/App.tsx` (auth-gated routing, `/login`
+  route), `web/src/pages/Dashboard.tsx` (takes `user`/`onLogout` props,
+  logout button), `web/src/api/workstations.ts` (`credentials: "include"`
+  on all requests), `web/src/styles.css` (`.login-*`, `.dashboard-header`,
+  `.dashboard-user` rules).
+
+**Hard blocker RESOLVED (2026-08-15)**: user provided `admin`/`admin` as
+the initial `ADMIN_USERNAME`/`ADMIN_PASSWORD`, explicitly as a throwaway
+first-login credential — **user asked to be reminded to change it after
+first login.** Whoever is at the keyboard when this is deployed: nag the
+user to change it. There's no in-app "change password" flow yet (V1 has
+no user-management UI at all, single seeded account only), so "changing
+it" means updating `ADMIN_PASSWORD` in Dockge's env vars and wiping the
+`users` table row (or the whole SQLite file) so `seedAdminUser` reseeds
+on next boot — not elegant, but that's the real procedure until a
+change-password endpoint exists.
+
+Static review of all M6 files done (no local Node/npm available to run
+`tsc`/tests directly — CI's `npm run build` inside `docker/web.Dockerfile`
+is the real gate). No issues found.
+
+Remaining before deploy: `vncgi-remote-server`'s Dockge env vars need
+`ADMIN_USERNAME=admin` / `ADMIN_PASSWORD=admin` added (currently has
+`APP_PORT`, `DATABASE_FILE` only), then redeploy `vncgi-remote-server`
+AND `vncgi-remote-web` (Update button) and log in for real to confirm.
+
+**Known easy-to-miss gotcha already solved once, don't redo the mistake**:
+CORS changed from `Access-Control-Allow-Origin: *` to reflecting
+`req.headers.origin` + `Access-Control-Allow-Credentials: true` — required
+for cookies to work cross-port (dashboard :8000, API :8080). Session
+cookie is `sameSite: "lax", secure: false` deliberately (plain HTTP, same
+IP different ports counts as same-site for SameSite purposes).
 
 ## Completed (M5 detail)
 

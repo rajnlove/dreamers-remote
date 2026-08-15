@@ -2,7 +2,7 @@ import type { Workstation, WorkstationStatus } from "../types/workstation";
 import { API_BASE_URL } from "./config";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, init);
+  const res = await fetch(`${API_BASE_URL}${path}`, { credentials: "include", ...init });
   if (!res.ok) {
     let message = `Request to ${path} failed: ${res.status}`;
     try {

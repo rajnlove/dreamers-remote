@@ -1,5 +1,6 @@
 import net from "node:net";
 import type { IncomingMessage, Server as HttpServer } from "node:http";
+import type { Request, RequestHandler, Response } from "express";
 import WebSocket, { WebSocketServer } from "ws";
 import { getWorkstation } from "../workstation/repository.js";
 
@@ -8,7 +9,16 @@ const VNC_WS_PATH_RE = /^\/ws\/vnc\/(\d+)$/;
 // Browser never supplies a host/IP — only a workstationId in the URL.
 // The target IP:port is resolved here from the database. See
 // docs/ARCHITECTURE.md and docs/SECURITY.md.
-export function setupVncProxy(server: HttpServer): void {
+//
+// sessionMiddleware is the same instance the Express app uses. This
+// upgrade handler runs outside Express's normal request pipeline (raw
+// http "upgrade" event, no res object), but express-session only reads
+// req.headers.cookie and attaches req.session — it works fine invoked
+// directly like this. That's why req/res below are cast through unknown
+// rather than typed as IncomingMessage/{}: they don't structurally match
+// Express's Request/Response, but express-session only touches the
+// subset of properties that actually exist here.
+export function setupVncProxy(server: HttpServer, sessionMiddleware: RequestHandler): void {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req: IncomingMessage, socket, head) => {
@@ -19,16 +29,25 @@ export function setupVncProxy(server: HttpServer): void {
       return;
     }
 
-    const id = Number(match[1]);
-    const workstation = getWorkstation(id);
-    if (!workstation || !workstation.enabled) {
-      socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
-      socket.destroy();
-      return;
-    }
+    const sessionReq = req as unknown as Request;
+    sessionMiddleware(sessionReq, {} as unknown as Response, () => {
+      if (!sessionReq.session?.userId) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
 
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      bridgeToVnc(ws, workstation.ip, workstation.vnc_port);
+      const id = Number(match[1]);
+      const workstation = getWorkstation(id);
+      if (!workstation || !workstation.enabled) {
+        socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        bridgeToVnc(ws, workstation.ip, workstation.vnc_port);
+      });
     });
   });
 }
