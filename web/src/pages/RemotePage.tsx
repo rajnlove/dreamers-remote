@@ -9,14 +9,20 @@ type ConnState = "connecting" | "connected" | "disconnected";
 // "fit": whole framebuffer (all monitors, if the workstation has more than
 // one) scaled to fit the viewport — readable at a glance, but multi-monitor
 // desktops get squashed too small to click precisely.
-// "actual": native resolution, drag to pan — legible on multi-monitor
-// setups at the cost of not seeing everything at once.
+// "actual": native resolution. noVNC's own screen container is already a
+// plain scrollable div (overflow: auto) whenever the canvas is bigger than
+// it — turning scaleViewport off is enough to get that for free, so panning
+// is native browser scroll (wheel/trackpad/scrollbar), not a custom drag
+// gesture. Deliberately NOT using noVNC's clipViewport/dragViewport option:
+// that path re-implements panning via canvas redraws and, when it doesn't
+// work, leaves you with a zoomed view and no way to reach the rest — worse
+// than just not having the feature. Native scroll can't have that failure
+// mode. Bonus: plain click-drag on the canvas still goes straight to the
+// remote session, unlike dragViewport mode which hijacks it for panning.
 type ZoomMode = "fit" | "actual";
 
 function applyZoomMode(rfb: RFB, mode: ZoomMode): void {
   rfb.scaleViewport = mode === "fit";
-  rfb.clipViewport = mode === "actual";
-  rfb.dragViewport = mode === "actual";
 }
 
 export default function RemotePage() {
@@ -125,9 +131,9 @@ export default function RemotePage() {
           <button
             className="btn"
             onClick={handleToggleZoom}
-            title="Multi-monitor desktops: switch to 100% and drag to pan"
+            title="Multi-monitor desktops: switch to 100% and scroll (wheel/trackpad/scrollbar) to see the rest"
           >
-            {zoomMode === "fit" ? "100% (DRAG TO PAN)" : "FIT TO SCREEN"}
+            {zoomMode === "fit" ? "100% (SCROLL TO PAN)" : "FIT TO SCREEN"}
           </button>
           {connState === "connected" ? (
             <button className="btn" onClick={handleDisconnect}>

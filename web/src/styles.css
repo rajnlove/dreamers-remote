@@ -204,7 +204,7 @@ body {
   flex: 1;
   background: black;
   position: relative;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .password-overlay {
