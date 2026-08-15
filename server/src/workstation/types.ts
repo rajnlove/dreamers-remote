@@ -10,6 +10,13 @@ export interface Workstation {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  // Phase 2 (P2-5) — set by the Agent via /api/agent/register and
+  // /api/agent/heartbeat, never by the workstation CRUD API (not part of
+  // WorkstationInput below).
+  agent_id: string | null;
+  last_seen: string | null;
+  agent_version: string | null;
+  os: string | null;
 }
 
 export interface WorkstationInput {

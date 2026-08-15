@@ -14,8 +14,8 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-5 COMPLETE (2026-08-15) — full live end-to-end
-verification passed.**
+**MILESTONE P2-6 (2026-08-15) — code complete, pending build/deploy
+verification.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -218,9 +218,43 @@ verification passed.**
     Worth remembering if `192.29.11.92` seems to vanish again: check
     `Get-NetAdapter` locally before assuming the server is down.
 
-Next: **P2-6** (Dashboard
-integration — show metrics on workstation cards, `agentOnline` derived
-from heartbeat freshness, must not touch the existing Remote button/flow).
+- **P2-6 (code complete, 2026-08-15)** — Dashboard integration:
+  - **Server**: `GET /api/workstations/status` now returns `vncOnline`
+    (unchanged TCP probe, renamed from `online`), `agentOnline`
+    (`agent/onlineStatus.ts` — heartbeat freshness, 20s threshold),
+    `lastSeen`, and `metrics` (the cached snapshot from P2-5's
+    in-memory cache, `null` if the workstation has no Agent paired or
+    it hasn't sent a heartbeat recently). Two independent signals, not
+    one boolean, per the Phase 2 spec — a workstation can be `vncOnline`
+    without `agentOnline` (no Agent installed yet) or vice versa
+    (Agent up, UltraVNC down). `machineOnline` (a third signal from the
+    original spec, roughly "is the box powered on regardless of any
+    service") was **not** added — no cheap reliable way to get it in
+    this Docker/Node environment (ICMP needs raw sockets, ARP is more
+    machinery than this V1-scale app needs); `vncOnline` already serves
+    as the practical "is it reachable" signal.
+  - **Security fix caught along the way**: `GET /api/workstations/:id`
+    (and the list endpoint) were using `SELECT *`, which — once P2-5
+    added `agent_credential_hash` to the `workstations` table — started
+    leaking that hash in API responses to any logged-in user (confirmed
+    happening during the P2-5 live test). Fixed by switching
+    `workstation/repository.ts` to an explicit column list that excludes
+    it; nothing depends on the hash existing outside `agentRepository.ts`.
+  - **Web**: `WorkstationCard` now renders CPU/RAM/GPU (one bar per GPU
+    for multi-GPU machines)/VRAM+temp bars when `agentOnline` and
+    metrics exist, plus a running-apps list (only the apps actually
+    `running: true`, from the monitored-process list); an "AGENT"
+    badge shows agent online/offline separately from the existing VNC
+    online dot. **Existing REMOTE/WAKE button logic is untouched** —
+    still driven by `vncOnline` alone, exactly as before P2-6.
+  - **Not yet build-verified**: same as P2-5, no Node/npm locally: CI
+    is the real gate. Not yet deployed/live-tested either — needs both
+    `vncgi-remote-server` (API changes) and `vncgi-remote-web`
+    (dashboard changes) redeployed via Dockge, unlike P2-1 through P2-5
+    which only touched the server or the agent alone.
+
+Next: after CI + live verification, **P2-7** (workstation detail page,
+`/workstations/:id`).
 
 ## Completed
 
@@ -658,10 +692,11 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Start Phase 2 P2-6** (Dashboard integration — show metrics on
-   workstation cards, `agentOnline` derived from heartbeat freshness,
-   must not touch the existing Remote button/flow) — P2-5 is fully
-   live-verified and done, see "Phase 2 — Dreamers Agent" above.
+3. **Deploy P2-6 and verify live** — push, wait for CI, redeploy BOTH
+   `vncgi-remote-server` and `vncgi-remote-web` via Dockge (**Update**,
+   not just Deploy), confirm the dashboard shows real CPU/RAM/GPU
+   metrics for `CGI-Render` (the one workstation currently paired with
+   an Agent) and that REMOTE/WAKE still work unchanged.
 
 ## Important commands
 

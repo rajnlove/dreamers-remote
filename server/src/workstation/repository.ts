@@ -3,6 +3,14 @@ import { db } from "../database/db.js";
 import { ConflictError } from "./errors.js";
 import type { Workstation, WorkstationInput, WorkstationUpdateInput } from "./types.js";
 
+// Explicit column list, not SELECT * — agent_credential_hash lives in the
+// same table (see database/db.ts) but must never leave the server, not
+// even hashed, since there's no reason for a dashboard client to see it.
+const PUBLIC_COLUMNS = `
+  id, name, hostname, ip, mac_address, vnc_port, location, description,
+  enabled, created_at, updated_at, agent_id, last_seen, agent_version, os
+`;
+
 interface WorkstationRow {
   id: number;
   name: string;
@@ -15,6 +23,10 @@ interface WorkstationRow {
   enabled: number;
   created_at: string;
   updated_at: string;
+  agent_id: string | null;
+  last_seen: string | null;
+  agent_version: string | null;
+  os: string | null;
 }
 
 function rowToWorkstation(row: WorkstationRow): Workstation {
@@ -22,12 +34,14 @@ function rowToWorkstation(row: WorkstationRow): Workstation {
 }
 
 export function listWorkstations(): Workstation[] {
-  const rows = db.prepare("SELECT * FROM workstations ORDER BY name").all() as WorkstationRow[];
+  const rows = db.prepare(`SELECT ${PUBLIC_COLUMNS} FROM workstations ORDER BY name`).all() as WorkstationRow[];
   return rows.map(rowToWorkstation);
 }
 
 export function getWorkstation(id: number): Workstation | undefined {
-  const row = db.prepare("SELECT * FROM workstations WHERE id = ?").get(id) as WorkstationRow | undefined;
+  const row = db.prepare(`SELECT ${PUBLIC_COLUMNS} FROM workstations WHERE id = ?`).get(id) as
+    | WorkstationRow
+    | undefined;
   return row ? rowToWorkstation(row) : undefined;
 }
 
@@ -70,7 +84,14 @@ export function updateWorkstation(id: number, input: WorkstationUpdateInput): Wo
              enabled = @enabled, updated_at = @updated_at
          WHERE id = @id`,
     ).run({
-      ...merged,
+      id: merged.id,
+      name: merged.name,
+      hostname: merged.hostname,
+      ip: merged.ip,
+      mac_address: merged.mac_address,
+      vnc_port: merged.vnc_port,
+      location: merged.location,
+      description: merged.description,
       enabled: merged.enabled ? 1 : 0,
       updated_at: now,
     });

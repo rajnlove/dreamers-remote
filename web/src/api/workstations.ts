@@ -20,6 +20,7 @@ export function listWorkstations(): Promise<Workstation[]> {
   return request<Workstation[]>("/api/workstations");
 }
 
+/** vncOnline (TCP probe) + agentOnline (heartbeat freshness) + cached metrics per workstation, polled every 5s by Dashboard. */
 export function getWorkstationsStatus(): Promise<WorkstationStatus[]> {
   return request<WorkstationStatus[]>("/api/workstations/status");
 }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import WorkstationCard from "../components/WorkstationCard";
 import { getWorkstationsStatus, listWorkstations } from "../api/workstations";
 import { logout, type CurrentUser } from "../api/auth";
-import type { Workstation } from "../types/workstation";
+import type { Workstation, WorkstationStatus } from "../types/workstation";
 
 const STATUS_POLL_MS = 5000;
 
@@ -13,7 +13,7 @@ interface Props {
 
 export default function Dashboard({ user, onLogout }: Props) {
   const [workstations, setWorkstations] = useState<Workstation[] | null>(null);
-  const [statusById, setStatusById] = useState<Map<number, boolean>>(new Map());
+  const [statusById, setStatusById] = useState<Map<number, WorkstationStatus>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function Dashboard({ user, onLogout }: Props) {
       try {
         const results = await getWorkstationsStatus();
         if (cancelled) return;
-        setStatusById(new Map(results.map((r) => [r.id, r.online])));
+        setStatusById(new Map(results.map((r) => [r.id, r])));
         setError(null);
       } catch (err) {
         if (!cancelled) {
@@ -76,7 +76,7 @@ export default function Dashboard({ user, onLogout }: Props) {
       {workstations !== null && workstations.length > 0 && (
         <div className="grid">
           {workstations.map((ws) => (
-            <WorkstationCard key={ws.id} workstation={ws} online={statusById.get(ws.id)} />
+            <WorkstationCard key={ws.id} workstation={ws} status={statusById.get(ws.id)} />
           ))}
         </div>
       )}

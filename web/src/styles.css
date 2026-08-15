@@ -280,3 +280,91 @@ body {
 .dashboard-user .btn {
   flex: none;
 }
+
+/* Phase 2 (P2-6) — agent metrics on workstation cards */
+
+.agent-badge {
+  margin-left: auto;
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.agent-badge-online {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.agent-badge-offline {
+  color: var(--text-dim);
+}
+
+.metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 3rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.metric-label {
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+.metric-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.metric-bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.metric-value {
+  text-align: right;
+  color: var(--text);
+  min-width: 2.5rem;
+}
+
+.metric-value-wide {
+  grid-column: 2 / span 2;
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.apps {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.app-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.app-row .dot {
+  width: 6px;
+  height: 6px;
+}

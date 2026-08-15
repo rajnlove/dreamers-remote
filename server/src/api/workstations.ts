@@ -11,6 +11,8 @@ import { validateCreateInput, validateUpdateInput } from "../workstation/validat
 import { NotFoundError, ValidationError } from "../workstation/errors.js";
 import { sendMagicPacket } from "../wol/wol.js";
 import { createRegistrationToken } from "../agent/registrationTokens.js";
+import { isAgentOnline } from "../agent/onlineStatus.js";
+import { getMetrics } from "../agent/metricsCache.js";
 
 export const workstationsRouter = Router();
 
@@ -28,13 +30,22 @@ workstationsRouter.get("/", (_req, res) => {
   res.json(listWorkstations());
 });
 
+// Two independent online signals, not one boolean (see docs/ARCHITECTURE.md
+// Phase 2 section): vncOnline is the pre-existing TCP probe to vnc_port;
+// agentOnline is derived from Agent heartbeat freshness (P2-5). A
+// workstation can be vncOnline without agentOnline (no Agent installed
+// yet) or vice versa (Agent up, UltraVNC down) — the dashboard should
+// show both, not collapse them into one status.
 workstationsRouter.get("/status", async (_req, res) => {
   const workstations = listWorkstations();
   const results = await Promise.all(
     workstations.map(async (ws) => ({
       id: ws.id,
       name: ws.name,
-      online: ws.enabled ? await checkTcpPort(ws.ip, ws.vnc_port) : false,
+      vncOnline: ws.enabled ? await checkTcpPort(ws.ip, ws.vnc_port) : false,
+      agentOnline: isAgentOnline(ws.last_seen),
+      lastSeen: ws.last_seen,
+      metrics: getMetrics(ws.id) ?? null,
     })),
   );
   res.json(results);
