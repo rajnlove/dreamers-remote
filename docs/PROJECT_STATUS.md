@@ -259,6 +259,24 @@ are independent of Phase 2 — Phase 2 does not block on them.
     metrics section, exactly as designed; **REMOTE/WAKE buttons work
     unchanged on all 4 cards** — confirms P2-6 didn't regress the
     existing VNC flow.
+- **Full fleet deployed (2026-08-15)**: user built the agent, packaged
+  it as a zip (`agent/dist/` → `agent/DreamersAgent.zip`, both
+  gitignored — local packaging output, not committed), and installed +
+  registered it as a real Windows Service on all 4 workstations
+  (previously only `CGI-Render` had been tested, and only via
+  `dotnet run`, not an installed service). `GET
+  /api/workstations/status` confirms all 4 report `agentOnline: true`
+  with live, correct, and very different real hardware: `CGI-01`
+  (host `RAJN`) — i9-14900K, RTX 5090, 128GB RAM; `CGI-DUC` (host
+  `DAN075`) — Ryzen 9 9950X, RTX 5070 Ti, 190GB RAM; `CGI-Render` (host
+  `DESKTOP-FE5VNUN`) — i9-9900X, 2x RTX 3090, 65GB RAM; `COMP-01` (host
+  `CGIVN`) — i9-13900K, RTX 5070 Ti, 128GB RAM. Also improved the CLI
+  along the way: `DreamersAgent.exe install <token>` now does
+  install+register+start in one command (previously 3 separate
+  commands), and `agent/README.md` was corrected — the .NET SDK is only
+  needed on the machine that builds/publishes the agent, never on
+  target workstations (a self-contained publish needs nothing
+  pre-installed to run).
 
 Next: **P2-7** (workstation detail page,
 `/workstations/:id`).
@@ -701,12 +719,7 @@ Until provided, nothing depends on a guessed value.
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
 3. **Start Phase 2 P2-7** (workstation detail page, `/workstations/:id`)
    — P2-6 is fully live-verified and done, see "Phase 2 — Dreamers
-   Agent" above. Note: `CGI-Render`'s Agent is only running via
-   `dotnet run` when someone manually starts it for a test — it is
-   **not installed as a persistent Windows Service yet** (agent policy:
-   the user needs to run `DreamersAgent.exe install` themselves, see
-   `agent/README.md`). Until then, its dashboard metrics will go stale
-   (AGENT badge dims) whenever nobody's actively running it.
+   Agent" above.
 
 ## Important commands
 
