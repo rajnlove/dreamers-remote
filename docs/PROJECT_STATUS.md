@@ -14,7 +14,8 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-2 COMPLETE (2026-08-15) — build+run-verified.**
+**MILESTONE P2-3 COMPLETE (2026-08-15) — build+run-verified against real
+dual-GPU hardware.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -61,8 +62,34 @@ are independent of Phase 2 — Phase 2 does not block on them.
   `CpuUsage=n/a (first sample)`, second tick showed a sane `3.2%`, RAM
   `12840/65210MB (19.7%)`, real OS caption/uptime.
 
-Next: **P2-3** (GPU/NVML monitoring, multi-GPU support, must not crash
-on non-NVIDIA machines).
+- **P2-3**: added `agent/Dreamers.Agent.Core/Metrics/GpuCollector.cs` +
+  `NvmlNativeMethods.cs` (P/Invoke bindings for the small NVML slice
+  needed: init, device count, handle-by-index, name, utilization,
+  memory info, temperature — no NuGet wrapper, matches this project's
+  low-dependency style). Supports multiple GPUs (`SystemMetricsSnapshot.Gpus`,
+  a list, never null). **Never crashes on a machine without an NVIDIA
+  GPU**: `nvmlInit_v2()` is wrapped in try/catch for
+  `DllNotFoundException` (no driver → no `nvml.dll` → this exception,
+  expected and handled) and `EntryPointNotFoundException` (driver too
+  old/new); either way `Collect()` just returns an empty list, exactly
+  like every other collector's failure mode via `MetricsCollector`'s
+  existing per-collector isolation.
+  **Verified against real hardware** on `CGI-Render` (this machine has
+  2x NVIDIA GeForce RTX 3090): `dotnet build` → 0 warnings/0 errors,
+  `dotnet test` → 14/14 passed (3 new GPU tests), `dotnet run` logged
+  both real GPUs correctly — `GPU0="NVIDIA GeForce RTX 3090" Util=0%
+  VRAM=374/24576MB (1.5%) Temp=37C | GPU1="NVIDIA GeForce RTX 3090"
+  Util=15-16% VRAM=904/24576MB (3.7%) Temp=44C` — matching the exact
+  multi-GPU scenario described in the Phase 2 spec. The "no GPU present"
+  fallback path itself was not exercised on real hardware (this machine
+  has GPUs) — it's covered by the `DllNotFoundException`/
+  `EntryPointNotFoundException` catch blocks and by
+  `GpuCollector_NeverThrows` in the test suite, but hasn't been run on
+  an actual non-NVIDIA machine. Worth a spot-check later if one becomes
+  available, not blocking.
+
+Next: **P2-4** (disk + process monitoring — local drives total/used/
+free, and a configurable list of monitored VFX process names).
 
 ## Completed
 
@@ -500,7 +527,7 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Start Phase 2 P2-3** (GPU/NVML monitoring) — P2-2 is
+3. **Start Phase 2 P2-4** (disk + process monitoring) — P2-3 is
    build+run-verified and done, see "Phase 2 — Dreamers Agent" above.
 
 ## Important commands

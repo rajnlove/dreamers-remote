@@ -6,8 +6,8 @@ using Microsoft.Extensions.Logging;
 namespace Dreamers.Agent;
 
 /// <summary>
-/// P2-2 scope: collects and logs CPU/RAM/OS/uptime on each tick. No
-/// server communication yet (P2-5) — this only proves the collectors
+/// P2-2/P2-3 scope: collects and logs CPU/RAM/OS/uptime/GPU on each tick.
+/// No server communication yet (P2-5) — this only proves the collectors
 /// work and log correctly, locally.
 /// </summary>
 public sealed class Worker : BackgroundService
@@ -52,6 +52,19 @@ public sealed class Worker : BackgroundService
                     snapshot.Memory?.UsedMb ?? 0,
                     snapshot.Memory?.TotalMb ?? 0,
                     snapshot.Memory?.UsagePercent.ToString("F1") ?? "n/a");
+
+                if (snapshot.Gpus.Count > 0)
+                {
+                    var gpuSummary = string.Join(" | ", snapshot.Gpus.Select(g =>
+                        $"GPU{g.Index}=\"{g.Name}\" Util={g.UtilizationPercent:F0}% " +
+                        $"VRAM={g.VramUsedMb}/{g.VramTotalMb}MB ({g.VramUsagePercent:F1}%) " +
+                        $"Temp={(g.TemperatureCelsius is { } t ? $"{t}C" : "n/a")}"));
+                    _logger.LogInformation("GPUs: {GpuSummary}", gpuSummary);
+                }
+                else
+                {
+                    _logger.LogDebug("No GPUs reported (no NVIDIA GPU or NVML unavailable)");
+                }
             }
             catch (Exception ex)
             {

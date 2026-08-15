@@ -14,17 +14,23 @@ public sealed class MetricsCollector
     private readonly ILogger<MetricsCollector> _logger;
     private readonly CpuCollector _cpuCollector;
     private readonly MemoryCollector _memoryCollector;
+    private readonly GpuCollector _gpuCollector;
 
     public MetricsCollector(ILogger<MetricsCollector> logger)
-        : this(logger, new CpuCollector(), new MemoryCollector())
+        : this(logger, new CpuCollector(), new MemoryCollector(), new GpuCollector())
     {
     }
 
-    internal MetricsCollector(ILogger<MetricsCollector> logger, CpuCollector cpuCollector, MemoryCollector memoryCollector)
+    internal MetricsCollector(
+        ILogger<MetricsCollector> logger,
+        CpuCollector cpuCollector,
+        MemoryCollector memoryCollector,
+        GpuCollector gpuCollector)
     {
         _logger = logger;
         _cpuCollector = cpuCollector;
         _memoryCollector = memoryCollector;
+        _gpuCollector = gpuCollector;
     }
 
     public SystemMetricsSnapshot Collect()
@@ -74,6 +80,19 @@ public sealed class MetricsCollector
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Memory collector failed");
+        }
+
+        try
+        {
+            snapshot.Gpus = _gpuCollector.Collect();
+        }
+        catch (Exception ex)
+        {
+            // Expected to be the flakiest collector (missing driver, NVML
+            // version mismatch, GPU in a weird power state) — must never
+            // affect CPU/RAM/OS reporting, which is why this is last and
+            // still wrapped just like everything else.
+            _logger.LogWarning(ex, "GPU collector failed");
         }
 
         return snapshot;
