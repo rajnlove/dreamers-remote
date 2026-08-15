@@ -100,6 +100,25 @@ the latest image via the "Update" button (nginx workers restarted).
 `http://192.29.11.92:8000` confirmed live-rendering the new login page
 (USERNAME/PASSWORD fields, LOG IN button) instead of the old dashboard.
 
+**Bug found and fixed post-deploy (2026-08-15)**: user hit "Failed to
+fetch" on the login page. Root cause — Dockge's "Deploy" button (used
+right after editing the compose env vars) recreates the container from
+whatever image is already cached locally; it does **not** pull the new
+image from GHCR. `vncgi-remote-server` was still running the pre-M6
+image (wildcard `Access-Control-Allow-Origin: *`), which browsers
+reject for credentialed requests — every `fetch(..., {credentials:
+"include"})` failed CORS before even reaching the server. Fixed by
+clicking **Update** (not just Deploy) on `vncgi-remote-server`, which
+pulls the latest image first. Confirmed via curl (`OPTIONS
+/api/auth/me` now returns `Access-Control-Allow-Origin:
+http://192.29.11.92:8000` + `Access-Control-Allow-Credentials: true`,
+not `*`) and via an in-page `fetch` from the real browser (`401
+{"error":"Not authenticated"}` — correct pre-login response, no CORS
+error). **Lesson for future deploys: always use Update (pulls image),
+not Deploy (recreates from cache), when a new image was just pushed to
+GHCR** — Deploy is only sufficient for compose/env-var-only changes to
+a stack whose image hasn't changed.
+
 **Not yet verified**: actually submitting `admin`/`admin` and confirming
 a session is created — per agent policy, credentials/passwords are never
 entered by the agent even when user-supplied, same rule already applied
