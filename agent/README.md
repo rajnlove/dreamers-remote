@@ -5,82 +5,97 @@ and [../docs/ROADMAP.md](../docs/ROADMAP.md#phase-2--dreamers-agent-monitoring--
 for the design. Does not modify or replace the UltraVNC/noVNC remote
 desktop path — a separate process, separate concern.
 
-## Current milestone: P2-1 (skeleton)
+## Status: P2-0 through P2-6 complete, live-verified
 
-What exists right now:
+- **Metrics collected every `updateIntervalSeconds` (default 5)**: CPU,
+  RAM, OS, uptime, GPU (NVIDIA/NVML, multi-GPU), disks, monitored VFX
+  process status — all logged locally regardless of server connectivity.
+- **Registration + heartbeat**: once paired with the server, the same
+  snapshot is sent as a heartbeat; the dashboard shows it live.
+- **Not yet implemented**: Restart/Shutdown commands (P2-8), a
+  workstation detail page (P2-7).
 
-- `Dreamers.Agent.Core` — `AgentConfig`/`AgentConfigStore` (identity +
-  config persistence), `RollingFileLogger*` (daily-rotating file logger,
-  14-day retention).
-- `Dreamers.Agent` — the actual Worker Service (`DreamersAgent.exe`).
-  `Program.cs` handles `install`/`uninstall`/`start`/`stop` as thin
-  wrappers around `sc.exe`, otherwise builds and runs the service host.
-  `Worker.cs` just ticks on `UpdateIntervalSeconds` and logs — no
-  metrics collection yet (that's P2-2+).
-- `Dreamers.Agent.Tests` — unit tests for config persistence and the
-  file logger.
+## Building — only needed on ONE machine, not on every workstation
 
-No system metrics, no GPU monitoring, no server communication, no
-commands yet — those are later milestones (P2-2 through P2-9 in
-`ROADMAP.md`).
-
-## Build / test — this code has NOT been build-verified yet
-
-This code was written on a machine without the .NET SDK installed, so it
-has not been compiled or run. Follow this exact procedure on a machine
-with the .NET 8 SDK to verify it, and report back anything that doesn't
-match:
+**The .NET 8 SDK is only required on whichever machine builds/publishes
+the agent — never on the target workstations that just run it.** A
+`--self-contained` publish (below) bundles the .NET runtime into the
+output folder, so a target workstation needs nothing pre-installed: no
+SDK, no separate .NET Runtime, nothing. Copy the published folder over
+and run the `.exe` directly.
 
 ```powershell
-# 1. Install the SDK if not already present (run yourself — the agent
-#    building this code does not install software on your machine):
+# One-time, on the build machine only:
 winget install Microsoft.DotNet.SDK.8
 
-# 2. From the repo root:
 cd agent
 dotnet build Dreamers.Agent.sln
-
-# 3. Run the unit tests:
 dotnet test Dreamers.Agent.sln
-# Expect: 6 tests passed (4 in AgentConfigStoreTests, 2 in RollingFileLoggerTests)
-
-# 4. Run the agent interactively (not installed as a service yet) to
-#    confirm it starts, logs to console AND to a file, and picks up config:
-dotnet run --project Dreamers.Agent
-# Expect console output like:
-#   info: Dreamers.Agent.Worker[0]
-#         Dreamers Agent starting. AgentId=<uuid> ServerUrl=https://192.29.11.92:8080 IntervalSeconds=5
-# Ctrl+C to stop. Then check:
-#   type C:\ProgramData\DreamersRemote\agent.json
-#   type C:\ProgramData\DreamersRemote\logs\agent-<today's date, yyyyMMdd>.log
-# agent.json should have a real GUID as agentId. Run it again — agentId
-# must be the SAME value (persistence, not regenerated).
+# Expect: 26 tests passed
 ```
 
-## Install as a Windows Service (once the above all checks out)
+To see it running locally without installing a service yet:
 
 ```powershell
-# Publish a self-contained build (adjust RID if not x64):
+dotnet run --project Dreamers.Agent
+```
+
+## Deploying to a workstation
+
+**1. Publish once, on the build machine** (adjust `-r` if not x64):
+
+```powershell
+cd agent
 dotnet publish Dreamers.Agent -c Release -r win-x64 --self-contained true -o .\publish
+```
 
-# Copy .\publish\DreamersAgent.exe (+ its output folder) to the target
-# workstation, then from an elevated (Administrator) PowerShell there:
-.\DreamersAgent.exe install
-.\DreamersAgent.exe start
+This produces a self-contained `publish\` folder (`DreamersAgent.exe` +
+its dependencies, no SDK/runtime needed to run it elsewhere).
 
-# Verify:
+**2. Copy the whole `publish\` folder** to the target workstation —
+network share, USB, whatever's convenient. The target machine does not
+need .NET installed at all.
+
+**3. On the dashboard**, an admin issues a registration token for that
+workstation: `POST /api/workstations/:id/agent-token` (15-minute,
+single-use — see `docs/SECURITY.md`).
+
+**4. On the target workstation**, from an elevated (Administrator)
+PowerShell, inside the copied `publish\` folder:
+
+```powershell
+.\DreamersAgent.exe install <registration-token>
+```
+
+This single command creates the Windows Service, registers with the
+server using the token, and starts it. (Installing with no token also
+works — the service comes up and logs metrics locally, just doesn't
+send heartbeats until you separately run `.\DreamersAgent.exe register
+<token>` and restart it.)
+
+**5. Verify**:
+
+```powershell
 Get-Service DreamersAgent
 Get-Content C:\ProgramData\DreamersRemote\logs\agent-*.log -Tail 20
+```
 
-# To remove:
+`Get-Service` should show `Running`. Within a few seconds the
+workstation's dashboard card should show a green AGENT badge and live
+metrics.
+
+**To remove**:
+
+```powershell
 .\DreamersAgent.exe stop
 .\DreamersAgent.exe uninstall
 ```
 
-`install`/`start`/`stop`/`uninstall` require Administrator (creating/
-starting/stopping a Windows Service always does, regardless of this
-app) — running them from a non-elevated prompt will fail with an access
-denied error from `sc.exe`.
+`install`/`uninstall`/`start`/`stop`/`register` all require
+Administrator except `register` on its own (creating/starting/stopping
+a Windows Service always needs elevation; registering is just an HTTP
+call + writing a DPAPI-protected file, but `install` already needs
+elevation anyway so doing both in one elevated command is simplest).
 
 ## Config file
 
@@ -90,7 +105,7 @@ first run if missing:
 ```json
 {
   "agentId": "generated-uuid-do-not-edit",
-  "serverUrl": "https://192.29.11.92:8080",
+  "serverUrl": "http://192.29.11.92:8080",
   "updateIntervalSeconds": 5
 }
 ```
@@ -98,4 +113,14 @@ first run if missing:
 `agentId` is generated once and must never be edited or deleted (it's
 how the server tells this machine apart from any other — see
 `SECURITY.md`). `serverUrl` and `updateIntervalSeconds` are safe to
-hand-edit; restart the service after changing them.
+hand-edit; restart the service after changing them. Note: plain
+`http://`, not `https://` — the deployed server has no TLS cert
+configured (LAN-only V1).
+
+The agent credential (issued at registration) lives separately in
+`C:\ProgramData\DreamersRemote\credential.dat`, encrypted at rest via
+Windows DPAPI — never edit this file by hand.
+
+The monitored-process list lives in
+`C:\ProgramData\DreamersRemote\monitored_processes.json`, also created
+with sensible VFX-app defaults on first run; hand-editable.

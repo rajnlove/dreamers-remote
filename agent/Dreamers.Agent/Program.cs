@@ -13,6 +13,12 @@ using Microsoft.Extensions.Logging;
 const string ServiceName = "DreamersAgent";
 const string ServiceDisplayName = "Dreamers Remote Agent";
 
+if (args.Length > 0 && string.Equals(args[0], "install", StringComparison.OrdinalIgnoreCase))
+{
+    await HandleInstallAsync(args);
+    return;
+}
+
 if (args.Length > 0 && string.Equals(args[0], "register", StringComparison.OrdinalIgnoreCase))
 {
     await HandleRegisterAsync(args);
@@ -55,11 +61,54 @@ if (Environment.UserInteractive)
 var host = builder.Build();
 host.Run();
 
+// --- Install as a Windows Service, optionally pairing with the server in
+// the same step: DreamersAgent.exe install [registration-token]. Combines
+// what used to be 3 separate commands (install, register, start) into 1
+// for the common case — installing with no token still works (register
+// + start separately later), since some admins may want to double-check
+// the service came up cleanly before handing it a real credential.
+async Task HandleInstallAsync(string[] commandArgs)
+{
+    var exePath = Environment.ProcessPath;
+    if (string.IsNullOrEmpty(exePath))
+    {
+        Console.Error.WriteLine("Could not determine the agent's own executable path.");
+        return;
+    }
+
+    RunSc($"create {ServiceName} binPath= \"{exePath}\" DisplayName= \"{ServiceDisplayName}\" start= auto");
+    RunSc($"description {ServiceName} \"Collects workstation metrics and executes whitelisted management commands for Dreamers Remote.\"");
+    Console.WriteLine("Service installed.");
+
+    var token = commandArgs.Length > 1 ? commandArgs[1] : null;
+    if (!string.IsNullOrWhiteSpace(token))
+    {
+        if (!await TryRegisterAsync(token))
+        {
+            Console.WriteLine(
+                "Service installed but NOT registered — fix the issue above, then run " +
+                "\"DreamersAgent.exe register <token>\" followed by \"DreamersAgent.exe start\".");
+            return;
+        }
+    }
+    else
+    {
+        Console.WriteLine(
+            "No registration token provided — run \"DreamersAgent.exe register <token>\" " +
+            "whenever you have one; the service will collect and log metrics locally either way.");
+    }
+
+    RunSc($"start {ServiceName}");
+    Console.WriteLine("Service started.");
+}
+
 // --- One-time pairing: DreamersAgent.exe register <token>. The token
 // comes from an admin issuing it via POST /api/workstations/:id/agent-token
 // (see docs/SECURITY.md) and is single-use/short-lived — the credential
 // this returns is what gets stored (via DPAPI) and reused for every
-// heartbeat afterward.
+// heartbeat afterward. Kept as its own command (not just folded into
+// install) for re-registering an already-installed service, e.g. after
+// wiping the credential file.
 async Task HandleRegisterAsync(string[] commandArgs)
 {
     if (commandArgs.Length < 2 || string.IsNullOrWhiteSpace(commandArgs[1]))
@@ -68,6 +117,16 @@ async Task HandleRegisterAsync(string[] commandArgs)
         return;
     }
 
+    if (await TryRegisterAsync(commandArgs[1]))
+    {
+        Console.WriteLine("Restart the service to start sending heartbeats:");
+        Console.WriteLine("  DreamersAgent.exe stop");
+        Console.WriteLine("  DreamersAgent.exe start");
+    }
+}
+
+async Task<bool> TryRegisterAsync(string token)
+{
     var dir = AgentConfigStore.DefaultDataDirectory;
     var cfg = new AgentConfigStore(dir).LoadOrCreate();
 
@@ -76,37 +135,24 @@ async Task HandleRegisterAsync(string[] commandArgs)
 
     try
     {
-        var credential = await client.RegisterAsync(commandArgs[1]);
+        var credential = await client.RegisterAsync(token);
         new AgentCredentialStore(dir).Save(credential);
-        Console.WriteLine("Registered successfully. Restart the service to start sending heartbeats:");
-        Console.WriteLine("  DreamersAgent.exe stop");
-        Console.WriteLine("  DreamersAgent.exe start");
+        Console.WriteLine("Registered successfully.");
+        return true;
     }
     catch (Exception ex)
     {
         Console.Error.WriteLine($"Registration failed: {ex.Message}");
+        return false;
     }
 }
 
-// --- Self-install as a Windows Service, so the deliverable is just
-// "copy DreamersAgent.exe, run `DreamersAgent.exe install`" — no separate
-// installer/MSI needed. Wraps the built-in `sc.exe`, nothing custom.
+// --- uninstall/start/stop: thin wrappers around the built-in sc.exe,
+// nothing custom.
 bool TryHandleServiceCommand(string command)
 {
-    var exePath = Environment.ProcessPath;
-    if (string.IsNullOrEmpty(exePath))
-    {
-        Console.Error.WriteLine("Could not determine the agent's own executable path.");
-        return true;
-    }
-
     switch (command.ToLowerInvariant())
     {
-        case "install":
-            RunSc($"create {ServiceName} binPath= \"{exePath}\" DisplayName= \"{ServiceDisplayName}\" start= auto");
-            RunSc($"description {ServiceName} \"Collects workstation metrics and executes whitelisted management commands for Dreamers Remote.\"");
-            Console.WriteLine($"Installed. Start it with: DreamersAgent.exe start (or: sc start {ServiceName}).");
-            return true;
         case "uninstall":
             RunSc($"delete {ServiceName}");
             return true;
