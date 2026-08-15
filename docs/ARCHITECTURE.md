@@ -80,3 +80,47 @@ Single `docker-compose.yml` with two or three containers
 (`dreamers-server`, `dreamers-web`, optionally a `novnc` container — see
 [SETUP.md](SETUP.md) for the decision). Deployed on TrueNAS SCALE as a
 Custom App / Compose stack, LAN-only, not exposed to the internet.
+
+## Phase 2 — Dreamers Agent (monitoring + safe management)
+
+A second, independent subsystem layered on top of V1 — **does not replace
+or modify the VNC remote-desktop path above**. Each Windows workstation
+optionally runs `DreamersAgent.exe` as a Windows Service:
+
+```
+                  TRUENAS
+
+        Dreamers Remote Server
+                 |
+                 | HTTPS/WS (metrics, commands)   <- Agent subsystem (new)
+                 | -------------------------------
+                 | WS (/ws/vnc/:id, unchanged)     <- Remote-desktop path (V1)
+      +----------+----------+
+      |          |          |
+      v          v          v
+   COMP-01     CGI-01      FX-01
+ Dreamers     Dreamers    Dreamers      <- new
+ Agent        Agent       Agent
+ UltraVNC     UltraVNC    UltraVNC      <- unchanged
+```
+
+- **Agent** (`agent/Dreamers.Agent`, .NET 8 Worker Service): collects
+  CPU/RAM/GPU/disk/process metrics locally, sends periodic heartbeats,
+  executes a small whitelisted command set (`restart`, `shutdown`, ...).
+  Runs independently of UltraVNC — has no knowledge of VNC and never
+  touches the RFB/WS proxy path.
+- **Server-side**: new `/api/agent/*` routes (register, heartbeat),
+  authenticated by a separate agent token (not the user's session
+  cookie) — see [SECURITY.md](SECURITY.md) for the token design.
+  `workstations` table gains `agent_id`/`last_seen`/`agent_version`/`os`
+  columns. Current metrics are cached in memory, not written to SQLite
+  on every heartbeat (see `docs/PROJECT_STATUS.md` Phase 2 section for
+  why).
+- **Online/offline becomes three independent signals**, not one boolean:
+  `machineOnline` (reachability), `agentOnline` (heartbeat freshness),
+  `vncOnline` (the existing TCP connect probe to `vnc_port`, unchanged).
+- **Why this stays a separate subsystem**: so UltraVNC/noVNC can be
+  swapped for a different remote-desktop engine later (see V2 in
+  [ROADMAP.md](ROADMAP.md)) without touching the Agent, and vice versa —
+  monitoring/management must keep working even if the remote-desktop
+  transport changes.

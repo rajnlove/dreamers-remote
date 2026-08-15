@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dreamers.Agent.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Not just .Abstractions: RollingFileLoggerExtensions uses
+         ILoggingBuilder.AddProvider(), which lives in the main
+         Microsoft.Extensions.Logging package (it depends on
+         .Abstractions, so both are available transitively). -->
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>

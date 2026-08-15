@@ -4,10 +4,44 @@ Last updated: 2026-08-15
 
 ## Current milestone
 
-**MILESTONES 1-6 COMPLETE.** Dashboard and remote access are now
-authenticated end-to-end, 4 workstations registered with real MACs. See
-"Next task" for what's left (Wake-on-LAN hardware investigation, on hold;
-changing the throwaway `admin`/`admin` password).
+**V1 (MILESTONES 1-6) COMPLETE.** Now starting **Phase 2 — Dreamers
+Agent** (monitoring + safe management, see
+[ARCHITECTURE.md](ARCHITECTURE.md#phase-2--dreamers-agent-monitoring--safe-management)
+and [ROADMAP.md](ROADMAP.md#phase-2--dreamers-agent-monitoring--safe-management)).
+V1 leftovers (Wake-on-LAN hardware investigation, on hold; changing the
+throwaway `admin`/`admin` password) are tracked in "Next task" below and
+are independent of Phase 2 — Phase 2 does not block on them.
+
+## Phase 2 — Dreamers Agent
+
+**Current milestone: P2-1 (Agent skeleton) code complete, NOT
+build-verified (2026-08-15).**
+
+- **P2-0 done**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`,
+  `SECURITY.md`, this file) with the Phase 2 design — separate
+  subsystem, does not touch the VNC remote-desktop path, three
+  independent online signals (`machineOnline`/`agentOnline`/
+  `vncOnline`), agent identity is a persistent UUID (never IP-based),
+  token-based pairing + DPAPI-protected local credential storage for
+  agent auth (see `SECURITY.md`).
+- **P2-1 code complete**: `agent/Dreamers.Agent` (.NET 8 Worker Service,
+  `DreamersAgent.exe` — service host, `install`/`uninstall`/`start`/
+  `stop` CLI wrapping `sc.exe`, `Worker.cs` tick loop), `agent/Dreamers.Agent.Core`
+  (`AgentConfig`/`AgentConfigStore` — identity + config persistence to
+  `C:\ProgramData\DreamersRemote\agent.json`, generates the UUID once
+  and never regenerates it; `RollingFileLogger*` — daily-rotating file
+  logger, 14-day retention, never throws even if a write fails),
+  `agent/Dreamers.Agent.Tests` (6 unit tests covering config persistence
+  edge cases and the file logger). `agent/README.md` has the exact
+  build/test/install procedure.
+  **Cannot be built or run on this machine** — no .NET SDK installed
+  locally (checked: same situation as Node/Docker earlier in this
+  project; agent policy is to never install SDKs/tools itself, even
+  when asked directly — held even under direct pushback this session).
+  Code was written carefully against documented .NET 8 APIs but **has
+  not actually been compiled** — treat as "should work," not "verified
+  working," until someone runs `agent/README.md`'s build/test steps.
+  Next up after that verification: P2-2 (CPU/RAM/OS/uptime collectors).
 
 ## Completed
 
@@ -445,6 +479,12 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
+3. **Build-verify Phase 2 P2-1 (Agent skeleton)** — follow
+   `agent/README.md` exactly: install .NET 8 SDK, `dotnet build
+   agent/Dreamers.Agent.sln`, `dotnet test`, `dotnet run --project
+   Dreamers.Agent` and confirm the log output + `agent.json` look right.
+   Report back anything that doesn't match so it can be fixed before
+   P2-2 (system metrics collectors) starts.
 
 ## Important commands
 

@@ -3,6 +3,11 @@ dist/
 build/
 *.log
 
+# .NET (agent/)
+bin/
+obj/
+*.user
+
 .env
 .env.*
 !.env.example

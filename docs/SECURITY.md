@@ -48,6 +48,41 @@ single-sign-on-style "click Remote, no password prompt" convenience, that's
 option 2 and should be a deliberate follow-up, not a default, since it
 changes what the backend needs to protect.
 
+## Phase 2 — Dreamers Agent authentication (design, implemented in P2-5)
+
+The Agent must never be able to claim to be an arbitrary workstation.
+Identity is never IP-based (IPs can change/collide) — every Agent has a
+persistent `agentId` (UUID, generated once on first run, stored in
+`C:\ProgramData\DreamersRemote\agent.json`, never regenerated).
+
+Pairing flow (registration token, one-time use):
+
+1. Admin creates/selects a workstation row in the dashboard.
+2. Server issues a short-lived, single-use **registration token** for
+   that workstation.
+3. Admin enters the token into the Agent once (config file or a small
+   CLI prompt during install).
+4. Agent calls `/api/agent/register` with the token + its `agentId`.
+5. Server validates the token (unused, not expired, matches a
+   workstation), pairs `agentId` <-> `workstation.id`, marks the token
+   consumed, and issues the Agent a **long-lived agent credential**
+   (a random secret, not the registration token) for all future
+   heartbeat/command calls.
+6. Agent stores the credential locally via **Windows DPAPI**
+   (`ProtectedData.Protect`, current-user or local-machine scope
+   depending on whether the service runs as `LocalSystem`) — not
+   plaintext, not in the repo, not logged.
+
+This mirrors the existing VNC-password philosophy (see below): the
+server never stores a workstation's actual Windows admin credentials —
+only an opaque agent credential it issued itself, scoped to the
+whitelisted command set in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+Agent-facing routes (`/api/agent/*`) are authenticated by this agent
+credential, never by the user's session cookie — a compromised Agent
+credential should not grant access to `/api/workstations/*` or the VNC
+proxy, and vice versa.
+
 ## Explicitly out of scope for V1
 
 - Internet exposure of any kind (app, VNC, or WebSocket proxy).
