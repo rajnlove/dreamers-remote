@@ -14,8 +14,7 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**MILESTONE P2-7 (2026-08-15) — code complete, pending build/deploy
-verification.**
+**MILESTONE P2-7 COMPLETE (2026-08-15) — full live verification passed.**
 
 - **P2-0**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`, `SECURITY.md`,
   this file) with the Phase 2 design — separate subsystem, does not
@@ -298,12 +297,23 @@ verification.**
     (structured command whitelist, server-side auth/permission check,
     confirmation dialog, audit log — real design work, not just wiring
     up a button). REMOTE button reuses the existing route unchanged.
-  - Not yet build-verified (no Node locally) or deployed/live-tested.
+  - **CI green (run #9, commit `f8d5284`)**, both stacks redeployed via
+    Dockge Update, **live-verified**: clicked `CGI-Render`'s name from
+    the dashboard, `/workstations/3` loaded real data — hostname, IP,
+    OS, agent version `1.0.0.0`, uptime `2h 25m`, last seen `40s trước`,
+    VNC/Agent both `ONLINE`; CPU (`i9-9900X`, 10/20 cores, live %); RAM
+    (9.4/63.7 GB); both GPUs with independent usage/VRAM/temp; all 7
+    disks (`C:` through `J:`); all 10 monitored apps listed with
+    running/not-running dots. REMOTE button worked; RESTART/SHUTDOWN
+    correctly showed disabled. Also incidentally confirmed live: while
+    checking the dashboard, `CGI-DUC` showed `AfterFX.exe` actually
+    running — real studio usage, not a test artifact, first time a
+    monitored app has shown "running" outside a synthetic test.
 
-Next: after CI + live verification, **P2-8** (Restart/Shutdown commands
-— structured command whitelist only, never arbitrary shell; auth +
-permission check server-side; confirmation dialog client-side; audit
-log entry per command executed).
+Next: **P2-8** (Restart/Shutdown commands — structured command
+whitelist only, never arbitrary shell; auth + permission check
+server-side; confirmation dialog client-side; audit log entry per
+command executed).
 
 ## Completed
 
@@ -741,10 +751,12 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Deploy P2-7 and verify live** — push, wait for CI, redeploy BOTH
-   `vncgi-remote-server` and `vncgi-remote-web` via Dockge (**Update**),
-   click into a workstation card's name from the dashboard, confirm the
-   detail page loads real CPU/RAM/GPU/disk/app data and polls live.
+3. **Plan Phase 2 P2-8** (Restart/Shutdown commands) — P2-7 is fully
+   live-verified and done, see "Phase 2 — Dreamers Agent" above. P2-8
+   needs real design work before coding: how the Agent authenticates a
+   command as genuinely server-issued (not just "whoever can reach the
+   heartbeat endpoint"), the exact command whitelist, permission model,
+   and audit log schema — see `docs/SECURITY.md` and `ROADMAP.md`.
 
 ## Important commands
 
