@@ -14,8 +14,19 @@ are independent of Phase 2 — Phase 2 does not block on them.
 
 ## Phase 2 — Dreamers Agent
 
-**Current milestone: P2-1 (Agent skeleton) code complete, NOT
-build-verified (2026-08-15).**
+**MILESTONE P2-1 COMPLETE (2026-08-15) — build-verified.** User
+installed .NET 8 SDK (8.0.424) on the `CGI-Render` machine; `dotnet
+build agent/Dreamers.Agent.sln` → 0 warnings/0 errors, `dotnet test` →
+6/6 passed, `dotnet run --project Dreamers.Agent` run twice confirmed:
+correct console+file log output, `agent.json` created with the expected
+schema, and — the important one — **AgentId identical across both
+runs** (`da68d811-df66-4d07-9f9a-95c99d2158cf`), proving persistence
+works, not regeneration. Did **not** run `DreamersAgent.exe install` —
+creating a live Windows Service is treated the same as "modifying
+system settings" (same boundary held all session for UltraVNC etc.),
+left for the user to run themselves per `agent/README.md` whenever they
+want a real installed instance. Next: **P2-2** (CPU/RAM/OS/uptime
+collectors).
 
 - **P2-0 done**: docs updated (`ARCHITECTURE.md`, `ROADMAP.md`,
   `SECURITY.md`, this file) with the Phase 2 design — separate
@@ -479,12 +490,9 @@ Until provided, nothing depends on a guessed value.
    2026-08-15). No in-app change-password flow exists yet; see the
    procedure noted in "Completed (M6 detail)" above (update
    `ADMIN_PASSWORD` in Dockge, wipe the `users` row/DB, restart).
-3. **Build-verify Phase 2 P2-1 (Agent skeleton)** — follow
-   `agent/README.md` exactly: install .NET 8 SDK, `dotnet build
-   agent/Dreamers.Agent.sln`, `dotnet test`, `dotnet run --project
-   Dreamers.Agent` and confirm the log output + `agent.json` look right.
-   Report back anything that doesn't match so it can be fixed before
-   P2-2 (system metrics collectors) starts.
+3. **Start Phase 2 P2-2** (CPU/RAM/OS/hostname/uptime collectors) —
+   P2-1 is build-verified and done, see "Phase 2 — Dreamers Agent"
+   above.
 
 ## Important commands
 
