@@ -19,7 +19,10 @@ const VNC_WS_PATH_RE = /^\/ws\/vnc\/(\d+)$/;
 // Express's Request/Response, but express-session only touches the
 // subset of properties that actually exist here.
 export function setupVncProxy(server: HttpServer, sessionMiddleware: RequestHandler): void {
-  const wss = new WebSocketServer({ noServer: true });
+  // perMessageDeflate off: VNC framebuffer updates are frequent and often
+  // already compressed by the RFB encoding (Tight/ZRLE); re-deflating them
+  // on a LAN (bandwidth is not the bottleneck) only adds CPU + latency.
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
 
   server.on("upgrade", (req: IncomingMessage, socket, head) => {
     const path = (req.url ?? "").split("?")[0] ?? "";
@@ -45,6 +48,11 @@ export function setupVncProxy(server: HttpServer, sessionMiddleware: RequestHand
         return;
       }
 
+      // Nagle's algorithm is on by default and can hold small interactive
+      // packets (mouse/keyboard, small framebuffer deltas) for tens of ms
+      // before sending — disable it on both legs of the bridge.
+      socket.setNoDelay(true);
+
       wss.handleUpgrade(req, socket, head, (ws) => {
         bridgeToVnc(ws, workstation.ip, workstation.vnc_port);
       });
@@ -54,6 +62,7 @@ export function setupVncProxy(server: HttpServer, sessionMiddleware: RequestHand
 
 function bridgeToVnc(ws: WebSocket, host: string, port: number): void {
   const tcpSocket = net.connect(port, host);
+  tcpSocket.setNoDelay(true);
   let tcpReady = false;
   const pending: Buffer[] = [];
 

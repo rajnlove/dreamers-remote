@@ -6,6 +6,18 @@ import { WS_BASE_URL } from "../api/config";
 import type { Workstation } from "../types/workstation";
 
 type ConnState = "connecting" | "connected" | "disconnected";
+// "fit": whole framebuffer (all monitors, if the workstation has more than
+// one) scaled to fit the viewport — readable at a glance, but multi-monitor
+// desktops get squashed too small to click precisely.
+// "actual": native resolution, drag to pan — legible on multi-monitor
+// setups at the cost of not seeing everything at once.
+type ZoomMode = "fit" | "actual";
+
+function applyZoomMode(rfb: RFB, mode: ZoomMode): void {
+  rfb.scaleViewport = mode === "fit";
+  rfb.clipViewport = mode === "actual";
+  rfb.dragViewport = mode === "actual";
+}
 
 export default function RemotePage() {
   const { id } = useParams<{ id: string }>();
@@ -14,9 +26,11 @@ export default function RemotePage() {
   const [connState, setConnState] = useState<ConnState>("connecting");
   const [needsPassword, setNeedsPassword] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
+  const [zoomMode, setZoomMode] = useState<ZoomMode>("fit");
 
   const screenRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
+  const zoomModeRef = useRef<ZoomMode>(zoomMode);
   const [reconnectKey, setReconnectKey] = useState(0);
 
   useEffect(() => {
@@ -33,8 +47,13 @@ export default function RemotePage() {
     setNeedsPassword(false);
 
     const rfb = new RFB(screenRef.current, `${WS_BASE_URL}/ws/vnc/${id}`);
-    rfb.scaleViewport = true;
+    applyZoomMode(rfb, zoomModeRef.current);
     rfb.resizeSession = false;
+    // LAN, not internet: bandwidth is cheap, CPU-bound compression is the
+    // real latency cost. Favor quality and skip zlib work UltraVNC/noVNC
+    // would otherwise spend on a link that doesn't need it.
+    rfb.qualityLevel = 9;
+    rfb.compressionLevel = 1;
     rfbRef.current = rfb;
 
     const onConnect = () => setConnState("connected");
@@ -77,6 +96,15 @@ export default function RemotePage() {
     screenRef.current?.requestFullscreen();
   }
 
+  function handleToggleZoom() {
+    setZoomMode((prev) => {
+      const next: ZoomMode = prev === "fit" ? "actual" : "fit";
+      zoomModeRef.current = next;
+      if (rfbRef.current) applyZoomMode(rfbRef.current, next);
+      return next;
+    });
+  }
+
   return (
     <div className="app remote-app">
       <header className="header remote-header">
@@ -93,6 +121,13 @@ export default function RemotePage() {
           </button>
           <button className="btn" onClick={handleFullscreen}>
             FULLSCREEN
+          </button>
+          <button
+            className="btn"
+            onClick={handleToggleZoom}
+            title="Multi-monitor desktops: switch to 100% and drag to pan"
+          >
+            {zoomMode === "fit" ? "100% (DRAG TO PAN)" : "FIT TO SCREEN"}
           </button>
           {connState === "connected" ? (
             <button className="btn" onClick={handleDisconnect}>
