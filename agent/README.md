@@ -90,6 +90,30 @@ Get-Content C:\ProgramData\DreamersRemote\logs\agent-*.log -Tail 20
 workstation's dashboard card should show a green AGENT badge and live
 metrics.
 
+## Updating an already-installed Agent
+
+Different from "Deploying to a workstation" above — that flow is for
+pairing a workstation for the first time (fresh registration token). If
+the service is already installed and paired (all 4 studio workstations
+are, as of P2-8), replace the binaries in place instead:
+
+```powershell
+# 1. Find where it's currently installed, and stop it:
+(Get-CimInstance Win32_Service -Filter "Name='DreamersAgent'").PathName
+Stop-Service DreamersAgent
+
+# 2. Extract the new build's files into that same directory, overwriting
+#    the old ones. Config (agent.json) and the DPAPI-encrypted credential
+#    (credential.dat) live separately under C:\ProgramData\DreamersRemote\
+#    — untouched by this, so there's no need to re-pair.
+
+# 3. Restart:
+Start-Service DreamersAgent
+Get-Content C:\ProgramData\DreamersRemote\logs\agent-*.log -Tail 20
+```
+
+No registration token needed — the existing credential is still valid.
+
 ## Deploying to multiple workstations (bulk)
 
 P2-9. What actually worked deploying to all 4 studio workstations this
