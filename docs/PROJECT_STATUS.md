@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 (Phase 3 complete; Phase 4 P4-0/P4-1/P4-2 done — real FFmpeg job runner verified end-to-end with a real NVENC hardware encode on CGI-Render)
+Last updated: 2026-08-16 (Phase 3 complete; Phase 4 P4-0/P4-1/P4-2 fully done — real FFmpeg job runner verified end-to-end over the real TrueNAS SMB share with a real production source file)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -317,18 +317,24 @@ them (see Known Issues) — not being worked on right now.
   before assuming "latest ffmpeg" is the right choice — pin to a build
   known to match, don't just grab whatever winget's default/newest
   package is.
+- **`h264_nvenc` rejects 10-bit source outright.** Found running a real
+  10-bit ProRes 422 source (a real production clip from the TrueNAS
+  Projects share) through `h264_nvenc`: "10 bit encode not supported...
+  No capable devices found" on this hardware/driver. H.264 delivery is
+  essentially always 8-bit 4:2:0 anyway, so `FfmpegArgs.Build` now
+  always adds `-pix_fmt yuv420p` when `codec == "h264_nvenc"` — fixed
+  and confirmed (same source, same job, succeeds after the fix).
+  Deliberately scoped to `h264_nvenc` only: `hevc_nvenc`/`av1_nvenc`
+  genuinely support 10-bit (Main10) on this hardware, forcing 8-bit
+  there would be an unnecessary quality loss for sources that don't
+  need it.
 
 ## Next Task
 
-**P4-2 is now verified end-to-end with a real ffmpeg encode** (see
-Tests Performed) — the one remaining gap is a real **UNC/SMB path**:
-verification so far used local `C:\...` paths as the "allowed root"
-(this dev machine has no TrueNAS SMB mount), so `PathValidator`'s
-UNC-prefix logic is only proven by its own unit tests, not by an actual
-`\\192.29.11.92\Projects\...` read/write over the LAN. Whenever a real
-UNC root is available: point `allowed_paths.json` at it, set
-`FFMPEG_ALLOWED_ROOTS` on the server to match, and run one job against
-a file that actually lives on TrueNAS.
+**P4-2 is now fully verified end-to-end** — real ffmpeg, real NVENC
+hardware encode, real UNC/SMB share (`\\192.29.11.92\web_data\www\
+Projects`), real production source file. Nothing left unverified in
+this milestone (see Tests Performed).
 
 Next: **P4-4 — Topaz worker** and **P4-5 — multi-GPU verification with
 real workloads** (see
@@ -588,9 +594,26 @@ not blocking, pick up whenever the user asks.
   (`s[^2000..]`) instead of the start. This is the first genuinely
   complete, non-mocked proof of the whole P4-2 loop: real Agent code,
   real ffmpeg process, real GPU hardware encode, real output file.
-  **What's still not covered**: a real UNC/SMB path to TrueNAS (this
-  verification used local `C:\...` paths as the allowed root, since
-  this dev machine has no SMB mount) — see Next Task.
+- **P4-2 over the real TrueNAS SMB share (same day, user pointed at
+  it)**: `\\192.29.11.92\web_data\www\Projects\SOURCE\
+  A008C005_130101_R31Z.mov` — a real production clip (ProRes 422,
+  1920x1080, 10-bit, ~3.5s), reachable directly from `CGI-Render` over
+  the LAN. Ran `FfmpegJobRunner` against it for real (another
+  throwaway, not committed, test output deleted from the share
+  afterward): `AllowedPathsConfigStore` configured with the real UNC
+  root, source/output paths both real UNC paths, no local `C:\` paths
+  involved anywhere in this run. **Real bug caught**: `h264_nvenc`
+  rejected the source outright ("10 bit encode not supported") — this
+  ProRes source is genuinely 10-bit, which H.264 NVENC can't take
+  directly on this hardware. Fixed in `FfmpegArgs.Build` (always add
+  `-pix_fmt yuv420p` for `h264_nvenc`, confirmed manually with a raw
+  ffmpeg invocation before changing any code) — re-ran after the fix
+  and the job completed successfully, output file confirmed non-empty
+  on the actual share. Added `FfmpegArgsTests.ForcesYuv420pFor264NvencOnly`
+  to lock this in (74/74 → 75/75). This closes the one gap the previous
+  entry left open — **P4-2 has now been verified with real ffmpeg, real
+  NVENC hardware, and a real UNC/SMB path to TrueNAS, against a real
+  production source file**, not synthetic/local-only testing.
 
 ## Required User Action
 
@@ -768,10 +791,11 @@ dotnet publish Dreamers.Agent -c Release -r win-x64 -o .\dist
   path for server-to-server calls, or something else. Not blocking
   anything built so far (P4-1/P4-2 don't care who the caller is), but
   needs an answer before PHP can actually call it for real.
-- **Real UNC/SMB path to TrueNAS, needed to fully close out P4-2.**
-  `ffmpeg` is now installed on `CGI-Render` and a real hardware NVENC
-  encode is verified (see Tests Performed) — the one remaining gap is
-  that verification used local `C:\...` paths, not an actual
-  `\\192.29.11.92\...` share (this dev machine has no SMB mount). What
-  is the real UNC path to configure in `FFMPEG_ALLOWED_ROOTS` (server)
-  and `allowed_paths.json` (Agent)?
+- **Real UNC/SMB path to TrueNAS — RESOLVED 2026-08-16.** The user
+  pointed at `\\192.29.11.92\web_data\www\Projects` — confirmed
+  reachable and read/write-able from `CGI-Render`, and P4-2 is now
+  verified against it for real (see Tests Performed). Not necessarily
+  the final `FFMPEG_ALLOWED_ROOTS`/`allowed_paths.json` value for
+  production (that's the user's call, whenever PHP integration
+  actually happens), but proves the mechanism works against the real
+  share, not just local paths.

@@ -86,6 +86,20 @@ public static class FfmpegArgs
             args.AddRange(new[] { "-vf", $"scale={resolutionMatch.Groups[1].Value}:{resolutionMatch.Groups[2].Value}" });
         }
 
+        // h264_nvenc on real hardware rejects 10-bit input outright
+        // ("10 bit encode not supported... No capable devices found") --
+        // confirmed against a real 10-bit ProRes source. H.264 delivery
+        // is essentially always 8-bit 4:2:0 anyway (Main/High profiles),
+        // so force it down rather than fail every 10-bit source. hevc_nvenc
+        // and av1_nvenc both genuinely support 10-bit (Main10 profile) on
+        // this hardware -- forcing 8-bit there would just be an
+        // unnecessary quality loss, so this is intentionally scoped to
+        // h264_nvenc only, not "-pix_fmt yuv420p" for every codec.
+        if (input.Codec == "h264_nvenc")
+        {
+            args.AddRange(new[] { "-pix_fmt", "yuv420p" });
+        }
+
         if (input.AudioCodec == "none")
         {
             args.Add("-an");

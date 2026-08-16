@@ -72,6 +72,20 @@ public class FfmpegArgsTests
     }
 
     [Fact]
+    public void ForcesYuv420pFor264NvencOnly()
+    {
+        var h264Args = FfmpegArgs.Build(Input(codec: "h264_nvenc"));
+        Assert.Contains("-pix_fmt", h264Args);
+        Assert.Equal("yuv420p", h264Args[h264Args.IndexOf("-pix_fmt") + 1]);
+
+        var hevcArgs = FfmpegArgs.Build(Input(codec: "hevc_nvenc"));
+        Assert.DoesNotContain("-pix_fmt", hevcArgs);
+
+        var av1Args = FfmpegArgs.Build(Input(codec: "av1_nvenc"));
+        Assert.DoesNotContain("-pix_fmt", av1Args);
+    }
+
+    [Fact]
     public void AlwaysIncludesMachineReadableProgressFlags()
     {
         var args = FfmpegArgs.Build(Input());
