@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 (Phase 3 complete; Phase 4 P4-0/P4-1/P4-2 done — real FFmpeg job runner exists, not yet verified on a real workstation)
+Last updated: 2026-08-16 (Phase 3 complete; Phase 4 P4-0/P4-1/P4-2 done — real FFmpeg job runner verified end-to-end with a real NVENC hardware encode on CGI-Render)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -300,37 +300,43 @@ them (see Known Issues) — not being worked on right now.
   hits, timeout + 404, before that container was deleted) — a subnet
   outside the known studio LAN range, never identified. Worth watching
   for if it resurfaces elsewhere.
-- **P4-2's FFmpeg job runner has never actually run ffmpeg** — this dev
-  machine has no `ffmpeg`/`ffprobe` on PATH. Every piece that doesn't
-  need a real ffmpeg binary is tested (path validation, argument
-  whitelisting, progress-line parsing, the full server-side create→
-  validate→schedule→assign loop against a mocked worker) but the actual
-  `Process.Start("ffmpeg", ...)` → real encode → output-file-exists path
-  is unverified. Not a known bug, just an untested path — see Next Task
-  for how to close it out.
+- **FFmpeg build vs. NVIDIA driver version matters for NVENC.** Found
+  installing ffmpeg on `CGI-Render` to verify P4-2 for real (see Tests
+  Performed): the latest `Gyan.FFmpeg` winget build (9.0, requires
+  NVENC API 13.1) failed with "Driver does not support the required
+  nvenc API version. Required: 13.1 Found: 13.0 — minimum Nvidia
+  driver 610.00 or newer" — `h264_nvenc`/`hevc_nvenc`/`av1_nvenc` all
+  fail outright on this machine's current driver. `BtbN.FFmpeg.GPL.7.1`
+  (an older release branch, same winget source) works fine with the
+  same driver — confirmed with a real hardware-encoded NVENC output.
+  **Not fixed by updating the driver** — deliberately not done, since
+  this machine (`CGI-Render`) is also in active use for real work and a
+  driver update is disruptive/risky to do unprompted. When installing
+  ffmpeg on the other 3 workstations: check `nvidia-smi`'s reported
+  driver version against whatever ffmpeg build's NVENC SDK requirement
+  before assuming "latest ffmpeg" is the right choice — pin to a build
+  known to match, don't just grab whatever winget's default/newest
+  package is.
 
 ## Next Task
 
-**Verify P4-2 on a real workstation** — this dev machine has no
-`ffmpeg`/`ffprobe` installed, so the actual encode path
-(`FfmpegJobRunner` spawning `ffmpeg.exe` for real) has only been
-verified as far as: unit tests for every pure piece (path validation,
-argument whitelisting, progress parsing) and a full server-side smoke
-test (create → validate → schedule → assign against a real temp SQLite
-DB with a mocked worker reporting `ffmpeg` capability) — not an actual
-running encode. To close this out for real: install ffmpeg on one
-workstation (or point `PATH` at a portable build), configure
-`allowed_paths.json` with a real UNC root, set `FFMPEG_ALLOWED_ROOTS`
-on the server, and run one real job against a real (even tiny) video
-file over the actual SMB share. See ROADMAP.md's P4-2 entry.
+**P4-2 is now verified end-to-end with a real ffmpeg encode** (see
+Tests Performed) — the one remaining gap is a real **UNC/SMB path**:
+verification so far used local `C:\...` paths as the "allowed root"
+(this dev machine has no TrueNAS SMB mount), so `PathValidator`'s
+UNC-prefix logic is only proven by its own unit tests, not by an actual
+`\\192.29.11.92\Projects\...` read/write over the LAN. Whenever a real
+UNC root is available: point `allowed_paths.json` at it, set
+`FFMPEG_ALLOWED_ROOTS` on the server to match, and run one job against
+a file that actually lives on TrueNAS.
 
-After that: **P4-4 — Topaz worker** and **P4-5 — multi-GPU
-verification with real workloads**
-(see [ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)).
-P4-3 (PHP integration) has no code to write per the architecture
-decision, but its one open item (PHP's auth mechanism) should get
-answered before PHP actually tries to call `POST /api/jobs` for real —
-see "Info still needed from user."
+Next: **P4-4 — Topaz worker** and **P4-5 — multi-GPU verification with
+real workloads** (see
+[ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)). P4-3 (PHP
+integration) has no code to write per the architecture decision, but
+its one open item (PHP's auth mechanism) should get answered before
+PHP actually tries to call `POST /api/jobs` for real — see "Info still
+needed from user."
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking, pick up whenever the user asks.
@@ -555,10 +561,36 @@ not blocking, pick up whenever the user asks.
   fixed with `await Task.Yield()` as `RunAsync`'s first line; both
   previously-failing tests (`StartWhileAlreadyBusyThrows`,
   `ResetAfterFinishingAllowsStartingAnotherJob`) pass after the fix.
-  **What's NOT tested**: an actual `ffmpeg.exe` process actually
-  encoding a real file — this dev machine has neither `ffmpeg` nor
-  `ffprobe` installed (confirmed via `where ffmpeg` before starting).
-  See Known Issues and Next Task.
+- **P4-2 real ffmpeg verification (same day, after installing ffmpeg on
+  this dev machine — `CGI-Render` is itself one of the 4 studio
+  workstations)**: generated two small synthetic test videos with
+  ffmpeg's own `testsrc` filter (3s/640x360 and 15s/1280x720 — no
+  internet download needed) and ran `FfmpegJobRunner` against them for
+  real through two throwaway xUnit tests (not committed, deleted after
+  a passing run — same pattern as the Node-side smoke scripts). First
+  attempt failed: the latest winget `ffmpeg` build (9.0) hit a real
+  NVENC/driver version mismatch (see Known Issues) — not a bug in this
+  repo's code, confirmed by reproducing the identical failure running
+  ffmpeg directly by hand outside any of this repo's code. Installed an
+  older build (`BtbN.FFmpeg.GPL.7.1`) that's compatible with this
+  machine's driver, uninstalled the incompatible one to avoid future
+  PATH ambiguity, and re-ran: **both tests passed** — a real
+  `h264_nvenc` hardware encode completed, `fps` was observed mid-run
+  via the real `-progress pipe:1` parsing (not just at completion), and
+  both output files were confirmed via `ffprobe` to have the correct
+  duration (3s/15s matching their sources). **Real bug caught by this
+  same real run**: `FfmpegJobRunner`'s error-truncation kept the first
+  2000 characters of ffmpeg's stderr, not the last — ffmpeg always
+  opens with an extremely long single `configuration: --enable-...`
+  banner line before anything about an actual failure, so the *real*
+  NVENC error was being silently cut off and only the useless banner
+  reached the job's `error` field. Fixed by truncating from the end
+  (`s[^2000..]`) instead of the start. This is the first genuinely
+  complete, non-mocked proof of the whole P4-2 loop: real Agent code,
+  real ffmpeg process, real GPU hardware encode, real output file.
+  **What's still not covered**: a real UNC/SMB path to TrueNAS (this
+  verification used local `C:\...` paths as the allowed root, since
+  this dev machine has no SMB mount) — see Next Task.
 
 ## Required User Action
 
@@ -736,11 +768,10 @@ dotnet publish Dreamers.Agent -c Release -r win-x64 -o .\dist
   path for server-to-server calls, or something else. Not blocking
   anything built so far (P4-1/P4-2 don't care who the caller is), but
   needs an answer before PHP can actually call it for real.
-- **FFmpeg install + real UNC share, needed to verify P4-2 for real.**
-  This dev machine has neither `ffmpeg` nor a mounted TrueNAS SMB
-  share, so P4-2 is only verified up to what unit tests + a mocked
-  server-side smoke test can prove (see Tests Performed / Known
-  Issues). To actually prove a real encode works: which workstation
-  should get `ffmpeg`/`ffprobe` installed first, and what's the real
-  UNC path to configure in `FFMPEG_ALLOWED_ROOTS` (server) and
-  `allowed_paths.json` (that workstation's Agent)?
+- **Real UNC/SMB path to TrueNAS, needed to fully close out P4-2.**
+  `ffmpeg` is now installed on `CGI-Render` and a real hardware NVENC
+  encode is verified (see Tests Performed) — the one remaining gap is
+  that verification used local `C:\...` paths, not an actual
+  `\\192.29.11.92\...` share (this dev machine has no SMB mount). What
+  is the real UNC path to configure in `FFMPEG_ALLOWED_ROOTS` (server)
+  and `allowed_paths.json` (Agent)?

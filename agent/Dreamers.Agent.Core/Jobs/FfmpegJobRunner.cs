@@ -244,5 +244,13 @@ public sealed class FfmpegJobRunner : IJobRunner
             ?? throw new InvalidOperationException("ffmpeg job input did not deserialize");
     }
 
-    private static string Truncate(string s) => s.Length <= 2000 ? s : s[..2000];
+    // Keeps the END of the string, not the start -- ffmpeg's stderr
+    // opens with a very long single "configuration: --enable-..." line
+    // (its own build-flag banner) before anything about the actual
+    // failure, which is always further down/at the end. Truncating from
+    // the front (as this originally did) could eat the entire 2000-char
+    // budget on that one banner line and never show the real error --
+    // caught via a real ffmpeg run failing on an NVENC driver-version
+    // mismatch where this is exactly what happened.
+    private static string Truncate(string s) => s.Length <= 2000 ? s : s[^2000..];
 }
