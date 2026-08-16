@@ -74,7 +74,9 @@ public sealed class ServerClient
         request.Headers.Add("X-Agent-Credential", credential);
         var payload = HeartbeatPayload.FromSnapshot(snapshot) with
         {
-            RunningJob = runningJob is { } rj ? new HeartbeatPayload.RunningJobPayload { Id = rj.Id, Progress = rj.Progress } : null,
+            RunningJob = runningJob is { } rj
+                ? new HeartbeatPayload.RunningJobPayload { Id = rj.Id, Progress = rj.Progress, Fps = rj.Fps, EtaSeconds = rj.EtaSeconds }
+                : null,
         };
         request.Content = JsonContent.Create(payload, options: JsonOptions);
 
@@ -169,7 +171,7 @@ public sealed class ServerClient
     }
 }
 
-public sealed record RunningJobStatus(int Id, int Progress);
+public sealed record RunningJobStatus(int Id, int Progress, double? Fps = null, int? EtaSeconds = null);
 
 public sealed record AssignedJob(int Id, string Type, string? Input);
 

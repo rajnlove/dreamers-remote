@@ -25,7 +25,7 @@ public sealed class Worker : BackgroundService
     private readonly AgentCredentialStore _credentialStore;
     private readonly ServerClient _serverClient;
     private readonly CommandExecutor _commandExecutor;
-    private readonly TestJobRunner _jobRunner;
+    private readonly IReadOnlyDictionary<string, IJobRunner> _jobRunners;
 
     public Worker(
         ILogger<Worker> logger,
@@ -34,7 +34,8 @@ public sealed class Worker : BackgroundService
         AgentCredentialStore credentialStore,
         ServerClient serverClient,
         CommandExecutor commandExecutor,
-        TestJobRunner jobRunner)
+        TestJobRunner testJobRunner,
+        FfmpegJobRunner ffmpegJobRunner)
     {
         _logger = logger;
         _config = config;
@@ -42,7 +43,15 @@ public sealed class Worker : BackgroundService
         _credentialStore = credentialStore;
         _serverClient = serverClient;
         _commandExecutor = commandExecutor;
-        _jobRunner = jobRunner;
+        // P4-2: one IJobRunner per job type this Agent knows how to run,
+        // keyed by the same string used as the job's `type` and as a
+        // WorkerCapabilities entry -- adding a new job type later means
+        // adding a runner here, not branching inside this class.
+        _jobRunners = new Dictionary<string, IJobRunner>
+        {
+            ["test"] = testJobRunner,
+            ["ffmpeg"] = ffmpegJobRunner,
+        };
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -128,8 +137,11 @@ public sealed class Worker : BackgroundService
             {
                 try
                 {
-                    var runningJob = _jobRunner.GetSnapshot() is { Finished: false } running
-                        ? new RunningJobStatus(running.JobId, running.Progress)
+                    var runningSnapshot = _jobRunners.Values
+                        .Select(r => r.GetSnapshot())
+                        .FirstOrDefault(s => s is { Finished: false });
+                    var runningJob = runningSnapshot is { } running
+                        ? new RunningJobStatus(running.JobId, running.Progress, running.Fps, running.EtaSeconds)
                         : null;
 
                     var heartbeat = await _serverClient.SendHeartbeatAsync(credential, snapshot, runningJob, stoppingToken);
@@ -143,24 +155,41 @@ public sealed class Worker : BackgroundService
                     // P3-5: the job we're running was cancelled server-side
                     // (POST /api/jobs/:id/cancel) — stop it. Nothing to
                     // report back; the server is already authoritative.
+                    // Broadcast to every runner (harmless no-op on the ones
+                    // not actually running this jobId) rather than needing
+                    // to know which runner owns it.
                     if (heartbeat.CancelJobId is { } cancelId)
                     {
                         _logger.LogInformation("Job {JobId} was cancelled — stopping", cancelId);
-                        _jobRunner.Cancel(cancelId);
+                        foreach (var runner in _jobRunners.Values) runner.Cancel(cancelId);
                     }
 
-                    // P3-4: only one job at a time (see TestJobRunner) — if
-                    // the server assigned one while the runner is still
-                    // busy, it just stays ASSIGNED server-side and gets
-                    // handed to us again on a later heartbeat once we have
-                    // capacity, per job/repository.ts's
-                    // getAssignedJobForWorker.
-                    if (heartbeat.Job is { } assignedJob && !_jobRunner.IsBusy)
+                    // P3-4/P4-2: only one job at a time across ALL runners
+                    // (see TestJobRunner's doc comment) — if the server
+                    // assigned one while something is still busy, it just
+                    // stays ASSIGNED server-side and gets handed to us
+                    // again on a later heartbeat once we have capacity, per
+                    // job/repository.ts's getAssignedJobForWorker.
+                    var anyBusy = _jobRunners.Values.Any(r => r.IsBusy);
+                    if (heartbeat.Job is { } assignedJob && !anyBusy)
                     {
-                        _logger.LogInformation(
-                            "Starting job {JobId} ({JobType}), requested via the dashboard",
-                            assignedJob.Id, assignedJob.Type);
-                        _jobRunner.Start(assignedJob.Id, assignedJob.Input);
+                        if (_jobRunners.TryGetValue(assignedJob.Type, out var runner))
+                        {
+                            _logger.LogInformation(
+                                "Starting job {JobId} ({JobType}), requested via the dashboard",
+                                assignedJob.Id, assignedJob.Type);
+                            runner.Start(assignedJob.Id, assignedJob.Input);
+                        }
+                        else
+                        {
+                            // Shouldn't happen — the scheduler only assigns
+                            // by matching this Agent's own reported
+                            // capabilities (WorkerCapabilities) — but report
+                            // it as a failed job rather than leaving it
+                            // stuck ASSIGNED forever if it ever does.
+                            _logger.LogError("Assigned job {JobId} has type {JobType} with no registered runner on this Agent", assignedJob.Id, assignedJob.Type);
+                            await ReportUnrunnableJobAsync(credential, assignedJob.Id, assignedJob.Type, stoppingToken);
+                        }
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -180,9 +209,12 @@ public sealed class Worker : BackgroundService
                 // Independent of whether the heartbeat above succeeded —
                 // a finished job should get reported even if, say, this
                 // exact tick's heartbeat call happened to fail.
-                if (_jobRunner.GetSnapshot() is { Finished: true } finished)
+                foreach (var runner in _jobRunners.Values)
                 {
-                    await ReportFinishedJobAsync(credential, finished, stoppingToken);
+                    if (runner.GetSnapshot() is { Finished: true } finished)
+                    {
+                        await ReportFinishedJobAsync(credential, runner, finished, stoppingToken);
+                    }
                 }
             }
 
@@ -233,11 +265,11 @@ public sealed class Worker : BackgroundService
         }
     }
 
-    // P3-4: report the TestJobRunner's finished result and free it up for
-    // the next job. Only resets on a successful report — if the POST
-    // fails (network blip), the finished snapshot stays put and this is
+    // P3-4/P4-2: report a runner's finished result and free it up for the
+    // next job. Only resets on a successful report — if the POST fails
+    // (network blip), the finished snapshot stays put and this is
     // retried on the next tick rather than the result being lost.
-    private async Task ReportFinishedJobAsync(string credential, TestJobRunner.Snapshot finished, CancellationToken cancellationToken)
+    private async Task ReportFinishedJobAsync(string credential, IJobRunner runner, JobSnapshot finished, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
             "Job {JobId} finished: {Result}", finished.JobId, finished.Success ? "success" : $"failed ({finished.Error})");
@@ -245,11 +277,28 @@ public sealed class Worker : BackgroundService
         try
         {
             await _serverClient.SendJobResultAsync(credential, finished.JobId, finished.Success, finished.Error, cancellationToken);
-            _jobRunner.Reset();
+            runner.Reset();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to report job {JobId} result to server, will retry next tick", finished.JobId);
+        }
+    }
+
+    // Defensive fallback for a job assigned to this Agent for a type it
+    // has no IJobRunner for (see the "Starting job" branch above) — report
+    // it failed immediately rather than let it sit ASSIGNED forever with
+    // nothing ever picking it up.
+    private async Task ReportUnrunnableJobAsync(string credential, int jobId, string jobType, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _serverClient.SendJobResultAsync(
+                credential, jobId, ok: false, error: $"This Agent has no runner registered for job type \"{jobType}\"", cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to report unrunnable job {JobId} to server", jobId);
         }
     }
 }

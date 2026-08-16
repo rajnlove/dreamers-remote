@@ -127,35 +127,63 @@ software-version machinery already exists and works
 (`docs/PROJECT_STATUS.md`'s Phase 3 section); Phase 4 plugs a real
 workload into it instead of the `test` placeholder. See
 [MASTER_PROJECT_SPEC.md §17-20](MASTER_PROJECT_SPEC.md#17-phase-4--ffmpeg-processing-future)
-for the full requirements. **Milestone breakdown below is
-provisional** — P4-2 onward depends on answers to open questions not
-yet resolved (see `docs/PROJECT_STATUS.md`'s "Info still needed from
-user"): specifically, what creates a job (the spec says "PHP creates
-Job" — an external system this repo doesn't know about yet) and how a
-Windows worker reads the source file / writes the result relative to
-TrueNAS storage.
+for the full requirements. **Architecture decided by the user
+2026-08-16** (see `docs/PROJECT_STATUS.md`'s Phase 4 section for the
+full decision) rather than left as open questions: the existing PHP
+Projects site (`http://192.29.11.92:8088/Projects` — web/display route
+only, never a source path) is the job-creation side and calls
+`POST /api/jobs` directly; a Windows worker reads/writes files via a
+configurable UNC path straight to TrueNAS storage
+(`\\192.29.11.92\Projects\...`), never through the Dreamers API; both
+server and Agent independently validate every path against a
+configured allow-list before touching it.
 
 - **P4-0 — Docs.** This section, plus PROJECT_STATUS.md's open
   questions. No code.
-- **P4-1 — FFmpeg capability + real capability detection.** Agent
-  detects whether `ffmpeg.exe` is actually present (real check,
-  replacing the hardcoded `["test"]` capability list from P3-2) and
-  reports it as a `ffmpeg` capability; report NVENC support
-  (H.264/HEVC/AV1) as part of Agent's software-version reporting
-  (P3-8's mechanism, first real use of it). No job execution yet.
-- **P4-2 — FFmpeg job runner on the Agent.** Given a job `input` (needs
-  a defined schema: source path, target codec/container, bitrate/
-  quality, output path), runs `ffmpeg.exe` with GPU encode
-  (NVENC) preferred, parses ffmpeg's own progress output to report
-  0-100 back to the server (reusing P3-4's progress-reporting pattern),
-  writes the result file, reports success/failure. **Blocked on**: how
-  the worker actually reaches the source file and writes the result —
-  needs the file-access architecture question answered first (see open
-  questions).
-- **P4-3 — Job creation entry point.** However jobs actually get
-  created for real files — could be `POST /api/jobs` called by an
-  external system (the spec's "PHP creates Job"), could be something
-  else. **Blocked on the same open question as P4-2.**
+- **P4-1 — FFmpeg capability + real capability detection.** DONE.
+  Agent's `FfmpegDetector` (`Dreamers.Agent.Core/Ffmpeg/`) runs
+  `ffmpeg -version`/`-encoders` once per process lifetime (real check,
+  replacing P3-2's hardcoded `["test"]`-only capability list) and
+  reports `ffmpeg` as a capability plus its real version via P3-8's
+  software-version mechanism when found; NVENC encoder support
+  (h264/hevc/av1) detected but not yet surfaced beyond internal
+  `FfmpegInfo` (nothing consumes it yet — added when a concrete need
+  shows up, e.g. rejecting an av1_nvenc job on a build that doesn't
+  support it).
+- **P4-2 — FFmpeg job runner, end to end.** DONE. Job schema
+  (`type: "ffmpeg"`, structured `input`: sourcePath/outputPath/codec/
+  qualityMode/quality/bitrate/preset/resolution/audioCodec/projectId)
+  validated server-side (`server/src/job/ffmpegValidation.ts`) against
+  `FFMPEG_ALLOWED_ROOTS`; Agent's `FfmpegJobRunner`
+  (`Dreamers.Agent.Core/Jobs/`) independently re-validates against its
+  own `allowed_paths.json` (`AllowedPathsConfigStore`), confirms the
+  source exists, builds a whitelisted argument list only
+  (`FfmpegArgs` — never a raw command string, never `UseShellExecute`),
+  runs `ffmpeg.exe` with `-progress pipe:1` for machine-readable
+  progress (`FfmpegProgressParser`), reports `progress`/`fps`/
+  `eta_seconds` on every heartbeat (new `jobs.fps`/`jobs.eta_seconds`
+  columns, generic — not FFmpeg-specific), and only reports success if
+  the exit code is 0 **and** the output file actually exists. Worker.cs
+  now dispatches to one of several `IJobRunner`s by job `type`
+  (`test`/`ffmpeg`) instead of hardcoding `TestJobRunner` — the seam
+  P4-4's Topaz runner plugs into. **Not yet tested against a real
+  encode** — this dev machine has no `ffmpeg`/`ffprobe` on PATH; tested
+  as far as the environment allows (unit tests for path validation,
+  arg-whitelisting, progress parsing, and the full server-side
+  create→validate→schedule→assign loop against a real temp SQLite DB —
+  see PROJECT_STATUS.md's Tests Performed). **Needs verification on a
+  real workstation** with ffmpeg installed and a real SMB mount before
+  calling this fully proven, the same way P3-7's job loop needed a real
+  Agent redeploy to go from "unit-tested" to "actually proven."
+- **P4-3 — PHP integration point.** Nothing to build here per the
+  user's architecture decision — the PHP Projects site calls
+  `POST /api/jobs` directly with `type: "ffmpeg"` (session-cookie
+  auth, same as every other `/api/jobs` caller today). **Open item**:
+  PHP calling a session-cookie-authenticated endpoint implies either a
+  service account it logs in as, or a separate server-to-server auth
+  mechanism this repo doesn't have yet — not blocking P4-1/P4-2 (which
+  don't care who the caller is), but needs an answer before PHP can
+  actually call it for real.
 - **P4-4 — Topaz as a second, independent worker type.** Per
   MASTER_PROJECT_SPEC.md §20: its own capability/job type, not
   hardcoded into the scheduler alongside FFmpeg — the scheduler already

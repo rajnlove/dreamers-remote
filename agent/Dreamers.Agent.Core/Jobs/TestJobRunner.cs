@@ -6,9 +6,9 @@ namespace Dreamers.Agent.Core.Jobs;
 /// P3-4: runs the built-in "test" job type — sleep N seconds (from
 /// input JSON <c>{"seconds": N}</c>, default 5), reporting progress
 /// 0-100 as it goes — to prove the whole job engine loop works
-/// end-to-end with no real workload attached. Real job types
-/// (FFmpeg, Houdini, ...) are Phase 4/5's problem; they'd be separate
-/// executors, not more branches in this class.
+/// end-to-end with no real workload attached. Real job types (P4-2's
+/// FfmpegJobRunner, ...) are separate IJobRunner implementations, not
+/// more branches in this class.
 ///
 /// Deliberately only runs one job at a time, even on a multi-GPU
 /// workstation that could in principle have several ASSIGNED jobs
@@ -16,14 +16,12 @@ namespace Dreamers.Agent.Core.Jobs;
 /// getAssignedJobForWorker comment) — true concurrent multi-slot
 /// execution is a later polish item, not this milestone's scope.
 /// </summary>
-public sealed class TestJobRunner
+public sealed class TestJobRunner : IJobRunner
 {
     private const int DefaultSeconds = 5;
 
-    public sealed record Snapshot(int JobId, int Progress, bool Finished, bool Success, string? Error);
-
     private readonly object _lock = new();
-    private Snapshot? _current;
+    private JobSnapshot? _current;
     private CancellationTokenSource? _cts;
 
     public bool IsBusy
@@ -34,12 +32,11 @@ public sealed class TestJobRunner
         }
     }
 
-    public Snapshot? GetSnapshot()
+    public JobSnapshot? GetSnapshot()
     {
         lock (_lock) return _current;
     }
 
-    /// <summary>Call once the caller has reported a finished snapshot's result, to free up capacity for the next job.</summary>
     public void Reset()
     {
         lock (_lock) _current = null;
@@ -71,7 +68,7 @@ public sealed class TestJobRunner
             {
                 throw new InvalidOperationException("A job is already running.");
             }
-            _current = new Snapshot(jobId, 0, Finished: false, Success: false, Error: null);
+            _current = JobSnapshot.Starting(jobId);
             _cts = new CancellationTokenSource();
             token = _cts.Token;
         }

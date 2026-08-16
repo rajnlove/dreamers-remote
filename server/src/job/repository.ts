@@ -77,12 +77,22 @@ export function startJob(id: number): void {
 // RUNNING — a stray/late progress update for a job that's already
 // COMPLETED/FAILED/CANCELLED (e.g. a delayed request) must not
 // resurrect its displayed progress.
-export function updateJobProgress(id: number, workerId: number, progress: number): void {
-  db.prepare(`UPDATE jobs SET progress = ? WHERE id = ? AND worker_id = ? AND status = 'RUNNING'`).run(
-    progress,
-    id,
-    workerId,
-  );
+// P4-2: fps/eta_seconds are optional (only FFmpeg-style jobs report
+// them so far) -- null just leaves the existing stored value alone
+// rather than overwriting it, so a job type that never reports them
+// doesn't flicker a real value back to null on its next plain progress
+// update.
+export function updateJobProgress(
+  id: number,
+  workerId: number,
+  progress: number,
+  fps: number | null = null,
+  etaSeconds: number | null = null,
+): void {
+  db.prepare(
+    `UPDATE jobs SET progress = ?, fps = COALESCE(?, fps), eta_seconds = COALESCE(?, eta_seconds)
+       WHERE id = ? AND worker_id = ? AND status = 'RUNNING'`,
+  ).run(progress, fps, etaSeconds, id, workerId);
 }
 
 // Scoped by workerId (the authenticated agent's own workstation, from
@@ -138,7 +148,7 @@ export function retryJob(id: number): Job | undefined {
 
   db.prepare(
     `UPDATE jobs
-       SET status = 'QUEUED', retry_count = retry_count + 1, progress = 0,
+       SET status = 'QUEUED', retry_count = retry_count + 1, progress = 0, fps = NULL, eta_seconds = NULL,
            worker_id = NULL, gpu_slot = NULL, started_at = NULL, finished_at = NULL, error = NULL
        WHERE id = ?`,
   ).run(id);

@@ -67,7 +67,9 @@ export interface AgentMetricsPayload {
   // P3-4: progress of the job the Agent is currently running, if any —
   // reported on every heartbeat while it's in flight (not a separate
   // endpoint, same "everything rides the heartbeat" pattern as P2-8).
-  runningJob?: { id: number; progress: number };
+  // P4-2: fps/etaSeconds are optional -- only FFmpeg-style jobs report
+  // them (see agent's FfmpegJobRunner), the "test" job type doesn't.
+  runningJob?: { id: number; progress: number; fps?: number; etaSeconds?: number };
 }
 
 export interface CachedMetrics extends AgentMetricsPayload {

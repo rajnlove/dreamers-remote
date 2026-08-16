@@ -35,6 +35,10 @@ export interface Job {
   // it's a free-form set of key/value pairs, not something queried by
   // column.
   required_software: string | null;
+  // P4-2: generic progress-detail fields a worker may optionally report
+  // alongside `progress` -- null if this job type never reports them.
+  fps: number | null;
+  eta_seconds: number | null;
 }
 
 export interface JobInput {

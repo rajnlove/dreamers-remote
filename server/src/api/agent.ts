@@ -72,7 +72,13 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   let cancelJobId: number | undefined;
   if (body.runningJob) {
     if (isJobStillRunning(body.runningJob.id, workstationId)) {
-      updateJobProgress(body.runningJob.id, workstationId, body.runningJob.progress);
+      updateJobProgress(
+        body.runningJob.id,
+        workstationId,
+        body.runningJob.progress,
+        body.runningJob.fps ?? null,
+        body.runningJob.etaSeconds ?? null,
+      );
     } else {
       cancelJobId = body.runningJob.id;
     }

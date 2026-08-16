@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 (Phase 3 complete; Phase 4 started, P4-0 docs done, blocked on open questions below)
+Last updated: 2026-08-16 (Phase 3 complete; Phase 4 P4-0/P4-1/P4-2 done — real FFmpeg job runner exists, not yet verified on a real workstation)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -18,19 +18,46 @@ complete and in daily/live use; Phase 2 has one known deferred issue
 (P2-8 Restart/Shutdown doesn't work on real hardware yet — see Known
 Issues). Milestone breakdown for Phase 4 is in
 [ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz) (P4-0
-onward) — **provisional past P4-1**, real work is blocked on open
-architecture questions the spec doesn't answer (see "Info still needed
-from user" below). **Nothing from Phase 5 onward is started.**
+onward). **Nothing from Phase 5 onward is started.**
+
+**Architecture decided by the user 2026-08-16** (superseding the
+"provisional, open questions" note this file had earlier the same
+day):
+1. **Job creation**: the existing PHP Projects site
+   (`http://192.29.11.92:8088/Projects`) is the job-creation side —
+   calls `POST /api/jobs` directly. No new PHP app in this repo.
+2. **File access**: a Windows worker reads/writes files via a
+   configurable UNC path straight to TrueNAS storage
+   (e.g. `\\192.29.11.92\Projects\...`) — never through the Dreamers
+   API. The web route above is display-only, never a source/output
+   path. `projectId` links a job to a Project on the PHP site for
+   reference; the Worker only ever acts on the UNC
+   sourcePath/outputPath the server has already validated.
+3. **Job schema**: structured (`sourcePath`, `outputPath`, `codec`,
+   `qualityMode`, `quality`, `bitrate`, `preset`, `resolution`,
+   `audioCodec`, `projectId`), not a raw FFmpeg command — the Agent
+   builds arguments from a whitelist. Not hardcoded to H.264: codec is
+   one of `h264_nvenc`/`hevc_nvenc`/`av1_nvenc`.
+4. **Security**: PHP never sends a raw command; the Worker validates
+   sourcePath/outputPath against a configured allow-list before
+   touching the filesystem (independently of the server's own check —
+   defense in depth, not just one gate).
+5. User explicitly said not to stop and ask about these — implemented
+   directly per the decision above, only stopping for genuine
+   blockers.
 
 ## Current Milestone
 
-**P4-0 (docs) done.** P4-1 onward is blocked on open questions — see
-"Info still needed from user." Phase 3 (P3-1 through P3-8) is fully
-complete: the full job engine loop works end-to-end (priority-ordered,
-dependency-aware, threshold-gated, software-version-aware scheduling;
-real cancellation; retry; stale-job cleanup), has a working dashboard
-UI, and has been verified live on real production hardware, not just
-locally:
+**P4-3 (PHP integration point)** — nothing to build per the
+architecture above (PHP calls `POST /api/jobs` directly), but has one
+open item: what auth PHP actually uses to call a session-cookie-gated
+endpoint (see "Info still needed from user"). P4-0/P4-1/P4-2 are done —
+see ROADMAP.md for the full P4-0 through P4-5 breakdown. Phase 3
+(P3-1 through P3-8) is fully complete: the full job engine loop works
+end-to-end (priority-ordered, dependency-aware, threshold-gated,
+software-version-aware scheduling; real cancellation; retry; stale-job
+cleanup), has a working dashboard UI, and has been verified live on
+real production hardware, not just locally:
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
   repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
   `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
@@ -188,10 +215,50 @@ locally:
 
 **Phase 3 is now fully complete (P3-0 through P3-8).**
 
+- **Phase 4, P4-1 (FFmpeg capability + real detection)**:
+  `Dreamers.Agent.Core/Ffmpeg/FfmpegDetector.cs` — runs
+  `ffmpeg -version`/`-encoders` once per Agent process (`Lazy<T>`, not
+  every heartbeat), reports `ffmpeg` as a `WorkerCapabilities` entry
+  and its real version via `WorkerSoftwareVersions` only when actually
+  found; detects but doesn't yet surface NVENC encoder support
+  (h264/hevc/av1) beyond the internal `FfmpegInfo` record — nothing
+  needs it yet.
+- **Phase 4, P4-2 (FFmpeg job runner, end to end)**: real `ffmpeg` job
+  type. Server: `server/src/job/ffmpegValidation.ts` (structured input
+  validation — enums for codec/qualityMode/preset/audioCodec, regex for
+  bitrate/resolution, path-prefix check against `FFMPEG_ALLOWED_ROOTS`
+  env var), new `jobs.fps`/`jobs.eta_seconds` columns (generic progress
+  detail, not FFmpeg-specific). Agent:
+  `Dreamers.Agent.Core/Jobs/FfmpegJobRunner.cs` — independently
+  re-validates paths against its own `allowed_paths.json`
+  (`AllowedPathsConfigStore`, empty/deny-all by default), confirms the
+  source file exists, builds ffmpeg's argument list from a whitelist
+  only (`FfmpegArgs` — enums/regex-checked, never a raw command string,
+  always `ProcessStartInfo.ArgumentList` not `UseShellExecute`), parses
+  `-progress pipe:1` output for machine-readable
+  progress/fps/eta (`FfmpegProgressParser`, `FfprobeDuration` for total
+  duration), reports success only if exit code 0 **and** the output
+  file exists. `Worker.cs` now dispatches to one of several
+  `IJobRunner`s keyed by job `type` (`Dreamers.Agent.Core/Jobs/
+  IJobRunner.cs`) instead of hardcoding `TestJobRunner` — `TestJobRunner`
+  itself refactored onto the same interface/shared `JobSnapshot` type,
+  no behavior change. **Real bug caught by this milestone's own unit
+  tests**: `FfmpegJobRunner.Start()` could finish synchronously (via a
+  fast validation failure with no `await` reached) before returning
+  control to its caller, making `IsBusy` unreliable immediately after
+  `Start()` — fixed with an `await Task.Yield()` as `RunAsync`'s first
+  line, guaranteeing `Start()`'s own synchronous state-set always wins
+  the race. **Not yet run against a real ffmpeg encode** — see Tests
+  Performed and Known Issues.
+
 ## In Progress
 
-Nothing — Phase 3 (P3-0 through P3-8) finished this session. Waiting
-on the user for what's next.
+Nothing blocking — Phase 4 P4-0 through P4-2 finished this session.
+P4-3 has one open item (PHP's auth mechanism for calling
+`POST /api/jobs`, see "Info still needed from user") but isn't blocked
+on it for anything already built. Next up per the roadmap: P4-4 (Topaz
+worker) and P4-5 (multi-GPU verification with real workloads), or
+verifying P4-2 on a real workstation first — see Next Task.
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -233,20 +300,37 @@ them (see Known Issues) — not being worked on right now.
   hits, timeout + 404, before that container was deleted) — a subnet
   outside the known studio LAN range, never identified. Worth watching
   for if it resurfaces elsewhere.
+- **P4-2's FFmpeg job runner has never actually run ffmpeg** — this dev
+  machine has no `ffmpeg`/`ffprobe` on PATH. Every piece that doesn't
+  need a real ffmpeg binary is tested (path validation, argument
+  whitelisting, progress-line parsing, the full server-side create→
+  validate→schedule→assign loop against a mocked worker) but the actual
+  `Process.Start("ffmpeg", ...)` → real encode → output-file-exists path
+  is unverified. Not a known bug, just an untested path — see Next Task
+  for how to close it out.
 
 ## Next Task
 
-**P4-1 — FFmpeg capability + real capability detection**, blocked on
-the user answering the open questions below (file-access architecture
-mainly — P4-1 itself doesn't strictly need them, but there's no point
-detecting FFmpeg capability without knowing what P4-2 will need to run
-it against). See [ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)
-for the full P4-0 through P4-5 breakdown (provisional past P4-1).
+**Verify P4-2 on a real workstation** — this dev machine has no
+`ffmpeg`/`ffprobe` installed, so the actual encode path
+(`FfmpegJobRunner` spawning `ffmpeg.exe` for real) has only been
+verified as far as: unit tests for every pure piece (path validation,
+argument whitelisting, progress parsing) and a full server-side smoke
+test (create → validate → schedule → assign against a real temp SQLite
+DB with a mocked worker reporting `ffmpeg` capability) — not an actual
+running encode. To close this out for real: install ffmpeg on one
+workstation (or point `PATH` at a portable build), configure
+`allowed_paths.json` with a real UNC root, set `FFMPEG_ALLOWED_ROOTS`
+on the server, and run one real job against a real (even tiny) video
+file over the actual SMB share. See ROADMAP.md's P4-2 entry.
 
-All 4 workstations' Agents are now updated and reporting both
-`capabilities` (P3-2) and `softwareVersions` (P3-8) correctly —
-verified live via `/api/workers` 2026-08-16. Rollout item from earlier
-is done.
+After that: **P4-4 — Topaz worker** and **P4-5 — multi-GPU
+verification with real workloads**
+(see [ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)).
+P4-3 (PHP integration) has no code to write per the architecture
+decision, but its one open item (PHP's auth mechanism) should get
+answered before PHP actually tries to call `POST /api/jobs` for real —
+see "Info still needed from user."
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking, pick up whenever the user asks.
@@ -446,6 +530,35 @@ not blocking, pick up whenever the user asks.
   never has this problem (it always writes `last_seen` via
   `new Date().toISOString()`, not raw SQL) — fixed the test to match,
   not the app.
+- **P4-1/P4-2 FFmpeg**: server `typecheck`/`test`/`build` clean (73/73
+  unit tests, up from 52 — added `ffmpegValidation.test.ts` (17 cases:
+  path allow-listing, every enum/regex field) and 2 `validation.test.ts`
+  cases confirming `type: "ffmpeg"` actually dispatches to the stricter
+  check rather than being accepted as opaque free-form input like other
+  job types). `dotnet build`/`test` clean (74/74, up from 42 — added
+  `PathValidatorTests`, `FfmpegArgsTests` (whitelist enforcement +
+  confirms an unusual sourcePath stays one unsplit `ArgumentList` entry,
+  never concatenated), `FfmpegProgressParserTests` (block parsing, reset
+  between blocks), `FfmpegJobRunnerTests` (validation-failure paths only
+  — see Known Issues for what isn't covered without real ffmpeg). A
+  seventh throwaway smoke-test script (not committed) against a real
+  temp SQLite DB confirmed the full server-side loop: a well-formed
+  `ffmpeg` job gets `ASSIGNED` to a worker reporting `ffmpeg` capability
+  (with `preset`/`audioCodec` defaults applied and normalized into the
+  stored `input`); a `sourcePath` outside `FFMPEG_ALLOWED_ROOTS` is
+  rejected at `POST /api/jobs` time, before a job row even exists; a
+  worker with only `test` capability never gets an `ffmpeg` job
+  assigned. **Real bug caught by `FfmpegJobRunnerTests` itself**: a
+  fast synchronous validation failure (bad path, empty allowed-roots)
+  could let `RunAsync` finish before `Start()`'s caller regained
+  control, making `IsBusy` briefly unreliable right after `Start()` —
+  fixed with `await Task.Yield()` as `RunAsync`'s first line; both
+  previously-failing tests (`StartWhileAlreadyBusyThrows`,
+  `ResetAfterFinishingAllowsStartingAnotherJob`) pass after the fix.
+  **What's NOT tested**: an actual `ffmpeg.exe` process actually
+  encoding a real file — this dev machine has neither `ffmpeg` nor
+  `ffprobe` installed (confirmed via `where ffmpeg` before starting).
+  See Known Issues and Next Task.
 
 ## Required User Action
 
@@ -609,24 +722,25 @@ dotnet publish Dreamers.Agent -c Release -r win-x64 -o .\dist
   Dockge's default bind-mount (`./data`) onto a proper named dataset —
   candidates seen: `pool_cgivn_share`, `pool_cgivn_work`. Nothing
   currently depends on this.
-- **Phase 4 blockers, added 2026-08-16** — MASTER_PROJECT_SPEC.md §17
-  says "User Upload → TrueNAS Storage → PHP creates Job → Dreamers Job
-  Queue → Windows Worker → FFmpeg NVENC → Result → TrueNAS" but this
-  repo has no visibility into the PHP/upload side of that flow:
-  - **What creates the job?** Is there already a PHP app on TrueNAS
-    that will call `POST /api/jobs`, or does that not exist yet either
-    (i.e. is building it part of Phase 4's scope too)? If it exists:
-    where does it live, what auth would it use to call our API (the
-    session-cookie auth `/api/jobs` currently requires assumes a
-    logged-in dashboard user, not a server-to-server caller)?
-  - **How does a Windows worker reach the source file and write the
-    result?** SMB share from TrueNAS mounted on each of the 4
-    workstations? If so, what's the mount point / UNC path convention,
-    and does it already exist or does Phase 4 need to set it up? This
-    blocks P4-2 (the actual FFmpeg job runner) — it can't be written
-    without knowing what a job's `input`/`output` paths will look like.
-  - **Job input schema** — once file access is answered: what does an
-    FFmpeg job actually need to specify (source path, target codec/
-    container, resolution, bitrate/quality preset, output path)? Can
-    default to something reasonable once the above is answered, but
-    worth confirming rather than guessing given it's a new contract.
+- **Phase 4 architecture — RESOLVED 2026-08-16.** The user answered all
+  three open questions this section originally listed (job creation,
+  file access, job schema) directly rather than leaving them open —
+  see Current Phase for the full decision. Kept here as a pointer, not
+  duplicated.
+- **Phase 4 — PHP's auth mechanism, still open.** The decided
+  architecture has the PHP Projects site call `POST /api/jobs`
+  directly, but that endpoint is currently gated by
+  session-cookie auth (`requireAuth` — assumes a logged-in dashboard
+  user, not a server-to-server caller). Options: a service account PHP
+  logs in as and keeps a session for, a separate API-key/token auth
+  path for server-to-server calls, or something else. Not blocking
+  anything built so far (P4-1/P4-2 don't care who the caller is), but
+  needs an answer before PHP can actually call it for real.
+- **FFmpeg install + real UNC share, needed to verify P4-2 for real.**
+  This dev machine has neither `ffmpeg` nor a mounted TrueNAS SMB
+  share, so P4-2 is only verified up to what unit tests + a mocked
+  server-side smoke test can prove (see Tests Performed / Known
+  Issues). To actually prove a real encode works: which workstation
+  should get `ffmpeg`/`ffprobe` installed first, and what's the real
+  UNC path to configure in `FFMPEG_ALLOWED_ROOTS` (server) and
+  `allowed_paths.json` (that workstation's Agent)?

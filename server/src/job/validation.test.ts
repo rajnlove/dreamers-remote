@@ -54,3 +54,20 @@ test("validateCreateInput rejects a required_software entry with a non-string ve
   assert.throws(() => validateCreateInput({ type: "test", required_software: { test: 1 } }));
   assert.throws(() => validateCreateInput({ type: "test", required_software: { test: "" } }));
 });
+
+test("validateCreateInput rejects a malformed-JSON input for an ffmpeg job", () => {
+  assert.throws(() => validateCreateInput({ type: "ffmpeg", input: "{not json" }));
+});
+
+test("validateCreateInput rejects an ffmpeg job whose input fails the ffmpeg-specific shape check", () => {
+  // No FFMPEG_ALLOWED_ROOTS configured in this test process, so any
+  // path fails -- confirms validateCreateInput actually dispatches to
+  // validateFfmpegInput rather than accepting ffmpeg input as opaque
+  // free-form text like other job types.
+  assert.throws(() =>
+    validateCreateInput({
+      type: "ffmpeg",
+      input: JSON.stringify({ sourcePath: "C:\\x.mov", outputPath: "C:\\y.mp4", codec: "h264_nvenc", qualityMode: "cq" }),
+    }),
+  );
+});

@@ -37,6 +37,9 @@ internal sealed record HeartbeatPayload
     {
         public int Id { get; init; }
         public int Progress { get; init; }
+        // P4-2: only FFmpeg-style jobs report these -- null for "test".
+        public double? Fps { get; init; }
+        public int? EtaSeconds { get; init; }
     }
 
     public static HeartbeatPayload FromSnapshot(SystemMetricsSnapshot snapshot) => new()

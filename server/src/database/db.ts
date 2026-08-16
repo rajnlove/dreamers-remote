@@ -155,3 +155,9 @@ ensureColumn("workstations", "jobs_enabled", "INTEGER NOT NULL DEFAULT 1");
 // software_versions doesn't match every entry. Null means no
 // requirement, same as depends_on's null-means-none convention.
 ensureColumn("jobs", "required_software", "TEXT");
+
+// Phase 4 (P4-2): generic progress-detail fields, not FFmpeg-specific --
+// any job type that has a meaningful encode/render rate can report
+// these alongside `progress`. Null until a worker reports them.
+ensureColumn("jobs", "fps", "REAL");
+ensureColumn("jobs", "eta_seconds", "INTEGER");

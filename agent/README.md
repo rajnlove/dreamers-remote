@@ -177,3 +177,24 @@ Windows DPAPI — never edit this file by hand.
 The monitored-process list lives in
 `C:\ProgramData\DreamersRemote\monitored_processes.json`, also created
 with sensible VFX-app defaults on first run; hand-editable.
+
+Phase 4 (P4-2): FFmpeg's allowed source/output roots live in
+`C:\ProgramData\DreamersRemote\allowed_paths.json`, created empty on
+first run (deny-all until configured):
+
+```json
+{
+  "allowedRoots": [
+    "\\\\192.29.11.92\\Projects"
+  ]
+}
+```
+
+An `ffmpeg` job's `sourcePath`/`outputPath` must fall under one of
+these (checked here on the Agent, independently of the server's own
+`FFMPEG_ALLOWED_ROOTS` check — defense in depth) or the job fails
+immediately with a clear error instead of touching the filesystem.
+Hand-editable; restart the service after changing it. This machine
+also needs `ffmpeg`/`ffprobe` on `PATH` for the `ffmpeg` capability to
+be reported at all — see `WorkerCapabilities`/`FfmpegDetector` in
+`Dreamers.Agent.Core`.
