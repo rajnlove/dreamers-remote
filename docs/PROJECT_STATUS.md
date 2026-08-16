@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 (Phase 3 complete; Phase 4 P4-0/P4-1/P4-2 fully done — real FFmpeg job runner verified end-to-end over the real TrueNAS SMB share with a real production source file)
+Last updated: 2026-08-16 evening (Phase 4 P4-0/P4-1/P4-2 done + demo button deployed and live; blocked on SSH key setup for TrueNAS before finishing deployment — see Required User Action)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -627,22 +627,60 @@ not blocking, pick up whenever the user asks.
 
 ## Required User Action
 
-**To see the FFmpeg demo working live on the real dashboard** (all
-commits up to and including the "+ FFMPEG DEMO" button are pushed, CI
-green, images on GHCR — none of this is deployed to TrueNAS yet):
-1. Dockge → `vncgi-remote-server` → **Update** (picks up all of P4-1/
-   P4-2's server code).
-2. Dockge → `vncgi-remote-web` → **Update** (picks up the new "+
-   FFMPEG DEMO" button).
-3. Add environment variable `FFMPEG_ALLOWED_ROOTS` =
-   `\\192.29.11.92\web_data\www\Projects` to `vncgi-remote-server`'s
-   container config in Dockge, then restart it.
+### Immediate blocker (as of this exact point, 2026-08-16 evening): SSH key for TrueNAS
+
+The user gave a standing instruction: for any future Docker/Dockge
+change, prefer terminal/filesystem/`docker`/`docker compose`/API over
+asking them to click through the Dockge UI — only ask for a UI action
+when nothing else can reach it, and when asking, hand over one
+complete, ready-to-paste action, never something requiring them to
+think/edit/test.
+
+To make that possible, an SSH keypair was generated on this dev
+machine (`CGI-Render`) at `~/.ssh/truenas_dreamers` (private) /
+`~/.ssh/truenas_dreamers.pub` (public). TrueNAS's SSH port (22) is
+confirmed open from here. **What's needed from the user**: add the
+public key below to whichever TrueNAS user they'd SSH in as (TrueNAS
+UI: Credentials → Users → [user] → Edit → "SSH Public Key" field), and
+say which username that is. Once that's done, Docker/Dockge changes
+(including the `FFMPEG_ALLOWED_ROOTS` env var below) can be done via
+SSH directly — find the real compose file, edit it, `docker compose`
+validate/up, read logs, verify — without further Dockge UI round-trips.
+
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAIAWHHeopplrdd1CRYL0j5N4QvZyyjxe9HBFH3fpzJ claude-code@dreamers-remote-dev
+```
+
+**Do not re-generate this key in a future session** — check whether
+`~/.ssh/truenas_dreamers` already exists on this machine first (it's
+local, not committed to git, so a fresh session won't see it in the
+repo — check the actual filesystem). If the user says they already
+added it, verify with `ssh -i ~/.ssh/truenas_dreamers <user>@192.29.11.92 'echo ok'`
+before assuming it's still pending.
+
+### Once SSH access works: finish the FFmpeg demo deployment
+
+All commits up to and including the "+ FFMPEG DEMO" button are pushed,
+CI green, images on GHCR.
+1. ~~Dockge → `vncgi-remote-server` → Update~~ **DONE** — confirmed
+   live: `POST /api/jobs` with an ffmpeg-shaped body now returns the
+   real `ffmpegValidation.ts` error instead of the old pre-P4-2
+   behavior.
+2. ~~Dockge → `vncgi-remote-web` → Update~~ **DONE** — the "+ FFMPEG
+   DEMO" button is visible on the live dashboard.
+3. **STILL PENDING**: set environment variable `FFMPEG_ALLOWED_ROOTS` =
+   `\\192.29.11.92\web_data\www\Projects` on `vncgi-remote-server`,
+   restart it. Confirmed still missing as of this point — clicking "+
+   FFMPEG DEMO" on the live dashboard returns
+   `sourcePath must be under a configured allowed root (FFMPEG_ALLOWED_ROOTS)`.
+   Do this via SSH/docker compose once available (see above), not
+   Dockge UI, per the user's standing instruction.
 4. `CGI-Render`'s Agent already has `allowed_paths.json` configured
    with that same root (done directly this session) and `ffmpeg`
    installed — but the *running* Agent service there still predates
    P4-1/P4-2 (`FfmpegJobRunner` doesn't exist in it yet). Double-click
    `D:\AICODEX\agent\dist\DreamersAgent.exe` on `CGI-Render` once more
-   to update it.
+   to update it — this one genuinely needs the user (UAC prompt).
 5. Open the dashboard → JOBS → "+ FFMPEG DEMO (GPU encode thật)" — a
    real GPU-encoded video should appear at
    `\\192.29.11.92\web_data\www\Projects\SOURCE\dreamers_demo_*.mp4`
