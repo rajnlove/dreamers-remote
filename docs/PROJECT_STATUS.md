@@ -11,23 +11,20 @@ Last updated: 2026-08-16
 
 ## Current Phase
 
-**Phase 2 — Dreamers Agent — COMPLETE** (2026-08-16), with one known
+**Phase 3 — Dreamers Job Engine.** Started 2026-08-16 (explicit user
+request — "qua phase 3"). Phase 1 (Web Remote) and Phase 2 (Dreamers
+Agent) are both complete and in daily use; Phase 2 has one known
 deferred issue (P2-8 Restart/Shutdown doesn't work on real hardware yet
-— see Known Issues; the user chose to defer debugging it rather than
-block phase completion on it). Phase 1 (Web Remote) is also done and in
-daily use. **Nothing from Phase 3 onward is started** (Job Engine,
-Processing, Render Farm, Performance Remote, Studio Control Center,
-Studio OS Integration — see MASTER_PROJECT_SPEC.md) — per the user's
-own rule, do not start any of it without an explicit request.
+— see Known Issues). Milestone breakdown for Phase 3 is in
+[ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) (P3-0 through
+P3-8). **Nothing from Phase 4 onward is started** — per the user's own
+rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**None active.** P2-8 and P2-9 were the last items in Phase 2's
-roadmap (see ROADMAP.md) — both are code-complete, closing out the
-phase. No further Phase 2 work is queued. The next milestone would be
-the first item of Phase 3 (Job Engine — queue, scheduler, worker, GPU
-slots per MASTER_PROJECT_SPEC.md §13-16), which has no design or
-scope breakdown yet and has not been requested to start.
+**P3-0 — Docs.** In progress: this update plus the Phase 3 milestone
+breakdown added to ROADMAP.md. Next: **P3-1 — Job data model** (`jobs`
+table + basic CRUD, no scheduler yet).
 
 ## Completed
 
@@ -53,9 +50,12 @@ scope breakdown yet and has not been requested to start.
 
 ## In Progress
 
-Nothing actively in progress — the two items below were tested live and
-found broken; user chose to defer debugging them (see Known Issues).
-No other Phase 2 work is queued.
+- **Phase 3, P3-0 (docs)** — this file + ROADMAP.md's Phase 3 milestone
+  breakdown. About to move to P3-1 (job data model).
+
+Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
+found broken; user chose to defer debugging them rather than block on
+them (see Known Issues) — not being worked on right now.
 
 ## Known Issues
 
@@ -96,11 +96,15 @@ No other Phase 2 work is queued.
 
 ## Next Task
 
-No active task — P2-8 and multi-monitor debugging are deferred (see
-Known Issues), and there's no other queued Phase 2 work. Waiting on the
-user for either: (a) a decision to resume debugging one of the deferred
-issues, or (b) a new request. Do not start Phase 3 (Job Engine) without
-an explicit request.
+**P3-1 — Job data model.** `jobs` table (id, type, status, priority,
+created_at, started_at, finished_at, worker_id, gpu_slot, progress,
+input, output, error, retry_count) + basic CRUD API. See
+[ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full P3-0
+through P3-8 breakdown — work through them in order, one at a time,
+same as Phase 2's P2-0 through P2-9.
+
+P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
+not blocking Phase 3, pick up whenever the user asks.
 
 ## Tests Performed
 

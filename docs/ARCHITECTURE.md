@@ -126,3 +126,56 @@ optionally runs `DreamersAgent.exe` as a Windows Service:
   [ROADMAP.md](ROADMAP.md)) without touching the Agent, and vice versa —
   monitoring/management must keep working even if the remote-desktop
   transport changes.
+
+## Phase 3 — Dreamers Job Engine (design, in progress)
+
+Started 2026-08-16. Milestone breakdown:
+[ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine). Full requirements:
+[MASTER_PROJECT_SPEC.md §13-16](MASTER_PROJECT_SPEC.md#13-phase-3--dreamers-job-engine-future).
+A third subsystem, independent of both the VNC remote-desktop path (V1)
+and the Agent monitoring/command path (Phase 2) — reuses the Agent's
+existing heartbeat channel for job delivery (same "rides the next
+heartbeat, no inbound listener" pattern as P2-8's commands) rather than
+opening a new one.
+
+```
+                  TRUENAS
+
+        Dreamers Remote Server
+                 |
+                 |-- WS (/ws/vnc/:id)              <- V1, unchanged
+                 |-- HTTPS/WS (metrics, commands)   <- Phase 2, unchanged
+                 |-- HTTPS/WS (job assignment,       <- Phase 3, new
+                 |   progress, results)
+      +----------+----------+
+      |          |          |
+      v          v          v
+   COMP-01     CGI-01      FX-01
+ Dreamers     Dreamers    Dreamers
+ Agent        Agent       Agent
+ (+ Job       (+ Job      (+ Job         <- Agent gains a job-execution
+  Worker)      Worker)     Worker)          role, still one process
+```
+
+- **Job Engine core** (server-side): queue + scheduler, backed by a new
+  `jobs` table (P3-1) alongside the existing `workstations`/`users`
+  tables — same SQLite database, no new datastore. Scheduler assigns
+  `QUEUED` jobs to workers by capability match (P3-2/P3-3) and, for
+  GPU-bound work, by individual GPU slot rather than whole machine
+  (MASTER_PROJECT_SPEC.md §3, §19 — a 2-GPU machine is 2 independently
+  assignable slots).
+- **Worker** = the Agent, extended (not replaced): the same
+  `DreamersAgent.exe` that reports metrics and executes restart/shutdown
+  now also polls for an assigned job on its heartbeat and executes it
+  (P3-4), reporting progress/completion back the same way
+  `command-result` already does for P2-8. No second binary, no second
+  install.
+- **No real job types yet**: Phase 3 proves the engine with a trivial
+  built-in `test` job type (sleep + progress). FFmpeg/Topaz (Phase 4)
+  and render apps (Phase 5) plug into this same engine as additional job
+  types later — Phase 3 doesn't implement or depend on any of them.
+- **Why this stays a separate subsystem**: same reasoning as Phase 2 —
+  the job engine must keep working regardless of what the remote-desktop
+  transport (V1/V2) or the specific processing tools (Phase 4/5) end up
+  being. The Agent accumulates roles (metrics, commands, now jobs) but
+  the *server-side* subsystems stay decoupled from each other.
