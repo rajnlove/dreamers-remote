@@ -30,7 +30,7 @@ workstation yet. See below.
   actually take effect. This has bitten this project before (M6's CORS
   bug shipped this way). Update pulls first, then recreates.
   - GitHub Actions (`.github/workflows/docker-build.yml`) builds+pushes
-    `server`/`web`/`novnc` images to GHCR on every push to `main`
+    `server`/`web` images to GHCR on every push to `main`
     (paths: `server/**`, `web/**`, `docker/**`). Check
     https://github.com/rajnlove/dreamers-remote/actions is green before
     deploying.
@@ -54,37 +54,32 @@ Per [DOCKER_LIFECYCLE.md](DOCKER_LIFECYCLE.md); full detail in
 [CONTAINERS.md](CONTAINERS.md).
 
 - **PRODUCTION**: `vncgi-remote-server`, `vncgi-remote-web`
-- **DEPRECATED, confirmed 2026-08-16, but still has live traffic —
-  do not remove yet**: `vncgi-remote`, `vncgi-remote-93`. Two Dockge
-  stacks nobody had documented, found while testing the remote page
-  this session. Both confirmed via Dockge inspection (compose.yaml +
-  terminal log — see [CONTAINERS.md](CONTAINERS.md) for full detail) to
-  be the Milestone 1 proof-of-concept standalone `novnc` proxy
-  (`docker/novnc.Dockerfile`), one hardcoded to CGI-01
-  (`vncgi-remote`, port 6080 → 192.29.11.94:5900) and one to COMP-01
-  (`vncgi-remote-93`, port 6081 → 192.29.11.93:5900).
-  - **Architecturally obsolete**: the real app proxies `/ws/vnc/:id`
-    through `vncgi-remote-server` itself (`wsProxy.ts`), behind session
-    login. These two don't call into that at all.
-  - **Real security gap**: reaching either directly (`:6080`/`:6081`)
-    gets you into that workstation's VNC with *no dashboard login
-    required* — a live bypass of the M6 authentication work, scoped to
-    exactly these 2 of the 4 workstations.
-  - **Why not just remove them**: both logged genuine WebSocket
-    connections as recently as 15/Aug/2026 12:39 (seconds apart from
-    each other — looks like one person touched both that day). Someone
-    or something still uses the old direct URLs. `vncgi-remote-93` also
-    logged 2 hits from `192.168.1.3` — a subnet that doesn't match any
-    known studio workstation (`192.29.11.x`) — worth finding out what
-    that device is before assuming this is just an internal habit.
-  - **Next step**: figure out who's still hitting `:6080`/`:6081`
-    directly (ask around, or watch the Dockge terminal for a few days),
-    get them onto the real dashboard, confirm nothing else depends on
-    it, then STOP → VERIFY → REMOVE per DOCKER_LIFECYCLE.md. Also:
-    `.github/workflows/docker-build.yml` still builds+pushes a
-    `dreamers-remote-novnc` image on every push — worth dropping from
-    CI once these two are actually retired, so a leftover build target
-    doesn't invite a third one of these later.
+- **DEPRECATED — removal confirmed 2026-08-16, pending user action in
+  Dockge**: `vncgi-remote`, `vncgi-remote-93`. Two Dockge stacks nobody
+  had documented, found while testing the remote page this session.
+  Both confirmed via Dockge inspection (compose.yaml + terminal log —
+  see [CONTAINERS.md](CONTAINERS.md) for full detail) to be the
+  Milestone 1 proof-of-concept standalone `novnc` proxy, one hardcoded
+  to CGI-01 (`vncgi-remote`, port 6080 → 192.29.11.94:5900) and one to
+  COMP-01 (`vncgi-remote-93`, port 6081 → 192.29.11.93:5900).
+  Architecturally obsolete (the real app proxies `/ws/vnc/:id` through
+  `vncgi-remote-server` itself, behind session login) **and a real
+  security gap while they exist**: reaching either directly bypassed
+  the dashboard login entirely — a live hole in the M6 auth work,
+  scoped to exactly these 2 of the 4 workstations. Both had logged
+  genuine recent WebSocket traffic (15/Aug/2026 12:39); user confirmed
+  that was their own testing, not another user, so removal is cleared.
+  - **Done same day**: repo-side cleanup — removed
+    `docker/novnc.Dockerfile`, `docker/novnc-entrypoint.sh`, the
+    `novnc` service from `docker/docker-compose.yml`, the `novnc` image
+    matrix entry from `.github/workflows/docker-build.yml`, and updated
+    `SETUP.md`/`ARCHITECTURE.md`/`.env.example` to stop describing it.
+  - **Still needed**: the user stopping and deleting both stacks
+    directly in Dockge — this agent has no Dockge access to do that
+    part. `vncgi-remote-93`'s log also had 2 unexplained hits from
+    `192.168.1.3` (not `192.29.11.x`, no known studio device matches) —
+    removing the container removes that access path regardless, but if
+    that IP shows up again elsewhere later it's worth tracking down.
 - **TEMPORARY**: none currently tracked.
 - **FUTURE**: none currently tracked.
 

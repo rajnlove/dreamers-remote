@@ -1,18 +1,4 @@
 services:
-  # Milestone 1 proof of concept: browser -> noVNC -> websockify -> UltraVNC.
-  # This is the only service required to validate remote access works.
-  novnc:
-    build:
-      context: ..
-      dockerfile: docker/novnc.Dockerfile
-    environment:
-      VNC_TARGET_HOST: ${VNC_TARGET_HOST}
-      VNC_TARGET_PORT: ${VNC_TARGET_PORT:-5900}
-      NOVNC_LISTEN_PORT: 6080
-    ports:
-      - "${NOVNC_PORT:-6080}:6080"
-    restart: unless-stopped
-
   # Backend API + WebSocket VNC proxy + Wake-on-LAN sender.
   # network_mode: host is required for M5's Wake-on-LAN: a UDP broadcast
   # magic packet sent from inside Docker's default bridge network never

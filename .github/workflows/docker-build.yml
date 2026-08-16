@@ -27,8 +27,6 @@ jobs:
             dockerfile: docker/server.Dockerfile
           - image: web
             dockerfile: docker/web.Dockerfile
-          - image: novnc
-            dockerfile: docker/novnc.Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4

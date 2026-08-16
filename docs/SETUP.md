@@ -36,27 +36,7 @@ Install on every workstation that should be remoteable.
    and **MAC address** (`ipconfig /all`) — needed for the workstation
    registry (M2) and Wake-on-LAN (M5).
 
-## 2. TrueNAS / Docker side — Milestone 1 proof of concept
-
-Milestone 1 only needs noVNC + websockify pointed at one UltraVNC host — no
-backend, no database yet.
-
-```bash
-cd dreamers-remote
-cp .env.example .env
-# edit .env: set VNC_TARGET_HOST and VNC_TARGET_PORT to the Windows PC from step 1
-docker compose --project-directory . -f docker/docker-compose.yml up -d novnc
-```
-
-`--project-directory .` is required because the compose file lives in
-`docker/` — without it, Compose would look for `.env` and resolve relative
-volume paths relative to `docker/` instead of the repo root.
-
-Open `http://<truenas-ip>:6080/vnc.html`, click Connect, and enter the VNC
-password you set in step 1 (see [SECURITY.md](SECURITY.md) for why the
-password is entered in-browser rather than stored server-side in V1).
-
-## 3. TrueNAS deployment (full app, later milestones)
+## 2. TrueNAS deployment (full app)
 
 - **Dataset**: create an app dataset, e.g.
   `/mnt/<POOL>/apps/dreamers-remote/` (pool name is env-driven, never
@@ -64,15 +44,21 @@ password is entered in-browser rather than stored server-side in V1).
   file), `config/` (workstation config, if file-based).
 - **Docker volumes**: bind-mount `${DATA_ROOT}/db` into the server
   container at `/data` for the SQLite file.
-- **Ports**: web UI + API on a single port (default `8080`), noVNC on
-  `6080` if run as a separate container. Neither is exposed outside the LAN
-  (no port forwarding, no reverse proxy to the internet).
+- **Ports**: web UI on one port, API/WS proxy on another (default `8080`
+  — see `docs/PROJECT_STATUS.md` for the live values). Not exposed
+  outside the LAN (no port forwarding, no reverse proxy to the internet).
+  There is no separate noVNC/websockify container — noVNC's client
+  library is bundled into the web app, and the WebSocket-to-VNC proxy
+  runs inside the server itself (`server/src/remote/wsProxy.ts`), behind
+  the same session login as the rest of the app. (A standalone noVNC
+  container existed during Milestone 1 and is now removed — see
+  `docs/CONTAINERS.md` if you find one still running somewhere.)
 - **Environment variables**: see `.env.example` at repo root — TrueNAS IP,
   data root path, and per-deployment secrets are not committed, only
   documented there as placeholders.
-- **Networking**: single Docker bridge network shared by `dreamers-server`,
-  `dreamers-web`, and (if separate) the noVNC/websockify container; the
-  studio LAN is reached via the host's existing 10GbE interface.
+- **Networking**: single Docker bridge network shared by `dreamers-server`
+  and `dreamers-web`; the studio LAN is reached via the host's existing
+  10GbE interface.
 - **Restart policy**: `unless-stopped` on all containers.
 - **Backup**: back up the `db/` subfolder of the app dataset with TrueNAS's
   normal dataset snapshot/replication tools — no app-specific backup logic

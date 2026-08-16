@@ -76,10 +76,12 @@ encode). V1's goal is a working prototype fast; V2 is tracked separately in
 
 ## Deployment shape
 
-Single `docker-compose.yml` with two or three containers
-(`dreamers-server`, `dreamers-web`, optionally a `novnc` container — see
-[SETUP.md](SETUP.md) for the decision). Deployed on TrueNAS SCALE as a
-Custom App / Compose stack, LAN-only, not exposed to the internet.
+Single `docker-compose.yml` with two containers (`dreamers-server`,
+`dreamers-web`). Deployed on TrueNAS SCALE as a Custom App / Compose
+stack, LAN-only, not exposed to the internet. (A separate `novnc`
+container existed during Milestone 1's proof of concept; removed once
+the server took over WS proxying itself — see
+[CONTAINERS.md](CONTAINERS.md).)
 
 ## Phase 2 — Dreamers Agent (monitoring + safe management)
 
