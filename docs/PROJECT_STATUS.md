@@ -22,9 +22,10 @@ rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P3-3 — Basic scheduler**, up next (FIFO assignment of `QUEUED` jobs
-to capability-matched workers with a free GPU slot — no priority
-ordering or dependency yet, that's P3-6). P3-1 and P3-2 are done:
+**P3-4 — Job execution on the Agent**, up next (deliver an `ASSIGNED`
+job to its worker on the next heartbeat, same pattern as P2-8's
+commands; execute the built-in `test` job type — sleep + progress —
+and report completion). P3-1 through P3-3 are done:
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
   repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
   `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
@@ -33,9 +34,13 @@ ordering or dependency yet, that's P3-6). P3-1 and P3-2 are done:
   heartbeat; server derives GPU slots from the already-cached `gpus[]`
   metrics (no new storage) via `GET /api/workers`
   (`server/src/job/workers.ts`).
+- P3-3: `server/src/job/scheduler.ts` — FIFO, capability + GPU-slot
+  matched assignment (`QUEUED` → `ASSIGNED`, sets `worker_id`/
+  `gpu_slot`). Runs after every `POST /api/jobs` and on every Agent
+  heartbeat. No priority ordering or dependency graph yet (P3-6).
 
-Nothing assigns jobs to workers yet — `POST /api/jobs` still just
-queues a row.
+Jobs now get assigned (`ASSIGNED`) to a specific worker + GPU slot, but
+nothing executes them yet — that's P3-4.
 
 ## Completed
 
@@ -71,10 +76,13 @@ queues a row.
   (`server/src/job/workers.ts`) from already-cached heartbeat data —
   one entry per agent-paired workstation with its capabilities and one
   GPU-slot entry per reported GPU. No new DB storage.
+- **Phase 3, P3-3 (basic scheduler)**: `server/src/job/scheduler.ts` —
+  FIFO, capability + GPU-slot matched assignment. Triggered after job
+  creation and on every heartbeat (`server/src/api/{jobs,agent}.ts`).
 
 ## In Progress
 
-Nothing — P3-1 and P3-2 finished this session. Next up is P3-3 (see
+Nothing — P3-1 through P3-3 finished this session. Next up is P3-4 (see
 Current Milestone).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
@@ -120,13 +128,14 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-3 — Basic scheduler.** FIFO assignment of `QUEUED` jobs
-(`server/src/job/repository.ts`) to workers with a matching capability
-(`GET /api/workers` from P3-2) and a free GPU slot. No priority
-ordering or dependency graph yet — that's P3-6. See
-[ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full P3-0
-through P3-8 breakdown — work through them in order, one at a time,
-same as Phase 2's P2-0 through P2-9.
+**P3-4 — Job execution on the Agent.** Same delivery pattern as P2-8's
+commands: an `ASSIGNED` job rides the Agent's next heartbeat response
+(no inbound listener). Built-in `test` job type on the Agent side:
+sleep N seconds, report progress 0-100 back to the server, then
+complete — proves the full loop end-to-end with no real workload
+attached. See [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine)
+for the full P3-0 through P3-8 breakdown — work through them in order,
+one at a time, same as Phase 2's P2-0 through P2-9.
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking Phase 3, pick up whenever the user asks.
@@ -174,6 +183,30 @@ not blocking Phase 3, pick up whenever the user asks.
   agent-less workstation is correctly excluded, a 2-GPU workstation
   correctly produces 2 independent slot entries, and capabilities pass
   through unchanged.
+- **P3-3 scheduler**: `findAssignment`/`workerUnits` unit-tested (pure,
+  no DB — `job/scheduler.test.ts`). `runScheduler()` itself smoke-tested
+  end-to-end (not committed): 1 GPU slot, 2 same-capability jobs + 1
+  wrong-capability job → first job `ASSIGNED` to the right worker/slot,
+  second stays `QUEUED` (slot taken), third stays `QUEUED` (capability
+  mismatch); re-running the scheduler is idempotent (doesn't reassign
+  or double-book). typecheck/test/build clean (42/42 unit tests, up
+  from 36).
+- **Local-dev-only flakiness noticed and worked around**: while
+  iterating on `scheduler.test.ts`, hit an intermittent native crash on
+  process exit (`RemoveEnvironmentCleanupHook` assertion inside
+  `better-sqlite3`'s native addon) — reproduced inconsistently, not on
+  every run. Likely related to this being Node v24 (very new) with
+  `better-sqlite3` compiled from source rather than an official
+  prebuilt binary (see the Node.js install note above). Consolidated a
+  redundant second `import ... from "better-sqlite3"` in
+  `workstation/repository.ts` into one shared import via `db.ts`
+  (harmless either way, ESM+native-addon double-import is one
+  documented cause of this class of crash) — 5 clean full-suite runs
+  since. **This is a local Windows dev-machine quirk only**: the
+  production Docker image builds/runs on `node:20-alpine` (see
+  `docker/server.Dockerfile`), a completely different, stable
+  environment never exposed to this. If it recurs, it's almost
+  certainly not a real application bug — don't chase it as one.
 - **Not yet tested through the live HTTP API or a browser**: `/api/jobs`,
   `/api/workers`, or any Phase 3 endpoint. All verification so far is
   local (unit tests + smoke scripts against a temp DB), not against the

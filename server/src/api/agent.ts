@@ -6,6 +6,7 @@ import { setMetrics, type AgentMetricsPayload } from "../agent/metricsCache.js";
 import { consumeRegistrationToken } from "../agent/registrationTokens.js";
 import { getWorkstation } from "../workstation/repository.js";
 import { isAgentCommand, recordCommandResult, takePendingCommand } from "../agent/commands.js";
+import { runScheduler } from "../job/scheduler.js";
 
 // Mounted at /api/agent, NOT behind requireAuth — these are called by the
 // Agent itself, which has no user session. Authentication is per-route:
@@ -54,6 +55,11 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
 
   recordHeartbeat(workstationId, body.agentVersion, body.os);
   setMetrics(workstationId, body);
+
+  // P3-3: a worker just reported fresh capabilities/online status —
+  // retry assignment in case something was QUEUED with nothing free
+  // to take it before now.
+  runScheduler();
 
   // P2-8: no inbound listener on the Agent — a pending restart/shutdown
   // rides the next heartbeat response instead of being pushed. See

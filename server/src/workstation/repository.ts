@@ -1,5 +1,4 @@
-import Database from "better-sqlite3";
-import { db } from "../database/db.js";
+import { Database, db } from "../database/db.js";
 import { ConflictError } from "./errors.js";
 import type { Workstation, WorkstationInput, WorkstationUpdateInput } from "./types.js";
 

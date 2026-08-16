@@ -3,6 +3,16 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { env } from "../config/env.js";
 
+// Re-exported so callers that need e.g. `Database.SqliteError` (see
+// workstation/repository.ts) import the native addon from here instead
+// of adding their own separate `from "better-sqlite3"` import — with
+// ESM's CJS-interop for native addons, two independent import sites for
+// the same native module have been observed to double-register the
+// addon's process cleanup hook, crashing on teardown (Node asserting
+// `RemoveEnvironmentCleanupHook`'s env != nullptr). One import site here
+// avoids the whole question.
+export { Database };
+
 mkdirSync(dirname(env.databaseFile), { recursive: true });
 
 export const db = new Database(env.databaseFile);

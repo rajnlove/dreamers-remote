@@ -1,11 +1,10 @@
 import { Router } from "express";
 import { cancelJob, createJob, getJob, listJobs } from "../job/repository.js";
+import { runScheduler } from "../job/scheduler.js";
 import { validateCreateInput } from "../job/validation.js";
 import { NotFoundError, ValidationError } from "../workstation/errors.js";
 
-// P3-1: no scheduler yet (P3-3) — POST just queues a row, nothing
-// assigns it to a worker. Mounted behind requireAuth in index.ts, same
-// as workstationsRouter.
+// Mounted behind requireAuth in index.ts, same as workstationsRouter.
 export const jobsRouter = Router();
 
 function parseId(raw: string | undefined): number {
@@ -35,7 +34,10 @@ jobsRouter.post("/", (req, res, next) => {
   try {
     const input = validateCreateInput(req.body);
     const created = createJob(input);
-    res.status(201).json(created);
+    // P3-3: try to assign immediately (a worker may already be free) —
+    // also retried on every Agent heartbeat, so this isn't the only chance.
+    runScheduler();
+    res.status(201).json(getJob(created.id));
   } catch (err) {
     next(err);
   }
