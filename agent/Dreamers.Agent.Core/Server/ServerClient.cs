@@ -87,7 +87,7 @@ public sealed class ServerClient
 
         var result = JsonSerializer.Deserialize<HeartbeatResponse>(body, JsonOptions);
         var job = result?.Job is { } j ? new AssignedJob(j.Id, j.Type, j.Input) : null;
-        return new HeartbeatResult(result?.Command, job);
+        return new HeartbeatResult(result?.Command, job, result?.CancelJobId);
     }
 
     public async Task SendCommandResultAsync(
@@ -142,6 +142,9 @@ public sealed class ServerClient
         public bool Ok { get; init; }
         public string? Command { get; init; }
         public AssignedJobPayload? Job { get; init; }
+        // P3-5: set when the job we reported as RunningJob was cancelled
+        // server-side (POST /api/jobs/:id/cancel) while we were mid-run.
+        public int? CancelJobId { get; init; }
     }
 
     private sealed class AssignedJobPayload
@@ -170,4 +173,4 @@ public sealed record RunningJobStatus(int Id, int Progress);
 
 public sealed record AssignedJob(int Id, string Type, string? Input);
 
-public sealed record HeartbeatResult(string? Command, AssignedJob? Job);
+public sealed record HeartbeatResult(string? Command, AssignedJob? Job, int? CancelJobId);

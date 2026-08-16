@@ -22,9 +22,9 @@ rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P3-5 — Job lifecycle (cancel/retry/failure handling)**, up next.
-P3-1 through P3-4 are done — the full job engine loop now works
-end-to-end (create → schedule → deliver → execute → report), just with
+**P3-6 — Priority + workstation availability + dependency**, up next.
+P3-1 through P3-5 are done — the full job engine loop works end-to-end
+including real cancellation, retry, and stale-job cleanup, just with
 only a trivial built-in `test` job type and no UI to drive it yet
 (that's P3-7):
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
@@ -53,6 +53,16 @@ only a trivial built-in `test` job type and no UI to drive it yet
   reporting Agent's own `workstationId` owns the job, mirroring P2-8's
   `recordCommandResult` scoping — a compromised Agent credential can't
   touch another workstation's job.
+- P3-5: **real** cancellation — `POST /api/jobs/:id/cancel` on a
+  RUNNING job is now observed by the Agent (the next heartbeat's
+  response tells it to stop, via `cancelJobId`), not just a DB status
+  flip the Agent never finds out about. `POST /api/jobs/:id/retry`
+  (FAILED → QUEUED, bumps `retry_count`, no hard-coded max attempts —
+  each retry is a deliberate action, not automatic). Stale-job
+  cleanup: a RUNNING job whose worker goes offline (Agent crash, power
+  loss, network drop) gets marked FAILED with an explanatory error
+  instead of sitting RUNNING forever and permanently occupying its
+  slot — checked on every scheduler run via `failStaleRunningJobs()`.
 
 ## Completed
 
@@ -96,11 +106,15 @@ only a trivial built-in `test` job type and no UI to drive it yet
   `TestJobRunner` + `POST /api/agent/job-result`. Server side: job
   delivery/progress/completion wired into the heartbeat handler,
   worker-scoped so one Agent can't touch another's job.
+- **Phase 3, P3-5 (job lifecycle)**: real cancellation the Agent
+  observes (`TestJobRunner.Cancel`, `cancelJobId` in the heartbeat
+  response), `POST /api/jobs/:id/retry`, stale-RUNNING-job cleanup
+  (`failStaleRunningJobs`, called every scheduler run).
 
 ## In Progress
 
-Nothing — P3-1 through P3-4 finished this session. Next up is P3-5 (see
-Current Milestone).
+Nothing — P3-1 through P3-5 finished this session. Next up is P3-6
+(see Current Milestone).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -145,14 +159,13 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-5 — Job lifecycle.** Cancel is already partially there
-(`POST /api/jobs/:id/cancel`, P3-1) but doesn't yet stop an actually
-RUNNING job on the Agent (it only flips DB status — the Agent has no
-way to know a job it's mid-running got cancelled). Add: retry (using
-`retry_count`, re-queue a FAILED job up to some limit), real
-cancellation the Agent can observe, failure handling polish. Pause/
-resume only if it can be done cleanly for the trivial `test` type,
-otherwise defer to whichever Phase 4/5 job type first needs it. See
+**P3-6 — Priority + workstation availability + dependency.**
+Priority-ordered scheduling (the `jobs.priority` column already exists
+from P3-1 but `runScheduler()` still processes strict FIFO by `id`,
+ignoring it); workstation states
+(`AVAILABLE`/`BUSY`/`DISABLED`/`DEDICATED_WORKER`/`INTERACTIVE`) with
+configurable thresholds gating new assignment; basic job dependency
+(job B waits for job A). See
 [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full
 P3-0 through P3-8 breakdown.
 
@@ -239,6 +252,16 @@ not blocking Phase 3, pick up whenever the user asks.
   the wrong `workerId` is a no-op, from the right one sets
   `COMPLETED`/progress 100/`finished_at` → a second job created
   afterward gets scheduled onto the now-free worker. All correct.
+- **P3-5 job lifecycle**: `dotnet build`/`test` clean (42/42, up from
+  39 — added 3 `Cancel()` tests including a real cancelled-mid-sleep
+  run). Server `typecheck`/`test`/`build` clean. A fourth throwaway
+  smoke-test script confirmed: retry is a no-op on a non-FAILED job,
+  succeeds from FAILED (bumps `retry_count`, clears result fields, gets
+  re-scheduled); `isJobStillRunning` correctly flips false the instant
+  an admin cancels a RUNNING job (and is workerId-scoped); a RUNNING
+  job whose worker's `last_seen` goes stale gets marked FAILED with an
+  explanatory error, and the worker becomes assignable again once back
+  online.
 - **Not yet tested through the live HTTP API or a browser**: `/api/jobs`,
   `/api/workers`, or any Phase 3 endpoint. All verification so far is
   local (unit tests + smoke scripts against a temp DB), not against the

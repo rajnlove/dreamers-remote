@@ -7,7 +7,13 @@ import { consumeRegistrationToken } from "../agent/registrationTokens.js";
 import { getWorkstation } from "../workstation/repository.js";
 import { isAgentCommand, recordCommandResult, takePendingCommand } from "../agent/commands.js";
 import { runScheduler } from "../job/scheduler.js";
-import { completeJob, getAssignedJobForWorker, startJob, updateJobProgress } from "../job/repository.js";
+import {
+  completeJob,
+  getAssignedJobForWorker,
+  isJobStillRunning,
+  startJob,
+  updateJobProgress,
+} from "../job/repository.js";
 
 // Mounted at /api/agent, NOT behind requireAuth — these are called by the
 // Agent itself, which has no user session. Authentication is per-route:
@@ -57,15 +63,24 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   recordHeartbeat(workstationId, body.agentVersion, body.os);
   setMetrics(workstationId, body);
 
-  // P3-4: the Agent reports progress of whatever job it's currently
-  // running as part of every heartbeat, not a separate endpoint.
+  // P3-4/P3-5: the Agent reports progress of whatever job it's currently
+  // running as part of every heartbeat, not a separate endpoint. If that
+  // job is no longer RUNNING server-side (an admin cancelled it via
+  // POST /api/jobs/:id/cancel while the Agent was mid-run), tell it to
+  // stop rather than silently swallowing progress updates for a job the
+  // Agent doesn't know was pulled out from under it.
+  let cancelJobId: number | undefined;
   if (body.runningJob) {
-    updateJobProgress(body.runningJob.id, workstationId, body.runningJob.progress);
+    if (isJobStillRunning(body.runningJob.id, workstationId)) {
+      updateJobProgress(body.runningJob.id, workstationId, body.runningJob.progress);
+    } else {
+      cancelJobId = body.runningJob.id;
+    }
   }
 
-  // P3-3: a worker just reported fresh capabilities/online status —
-  // retry assignment in case something was QUEUED with nothing free
-  // to take it before now.
+  // P3-3/P3-5: a worker just reported fresh capabilities/online status —
+  // retry assignment in case something was QUEUED with nothing free to
+  // take it before now, and free up any job whose worker went stale.
   runScheduler();
 
   // P3-4: only hand out a new job if the Agent isn't already reporting
@@ -87,7 +102,12 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   // agent/commands.ts and docs/PROJECT_STATUS.md.
   const command = takePendingCommand(workstationId);
 
-  res.json({ ok: true, ...(command ? { command } : {}), ...(job ? { job } : {}) });
+  res.json({
+    ok: true,
+    ...(command ? { command } : {}),
+    ...(job ? { job } : {}),
+    ...(cancelJobId !== undefined ? { cancelJobId } : {}),
+  });
 });
 
 agentRouter.post("/command-result", requireAgentAuth, (req, res) => {

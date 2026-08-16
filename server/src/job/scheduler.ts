@@ -1,5 +1,6 @@
 import { db } from "../database/db.js";
 import { listWorkers } from "./workers.js";
+import { failStaleRunningJobs } from "./repository.js";
 import type { Job } from "./types.js";
 import type { WorkerInfo } from "./workers.js";
 
@@ -38,13 +39,18 @@ export function findAssignment(jobType: string, workers: WorkerInfo[], busy: Rea
   return null;
 }
 
-// P3-3: FIFO, capability-matched, GPU-slot-aware assignment. No
+// P3-3/P3-5: FIFO, capability-matched, GPU-slot-aware assignment. No
 // priority ordering or dependency graph yet (P3-6). Called after a job
 // is created and on every Agent heartbeat (agent/heartbeat may have
-// just brought a worker online or, later, freed a slot by completing a
-// job) — safe to call redundantly, a no-op if there's nothing to do.
-// Nothing executes the job yet (P3-4); this only flips QUEUED -> ASSIGNED.
+// just brought a worker online, freed a slot by completing a job, or —
+// P3-5 — a worker just went offline mid-job) — safe to call
+// redundantly, a no-op if there's nothing to do.
 export function runScheduler(): void {
+  // Unconditional, before the queued-jobs early return below: a job
+  // whose worker died mid-run needs to be freed up even on a tick with
+  // nothing new to assign.
+  failStaleRunningJobs();
+
   const queued = db.prepare(`SELECT * FROM jobs WHERE status = 'QUEUED' ORDER BY id ASC`).all() as Job[];
   if (queued.length === 0) return;
 

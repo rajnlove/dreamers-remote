@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { cancelJob, createJob, getJob, listJobs } from "../job/repository.js";
+import { cancelJob, createJob, getJob, listJobs, retryJob } from "../job/repository.js";
 import { runScheduler } from "../job/scheduler.js";
 import { validateCreateInput } from "../job/validation.js";
 import { NotFoundError, ValidationError } from "../workstation/errors.js";
@@ -49,6 +49,23 @@ jobsRouter.post("/:id/cancel", (req, res, next) => {
     const job = cancelJob(id);
     if (!job) throw new NotFoundError("Job not found");
     res.json(job);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// P3-5: only valid from FAILED — see retryJob's comment. Re-queued jobs
+// get picked up like any other by the next scheduler run.
+jobsRouter.post("/:id/retry", (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    const job = retryJob(id);
+    if (!job) throw new NotFoundError("Job not found");
+    if (job.status !== "QUEUED") {
+      throw new ValidationError(`Job is ${job.status}, not FAILED — nothing to retry`);
+    }
+    runScheduler();
+    res.json(getJob(id));
   } catch (err) {
     next(err);
   }

@@ -58,4 +58,45 @@ public class TestJobRunnerTests
         runner.Start(jobId: 1, inputJson: "not json at all");
         Assert.True(runner.IsBusy);
     }
+
+    [Fact]
+    public async Task Cancel_StopsTheRunningJob_WithNoFinishedSnapshotToReport()
+    {
+        var runner = new TestJobRunner();
+        runner.Start(jobId: 1, inputJson: """{"seconds":10}""");
+
+        runner.Cancel(1);
+        // Give the cancelled Task.Delay a moment to actually unwind.
+        await Task.Delay(TimeSpan.FromMilliseconds(200));
+
+        Assert.False(runner.IsBusy);
+        Assert.Null(runner.GetSnapshot());
+    }
+
+    [Fact]
+    public void Cancel_WithMismatchedJobId_IsANoOp()
+    {
+        var runner = new TestJobRunner();
+        runner.Start(jobId: 1, inputJson: """{"seconds":10}""");
+
+        runner.Cancel(999);
+
+        Assert.True(runner.IsBusy);
+        Assert.Equal(1, runner.GetSnapshot()!.JobId);
+    }
+
+    [Fact]
+    public async Task Cancel_AfterAlreadyFinished_DoesNotClearTheFinishedSnapshot()
+    {
+        var runner = new TestJobRunner();
+        runner.Start(jobId: 1, inputJson: """{"seconds":1}""");
+        await Task.Delay(TimeSpan.FromSeconds(1.5));
+
+        runner.Cancel(1);
+
+        var snapshot = runner.GetSnapshot();
+        Assert.NotNull(snapshot);
+        Assert.True(snapshot!.Finished);
+        Assert.True(snapshot.Success);
+    }
 }

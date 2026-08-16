@@ -140,6 +140,15 @@ public sealed class Worker : BackgroundService
                         await HandlePendingCommandAsync(credential, heartbeat.Command, stoppingToken);
                     }
 
+                    // P3-5: the job we're running was cancelled server-side
+                    // (POST /api/jobs/:id/cancel) — stop it. Nothing to
+                    // report back; the server is already authoritative.
+                    if (heartbeat.CancelJobId is { } cancelId)
+                    {
+                        _logger.LogInformation("Job {JobId} was cancelled — stopping", cancelId);
+                        _jobRunner.Cancel(cancelId);
+                    }
+
                     // P3-4: only one job at a time (see TestJobRunner) — if
                     // the server assigned one while the runner is still
                     // busy, it just stays ASSIGNED server-side and gets

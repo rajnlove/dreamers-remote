@@ -24,6 +24,7 @@ public sealed class TestJobRunner
 
     private readonly object _lock = new();
     private Snapshot? _current;
+    private CancellationTokenSource? _cts;
 
     public bool IsBusy
     {
@@ -44,8 +45,26 @@ public sealed class TestJobRunner
         lock (_lock) _current = null;
     }
 
+    // P3-5: the server tells the Agent to stop via the next heartbeat
+    // response (POST /api/jobs/:id/cancel already flipped it to
+    // CANCELLED server-side) — this doesn't report anything back, there's
+    // nothing to report, the server is already authoritative. A no-op if
+    // jobId doesn't match what's currently running (e.g. a stale/late
+    // cancel signal for a job that already finished on its own).
+    public void Cancel(int jobId)
+    {
+        lock (_lock)
+        {
+            if (_current is { Finished: false } c && c.JobId == jobId)
+            {
+                _cts?.Cancel();
+            }
+        }
+    }
+
     public void Start(int jobId, string? inputJson)
     {
+        CancellationToken token;
         lock (_lock)
         {
             if (_current is not null && !_current.Finished)
@@ -53,19 +72,21 @@ public sealed class TestJobRunner
                 throw new InvalidOperationException("A job is already running.");
             }
             _current = new Snapshot(jobId, 0, Finished: false, Success: false, Error: null);
+            _cts = new CancellationTokenSource();
+            token = _cts.Token;
         }
 
         var seconds = ParseSeconds(inputJson);
-        _ = RunAsync(jobId, seconds);
+        _ = RunAsync(jobId, seconds, token);
     }
 
-    private async Task RunAsync(int jobId, int seconds)
+    private async Task RunAsync(int jobId, int seconds, CancellationToken cancellationToken)
     {
         try
         {
             for (var elapsed = 1; elapsed <= seconds; elapsed++)
             {
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
                 var progress = (int)(elapsed * 100.0 / seconds);
                 lock (_lock)
                 {
@@ -80,6 +101,19 @@ public sealed class TestJobRunner
                 if (_current is { } c && c.JobId == jobId)
                 {
                     _current = c with { Progress = 100, Finished = true, Success = true };
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancel() already told us why — clear straight to idle rather
+            // than a Finished snapshot; there's nothing for Worker.cs to
+            // report, the server is already authoritative on this job.
+            lock (_lock)
+            {
+                if (_current is { } c && c.JobId == jobId)
+                {
+                    _current = null;
                 }
             }
         }

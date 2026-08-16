@@ -1,4 +1,5 @@
 import { db } from "../database/db.js";
+import { isAgentOnline } from "../agent/onlineStatus.js";
 import type { Job, JobInput } from "./types.js";
 
 const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -93,4 +94,61 @@ export function completeJob(
     ).run(new Date().toISOString(), output, error, id, workerId);
   }
   return getJob(id);
+}
+
+// P3-5: whether the job is still RUNNING and still owned by this
+// worker. Called on every heartbeat that reports progress for a job —
+// if it's gone false (someone cancelled it via POST /api/jobs/:id/cancel
+// while it was running), the server tells the Agent to stop rather than
+// silently ignoring progress updates for a job the Agent doesn't know
+// was cancelled out from under it.
+export function isJobStillRunning(id: number, workerId: number): boolean {
+  const job = getJob(id);
+  return job?.status === "RUNNING" && job.worker_id === workerId;
+}
+
+// P3-5: only valid from FAILED — retrying a job that's still QUEUED/
+// RUNNING/ASSIGNED makes no sense (nothing to retry yet), and retrying
+// a COMPLETED/CANCELLED one would silently resurrect it. Re-queues with
+// a bumped retry_count and cleared result fields; the scheduler picks
+// it up like any other QUEUED job. No hard-coded max attempts yet —
+// each retry is a deliberate admin action, not automatic.
+export function retryJob(id: number): Job | undefined {
+  const job = getJob(id);
+  if (!job) return undefined;
+  if (job.status !== "FAILED") return job;
+
+  db.prepare(
+    `UPDATE jobs
+       SET status = 'QUEUED', retry_count = retry_count + 1, progress = 0,
+           worker_id = NULL, gpu_slot = NULL, started_at = NULL, finished_at = NULL, error = NULL
+       WHERE id = ?`,
+  ).run(id);
+  return getJob(id);
+}
+
+// P3-5: a job whose worker went offline (Agent crashed, machine lost
+// power, network dropped) mid-run would otherwise sit RUNNING forever —
+// nothing would ever mark it done, and the scheduler would think that
+// GPU slot / CPU unit is still busy indefinitely. Called from
+// runScheduler() on every tick: any RUNNING job whose worker isn't
+// agentOnline gets marked FAILED with an explanatory error, freeing its
+// slot for the next assignment.
+export function failStaleRunningJobs(): void {
+  const running = db
+    .prepare(
+      `SELECT jobs.id as job_id, workstations.last_seen as last_seen
+         FROM jobs JOIN workstations ON workstations.id = jobs.worker_id
+         WHERE jobs.status = 'RUNNING'`,
+    )
+    .all() as Array<{ job_id: number; last_seen: string | null }>;
+
+  for (const row of running) {
+    if (!isAgentOnline(row.last_seen)) {
+      db.prepare(
+        `UPDATE jobs SET status = 'FAILED', finished_at = ?, error = 'Worker went offline while job was running'
+           WHERE id = ?`,
+      ).run(new Date().toISOString(), row.job_id);
+    }
+  }
 }
