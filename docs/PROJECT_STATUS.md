@@ -22,10 +22,11 @@ rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P3-4 — Job execution on the Agent**, up next (deliver an `ASSIGNED`
-job to its worker on the next heartbeat, same pattern as P2-8's
-commands; execute the built-in `test` job type — sleep + progress —
-and report completion). P3-1 through P3-3 are done:
+**P3-5 — Job lifecycle (cancel/retry/failure handling)**, up next.
+P3-1 through P3-4 are done — the full job engine loop now works
+end-to-end (create → schedule → deliver → execute → report), just with
+only a trivial built-in `test` job type and no UI to drive it yet
+(that's P3-7):
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
   repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
   `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
@@ -38,9 +39,20 @@ and report completion). P3-1 through P3-3 are done:
   matched assignment (`QUEUED` → `ASSIGNED`, sets `worker_id`/
   `gpu_slot`). Runs after every `POST /api/jobs` and on every Agent
   heartbeat. No priority ordering or dependency graph yet (P3-6).
-
-Jobs now get assigned (`ASSIGNED`) to a specific worker + GPU slot, but
-nothing executes them yet — that's P3-4.
+- P3-4: an `ASSIGNED` job rides the Agent's next heartbeat response
+  (`ASSIGNED` → `RUNNING`, same "no inbound listener" pattern as
+  P2-8's commands). Agent's `TestJobRunner`
+  (`Dreamers.Agent.Core/Jobs/`) runs the built-in `test` type —
+  sleeps `input.seconds` (default 5), reporting progress 0-100 on
+  every heartbeat — then POSTs `/api/agent/job-result`
+  (`RUNNING` → `COMPLETED`/`FAILED`). **Deliberate simplification**:
+  the Agent only runs one job at a time even on a multi-GPU
+  workstation with multiple free slots — true concurrent multi-slot
+  execution is deferred, not part of "prove the loop works." All
+  worker-scoped job mutations (progress update, complete) verify the
+  reporting Agent's own `workstationId` owns the job, mirroring P2-8's
+  `recordCommandResult` scoping — a compromised Agent credential can't
+  touch another workstation's job.
 
 ## Completed
 
@@ -79,10 +91,15 @@ nothing executes them yet — that's P3-4.
 - **Phase 3, P3-3 (basic scheduler)**: `server/src/job/scheduler.ts` —
   FIFO, capability + GPU-slot matched assignment. Triggered after job
   creation and on every heartbeat (`server/src/api/{jobs,agent}.ts`).
+- **Phase 3, P3-4 (job execution on the Agent)**: full loop works
+  end-to-end (create → schedule → deliver → run → report). Agent side:
+  `TestJobRunner` + `POST /api/agent/job-result`. Server side: job
+  delivery/progress/completion wired into the heartbeat handler,
+  worker-scoped so one Agent can't touch another's job.
 
 ## In Progress
 
-Nothing — P3-1 through P3-3 finished this session. Next up is P3-4 (see
+Nothing — P3-1 through P3-4 finished this session. Next up is P3-5 (see
 Current Milestone).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
@@ -128,14 +145,16 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-4 — Job execution on the Agent.** Same delivery pattern as P2-8's
-commands: an `ASSIGNED` job rides the Agent's next heartbeat response
-(no inbound listener). Built-in `test` job type on the Agent side:
-sleep N seconds, report progress 0-100 back to the server, then
-complete — proves the full loop end-to-end with no real workload
-attached. See [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine)
-for the full P3-0 through P3-8 breakdown — work through them in order,
-one at a time, same as Phase 2's P2-0 through P2-9.
+**P3-5 — Job lifecycle.** Cancel is already partially there
+(`POST /api/jobs/:id/cancel`, P3-1) but doesn't yet stop an actually
+RUNNING job on the Agent (it only flips DB status — the Agent has no
+way to know a job it's mid-running got cancelled). Add: retry (using
+`retry_count`, re-queue a FAILED job up to some limit), real
+cancellation the Agent can observe, failure handling polish. Pause/
+resume only if it can be done cleanly for the trivial `test` type,
+otherwise defer to whichever Phase 4/5 job type first needs it. See
+[ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full
+P3-0 through P3-8 breakdown.
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking Phase 3, pick up whenever the user asks.
@@ -207,6 +226,19 @@ not blocking Phase 3, pick up whenever the user asks.
   `docker/server.Dockerfile`), a completely different, stable
   environment never exposed to this. If it recurs, it's almost
   certainly not a real application bug — don't chase it as one.
+- **P3-4 job execution loop**: `dotnet build`/`test` clean (39/39, up
+  from 35 — added `TestJobRunnerTests.cs`, including an actual
+  1-second async run verifying progress reaches 100 and the busy/reset
+  lifecycle behaves). Server `typecheck`/`test`/`build` clean. Ran a
+  third throwaway smoke-test script exercising the full loop against a
+  real temp SQLite DB: create → `runScheduler()` assigns → simulated
+  heartbeat delivery starts it (`ASSIGNED`→`RUNNING`, `started_at`
+  set) → a second delivery attempt correctly finds nothing (no longer
+  `ASSIGNED`) → progress update from the *wrong* `workerId` is
+  silently ignored, from the *right* one applies → `completeJob` from
+  the wrong `workerId` is a no-op, from the right one sets
+  `COMPLETED`/progress 100/`finished_at` → a second job created
+  afterward gets scheduled onto the now-free worker. All correct.
 - **Not yet tested through the live HTTP API or a browser**: `/api/jobs`,
   `/api/workers`, or any Phase 3 endpoint. All verification so far is
   local (unit tests + smoke scripts against a temp DB), not against the

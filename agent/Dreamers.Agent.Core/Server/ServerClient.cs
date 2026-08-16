@@ -58,17 +58,25 @@ public sealed class ServerClient
     }
 
     /// <summary>
-    /// Returns the pending command name (e.g. "restart"), if the server had
-    /// one queued for this workstation — null otherwise. See P2-8: there's
-    /// no inbound listener on the Agent, so a queued restart/shutdown rides
-    /// this response instead of being pushed.
+    /// Returns whatever the server had for this workstation on this
+    /// heartbeat: a pending command (P2-8) and/or a newly assigned job
+    /// (P3-4) — either can be null. Both ride this same response rather
+    /// than being pushed; the Agent has no inbound listener.
     /// </summary>
-    public async Task<string?> SendHeartbeatAsync(string credential, SystemMetricsSnapshot snapshot, CancellationToken cancellationToken = default)
+    public async Task<HeartbeatResult> SendHeartbeatAsync(
+        string credential,
+        SystemMetricsSnapshot snapshot,
+        RunningJobStatus? runningJob,
+        CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/heartbeat");
         request.Headers.Add("X-Agent-Id", _config.AgentId);
         request.Headers.Add("X-Agent-Credential", credential);
-        request.Content = JsonContent.Create(HeartbeatPayload.FromSnapshot(snapshot), options: JsonOptions);
+        var payload = HeartbeatPayload.FromSnapshot(snapshot) with
+        {
+            RunningJob = runningJob is { } rj ? new HeartbeatPayload.RunningJobPayload { Id = rj.Id, Progress = rj.Progress } : null,
+        };
+        request.Content = JsonContent.Create(payload, options: JsonOptions);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -78,7 +86,8 @@ public sealed class ServerClient
         }
 
         var result = JsonSerializer.Deserialize<HeartbeatResponse>(body, JsonOptions);
-        return result?.Command;
+        var job = result?.Job is { } j ? new AssignedJob(j.Id, j.Type, j.Input) : null;
+        return new HeartbeatResult(result?.Command, job);
     }
 
     public async Task SendCommandResultAsync(
@@ -94,6 +103,22 @@ public sealed class ServerClient
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             throw new InvalidOperationException($"command-result failed ({(int)response.StatusCode}): {body}");
+        }
+    }
+
+    public async Task SendJobResultAsync(
+        string credential, int jobId, bool ok, string? error, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/job-result");
+        request.Headers.Add("X-Agent-Id", _config.AgentId);
+        request.Headers.Add("X-Agent-Credential", credential);
+        request.Content = JsonContent.Create(new JobResultRequest { JobId = jobId, Ok = ok, Error = error }, options: JsonOptions);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"job-result failed ({(int)response.StatusCode}): {body}");
         }
     }
 
@@ -116,6 +141,14 @@ public sealed class ServerClient
     {
         public bool Ok { get; init; }
         public string? Command { get; init; }
+        public AssignedJobPayload? Job { get; init; }
+    }
+
+    private sealed class AssignedJobPayload
+    {
+        public int Id { get; init; }
+        public string Type { get; init; } = string.Empty;
+        public string? Input { get; init; }
     }
 
     private sealed class CommandResultRequest
@@ -124,4 +157,17 @@ public sealed class ServerClient
         public bool Ok { get; init; }
         public string? Detail { get; init; }
     }
+
+    private sealed class JobResultRequest
+    {
+        public int JobId { get; init; }
+        public bool Ok { get; init; }
+        public string? Error { get; init; }
+    }
 }
+
+public sealed record RunningJobStatus(int Id, int Progress);
+
+public sealed record AssignedJob(int Id, string Type, string? Input);
+
+public sealed record HeartbeatResult(string? Command, AssignedJob? Job);

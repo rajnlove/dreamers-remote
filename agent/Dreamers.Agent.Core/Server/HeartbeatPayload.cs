@@ -9,7 +9,10 @@ namespace Dreamers.Agent.Core.Server;
 /// Uptime (a TimeSpan) becomes a plain number of seconds — the server
 /// side has no reason to understand .NET's TimeSpan string format.
 /// </summary>
-internal sealed class HeartbeatPayload
+// A record (not a plain class) so ServerClient can use a `with`
+// expression to layer the current RunningJob onto the snapshot-derived
+// payload without a mutable setter.
+internal sealed record HeartbeatPayload
 {
     public string? Hostname { get; init; }
     public string? Os { get; init; }
@@ -24,6 +27,14 @@ internal sealed class HeartbeatPayload
     public IReadOnlyList<ProcessSnapshot>? Processes { get; init; }
     // P3-2: what job types this Agent can execute — see WorkerCapabilities.
     public IReadOnlyList<string>? Capabilities { get; init; }
+    // P3-4: progress of the job this Agent is currently running, if any.
+    public RunningJobPayload? RunningJob { get; init; }
+
+    internal sealed record RunningJobPayload
+    {
+        public int Id { get; init; }
+        public int Progress { get; init; }
+    }
 
     public static HeartbeatPayload FromSnapshot(SystemMetricsSnapshot snapshot) => new()
     {

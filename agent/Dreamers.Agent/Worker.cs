@@ -1,6 +1,7 @@
 using Dreamers.Agent.Core.Commands;
 using Dreamers.Agent.Core.Configuration;
 using Dreamers.Agent.Core.Credentials;
+using Dreamers.Agent.Core.Jobs;
 using Dreamers.Agent.Core.Metrics;
 using Dreamers.Agent.Core.Server;
 using Microsoft.Extensions.Hosting;
@@ -24,6 +25,7 @@ public sealed class Worker : BackgroundService
     private readonly AgentCredentialStore _credentialStore;
     private readonly ServerClient _serverClient;
     private readonly CommandExecutor _commandExecutor;
+    private readonly TestJobRunner _jobRunner;
 
     public Worker(
         ILogger<Worker> logger,
@@ -31,7 +33,8 @@ public sealed class Worker : BackgroundService
         MetricsCollector metricsCollector,
         AgentCredentialStore credentialStore,
         ServerClient serverClient,
-        CommandExecutor commandExecutor)
+        CommandExecutor commandExecutor,
+        TestJobRunner jobRunner)
     {
         _logger = logger;
         _config = config;
@@ -39,6 +42,7 @@ public sealed class Worker : BackgroundService
         _credentialStore = credentialStore;
         _serverClient = serverClient;
         _commandExecutor = commandExecutor;
+        _jobRunner = jobRunner;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -124,12 +128,30 @@ public sealed class Worker : BackgroundService
             {
                 try
                 {
-                    var pendingCommand = await _serverClient.SendHeartbeatAsync(credential, snapshot, stoppingToken);
+                    var runningJob = _jobRunner.GetSnapshot() is { Finished: false } running
+                        ? new RunningJobStatus(running.JobId, running.Progress)
+                        : null;
+
+                    var heartbeat = await _serverClient.SendHeartbeatAsync(credential, snapshot, runningJob, stoppingToken);
                     _logger.LogDebug("Heartbeat sent.");
 
-                    if (pendingCommand is not null)
+                    if (heartbeat.Command is not null)
                     {
-                        await HandlePendingCommandAsync(credential, pendingCommand, stoppingToken);
+                        await HandlePendingCommandAsync(credential, heartbeat.Command, stoppingToken);
+                    }
+
+                    // P3-4: only one job at a time (see TestJobRunner) — if
+                    // the server assigned one while the runner is still
+                    // busy, it just stays ASSIGNED server-side and gets
+                    // handed to us again on a later heartbeat once we have
+                    // capacity, per job/repository.ts's
+                    // getAssignedJobForWorker.
+                    if (heartbeat.Job is { } assignedJob && !_jobRunner.IsBusy)
+                    {
+                        _logger.LogInformation(
+                            "Starting job {JobId} ({JobType}), requested via the dashboard",
+                            assignedJob.Id, assignedJob.Type);
+                        _jobRunner.Start(assignedJob.Id, assignedJob.Input);
                     }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -144,6 +166,14 @@ public sealed class Worker : BackgroundService
                     // failure only affects what the dashboard sees, not the
                     // agent's own health.
                     _logger.LogWarning(ex, "Failed to send heartbeat to server");
+                }
+
+                // Independent of whether the heartbeat above succeeded —
+                // a finished job should get reported even if, say, this
+                // exact tick's heartbeat call happened to fail.
+                if (_jobRunner.GetSnapshot() is { Finished: true } finished)
+                {
+                    await ReportFinishedJobAsync(credential, finished, stoppingToken);
                 }
             }
 
@@ -191,6 +221,26 @@ public sealed class Worker : BackgroundService
             {
                 _logger.LogWarning(reportEx, "Failed to report command failure to server");
             }
+        }
+    }
+
+    // P3-4: report the TestJobRunner's finished result and free it up for
+    // the next job. Only resets on a successful report — if the POST
+    // fails (network blip), the finished snapshot stays put and this is
+    // retried on the next tick rather than the result being lost.
+    private async Task ReportFinishedJobAsync(string credential, TestJobRunner.Snapshot finished, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Job {JobId} finished: {Result}", finished.JobId, finished.Success ? "success" : $"failed ({finished.Error})");
+
+        try
+        {
+            await _serverClient.SendJobResultAsync(credential, finished.JobId, finished.Success, finished.Error, cancellationToken);
+            _jobRunner.Reset();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to report job {JobId} result to server, will retry next tick", finished.JobId);
         }
     }
 }

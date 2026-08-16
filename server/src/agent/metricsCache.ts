@@ -57,6 +57,10 @@ export interface AgentMetricsPayload {
   processes?: AgentProcessMetrics[];
   // P3-2: job types this Agent can execute (see agent's WorkerCapabilities).
   capabilities?: string[];
+  // P3-4: progress of the job the Agent is currently running, if any —
+  // reported on every heartbeat while it's in flight (not a separate
+  // endpoint, same "everything rides the heartbeat" pattern as P2-8).
+  runningJob?: { id: number; progress: number };
 }
 
 export interface CachedMetrics extends AgentMetricsPayload {

@@ -7,6 +7,7 @@ import { consumeRegistrationToken } from "../agent/registrationTokens.js";
 import { getWorkstation } from "../workstation/repository.js";
 import { isAgentCommand, recordCommandResult, takePendingCommand } from "../agent/commands.js";
 import { runScheduler } from "../job/scheduler.js";
+import { completeJob, getAssignedJobForWorker, startJob, updateJobProgress } from "../job/repository.js";
 
 // Mounted at /api/agent, NOT behind requireAuth — these are called by the
 // Agent itself, which has no user session. Authentication is per-route:
@@ -56,16 +57,37 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   recordHeartbeat(workstationId, body.agentVersion, body.os);
   setMetrics(workstationId, body);
 
+  // P3-4: the Agent reports progress of whatever job it's currently
+  // running as part of every heartbeat, not a separate endpoint.
+  if (body.runningJob) {
+    updateJobProgress(body.runningJob.id, workstationId, body.runningJob.progress);
+  }
+
   // P3-3: a worker just reported fresh capabilities/online status —
   // retry assignment in case something was QUEUED with nothing free
   // to take it before now.
   runScheduler();
 
+  // P3-4: only hand out a new job if the Agent isn't already reporting
+  // one in flight — it only runs one at a time for now (see
+  // job/repository.ts's getAssignedJobForWorker comment). If there IS
+  // capacity, this rides the same "no inbound listener" pattern P2-8's
+  // commands already use: deliver in the heartbeat response, not pushed.
+  let job: { id: number; type: string; input: string | null } | undefined;
+  if (!body.runningJob) {
+    const assigned = getAssignedJobForWorker(workstationId);
+    if (assigned) {
+      startJob(assigned.id);
+      job = { id: assigned.id, type: assigned.type, input: assigned.input };
+    }
+  }
+
   // P2-8: no inbound listener on the Agent — a pending restart/shutdown
   // rides the next heartbeat response instead of being pushed. See
   // agent/commands.ts and docs/PROJECT_STATUS.md.
   const command = takePendingCommand(workstationId);
-  res.json(command ? { ok: true, command } : { ok: true });
+
+  res.json({ ok: true, ...(command ? { command } : {}), ...(job ? { job } : {}) });
 });
 
 agentRouter.post("/command-result", requireAgentAuth, (req, res) => {
@@ -78,5 +100,24 @@ agentRouter.post("/command-result", requireAgentAuth, (req, res) => {
   }
 
   recordCommandResult(workstationId, command, ok, typeof detail === "string" ? detail : undefined);
+  res.json({ ok: true });
+});
+
+agentRouter.post("/job-result", requireAgentAuth, (req, res) => {
+  const { workstationId } = req as AgentAuthenticatedRequest;
+  const { jobId, ok, output, error } = req.body as Record<string, unknown>;
+
+  if (typeof jobId !== "number" || typeof ok !== "boolean") {
+    res.status(400).json({ error: "jobId (number) and ok (boolean) are required" });
+    return;
+  }
+
+  completeJob(
+    jobId,
+    workstationId,
+    ok,
+    typeof output === "string" ? output : null,
+    typeof error === "string" ? error : null,
+  );
   res.json({ ok: true });
 });
