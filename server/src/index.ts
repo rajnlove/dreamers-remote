@@ -4,6 +4,7 @@ import { env } from "./config/env.js";
 import { workstationsRouter } from "./api/workstations.js";
 import { authRouter } from "./api/auth.js";
 import { agentRouter } from "./api/agent.js";
+import { jobsRouter } from "./api/jobs.js";
 import { setupVncProxy } from "./remote/wsProxy.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { requireAuth } from "./auth/middleware.js";
@@ -41,6 +42,8 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/workstations", requireAuth, workstationsRouter);
+// P3-1: no scheduler yet, just CRUD — see docs/ROADMAP.md's Phase 3 section.
+app.use("/api/jobs", requireAuth, jobsRouter);
 // Not behind requireAuth — the Agent has no user session. Each route
 // authenticates itself (registration token / agent credential). See
 // docs/SECURITY.md and api/agent.ts.

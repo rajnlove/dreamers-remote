@@ -92,3 +92,29 @@ db.exec(`
     detail TEXT
   )
 `);
+
+// Phase 3 (P3-1): job data model. No scheduler yet (P3-3) — jobs just
+// sit QUEUED after creation for now. worker_id/gpu_slot stay unused
+// until P3-2/P3-3 assign them. status: QUEUED -> ASSIGNED -> RUNNING ->
+// COMPLETED | FAILED | CANCELLED, with PAUSED as an optional detour
+// from RUNNING (see docs/ROADMAP.md's Phase 3 section for the full
+// state model). input/output are free-form JSON strings — schema
+// varies per job `type`, not enforced at the DB layer.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'QUEUED',
+    priority INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    worker_id INTEGER REFERENCES workstations(id),
+    gpu_slot INTEGER,
+    progress INTEGER NOT NULL DEFAULT 0,
+    input TEXT,
+    output TEXT,
+    error TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0
+  )
+`);

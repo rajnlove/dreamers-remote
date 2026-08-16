@@ -22,9 +22,11 @@ rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P3-0 — Docs.** In progress: this update plus the Phase 3 milestone
-breakdown added to ROADMAP.md. Next: **P3-1 — Job data model** (`jobs`
-table + basic CRUD, no scheduler yet).
+**P3-2 — Worker capability + GPU slot reporting**, up next. P3-1 (job
+data model) is done: `jobs` table, `server/src/job/` (types,
+validation, repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
+`POST /api/jobs/:id/cancel` — all behind `requireAuth`. No scheduler
+yet (P3-3) — created jobs just sit `QUEUED`.
 
 ## Completed
 
@@ -47,11 +49,18 @@ table + basic CRUD, no scheduler yet).
 - **Deprecated Docker containers deleted**: `vncgi-remote` and
   `vncgi-remote-93` stopped and removed in Dockge by the user
   2026-08-16. Only `vncgi-remote-server`/`vncgi-remote-web` remain.
+- **Phase 3, P3-0 (docs)**: ROADMAP.md milestone breakdown (P3-0
+  through P3-8), ARCHITECTURE.md design section.
+- **Phase 3, P3-1 (job data model)**: `jobs` table (see
+  [db.ts](../server/src/database/db.ts)); `server/src/job/{types,
+  validation,repository}.ts`; `server/src/api/jobs.ts` (list/get/
+  create/cancel, mounted at `/api/jobs` behind `requireAuth`). No
+  scheduler yet — jobs stay `QUEUED` after creation.
 
 ## In Progress
 
-- **Phase 3, P3-0 (docs)** — this file + ROADMAP.md's Phase 3 milestone
-  breakdown. About to move to P3-1 (job data model).
+Nothing — P3-1 finished this session. Next up is P3-2 (see Current
+Milestone).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -96,9 +105,10 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-1 — Job data model.** `jobs` table (id, type, status, priority,
-created_at, started_at, finished_at, worker_id, gpu_slot, progress,
-input, output, error, retry_count) + basic CRUD API. See
+**P3-2 — Worker capability + GPU slot reporting.** Extend the Agent's
+heartbeat with a capability list (start with just a `test` capability)
+and expose each Agent's already-collected `gpus[]` as independently
+assignable slots (`workstation_id` + `gpu_index`). See
 [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full P3-0
 through P3-8 breakdown — work through them in order, one at a time,
 same as Phase 2's P2-0 through P2-9.
@@ -134,8 +144,15 @@ not blocking Phase 3, pick up whenever the user asks.
 - **Not tested**: the web app in an actual browser this session (no
   direct browser access to the deployed dashboard); the double-click
   installer flow (`HandleInteractiveSetupAsync`) on a real fresh-or-
-  already-installed machine; P2-8's Restart/Shutdown end-to-end on any
-  real workstation.
+  already-installed machine.
+- **P3-1 job repository**: `npm run typecheck`/`test`/`build` all
+  clean (36/36 unit tests, up from 31 — added `job/validation.test.ts`).
+  Also ran a throwaway smoke-test script (not committed) exercising
+  `createJob`/`getJob`/`listJobs`/`cancelJob` against a real temp
+  SQLite file — confirmed the actual SQL round-trips correctly
+  (defaults, cancel-twice-is-a-no-op, missing-id returns `undefined`),
+  not just that it typechecks. Not yet tested through the live HTTP API
+  or a browser.
 
 ## Required User Action
 
