@@ -55,6 +55,8 @@ export interface AgentMetricsPayload {
   gpus?: AgentGpuMetrics[];
   disks?: AgentDiskMetrics[];
   processes?: AgentProcessMetrics[];
+  // P3-2: job types this Agent can execute (see agent's WorkerCapabilities).
+  capabilities?: string[];
 }
 
 export interface CachedMetrics extends AgentMetricsPayload {

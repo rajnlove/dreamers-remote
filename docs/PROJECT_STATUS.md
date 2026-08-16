@@ -22,11 +22,20 @@ rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P3-2 — Worker capability + GPU slot reporting**, up next. P3-1 (job
-data model) is done: `jobs` table, `server/src/job/` (types,
-validation, repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
-`POST /api/jobs/:id/cancel` — all behind `requireAuth`. No scheduler
-yet (P3-3) — created jobs just sit `QUEUED`.
+**P3-3 — Basic scheduler**, up next (FIFO assignment of `QUEUED` jobs
+to capability-matched workers with a free GPU slot — no priority
+ordering or dependency yet, that's P3-6). P3-1 and P3-2 are done:
+- P3-1: `jobs` table, `server/src/job/` (types, validation,
+  repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
+  `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
+- P3-2: Agent reports `capabilities` (currently just `["test"]`,
+  `Dreamers.Agent.Core/Worker/WorkerCapabilities.cs`) on every
+  heartbeat; server derives GPU slots from the already-cached `gpus[]`
+  metrics (no new storage) via `GET /api/workers`
+  (`server/src/job/workers.ts`).
+
+Nothing assigns jobs to workers yet — `POST /api/jobs` still just
+queues a row.
 
 ## Completed
 
@@ -56,11 +65,17 @@ yet (P3-3) — created jobs just sit `QUEUED`.
   validation,repository}.ts`; `server/src/api/jobs.ts` (list/get/
   create/cancel, mounted at `/api/jobs` behind `requireAuth`). No
   scheduler yet — jobs stay `QUEUED` after creation.
+- **Phase 3, P3-2 (worker capability + GPU slot reporting)**: Agent
+  heartbeat gains `capabilities` (`WorkerCapabilities.cs`, currently
+  `["test"]` only); server derives `GET /api/workers`
+  (`server/src/job/workers.ts`) from already-cached heartbeat data —
+  one entry per agent-paired workstation with its capabilities and one
+  GPU-slot entry per reported GPU. No new DB storage.
 
 ## In Progress
 
-Nothing — P3-1 finished this session. Next up is P3-2 (see Current
-Milestone).
+Nothing — P3-1 and P3-2 finished this session. Next up is P3-3 (see
+Current Milestone).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -105,10 +120,10 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-2 — Worker capability + GPU slot reporting.** Extend the Agent's
-heartbeat with a capability list (start with just a `test` capability)
-and expose each Agent's already-collected `gpus[]` as independently
-assignable slots (`workstation_id` + `gpu_index`). See
+**P3-3 — Basic scheduler.** FIFO assignment of `QUEUED` jobs
+(`server/src/job/repository.ts`) to workers with a matching capability
+(`GET /api/workers` from P3-2) and a free GPU slot. No priority
+ordering or dependency graph yet — that's P3-6. See
 [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full P3-0
 through P3-8 breakdown — work through them in order, one at a time,
 same as Phase 2's P2-0 through P2-9.
@@ -151,8 +166,18 @@ not blocking Phase 3, pick up whenever the user asks.
   `createJob`/`getJob`/`listJobs`/`cancelJob` against a real temp
   SQLite file — confirmed the actual SQL round-trips correctly
   (defaults, cancel-twice-is-a-no-op, missing-id returns `undefined`),
-  not just that it typechecks. Not yet tested through the live HTTP API
-  or a browser.
+  not just that it typechecks.
+- **P3-2 worker/GPU-slot reporting**: `dotnet build`/`test` clean
+  (35/35, Agent side); server `typecheck`/`test`/`build` clean. Ran a
+  second throwaway smoke-test script exercising `listWorkers()` against
+  a real temp SQLite DB + populated metrics cache — confirmed an
+  agent-less workstation is correctly excluded, a 2-GPU workstation
+  correctly produces 2 independent slot entries, and capabilities pass
+  through unchanged.
+- **Not yet tested through the live HTTP API or a browser**: `/api/jobs`,
+  `/api/workers`, or any Phase 3 endpoint. All verification so far is
+  local (unit tests + smoke scripts against a temp DB), not against the
+  deployed server.
 
 ## Required User Action
 

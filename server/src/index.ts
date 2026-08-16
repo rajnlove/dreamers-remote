@@ -5,6 +5,7 @@ import { workstationsRouter } from "./api/workstations.js";
 import { authRouter } from "./api/auth.js";
 import { agentRouter } from "./api/agent.js";
 import { jobsRouter } from "./api/jobs.js";
+import { workersRouter } from "./api/workers.js";
 import { setupVncProxy } from "./remote/wsProxy.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { requireAuth } from "./auth/middleware.js";
@@ -44,6 +45,8 @@ app.use("/api/auth", authRouter);
 app.use("/api/workstations", requireAuth, workstationsRouter);
 // P3-1: no scheduler yet, just CRUD — see docs/ROADMAP.md's Phase 3 section.
 app.use("/api/jobs", requireAuth, jobsRouter);
+// P3-2: read-only capability + GPU slot view, derived from Agent heartbeats.
+app.use("/api/workers", requireAuth, workersRouter);
 // Not behind requireAuth — the Agent has no user session. Each route
 // authenticates itself (registration token / agent credential). See
 // docs/SECURITY.md and api/agent.ts.

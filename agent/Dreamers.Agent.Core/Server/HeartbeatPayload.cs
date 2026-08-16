@@ -1,4 +1,5 @@
 using Dreamers.Agent.Core.Metrics;
+using Dreamers.Agent.Core.Worker;
 
 namespace Dreamers.Agent.Core.Server;
 
@@ -21,6 +22,8 @@ internal sealed class HeartbeatPayload
     public IReadOnlyList<GpuSnapshot>? Gpus { get; init; }
     public IReadOnlyList<DiskSnapshot>? Disks { get; init; }
     public IReadOnlyList<ProcessSnapshot>? Processes { get; init; }
+    // P3-2: what job types this Agent can execute — see WorkerCapabilities.
+    public IReadOnlyList<string>? Capabilities { get; init; }
 
     public static HeartbeatPayload FromSnapshot(SystemMetricsSnapshot snapshot) => new()
     {
@@ -35,5 +38,6 @@ internal sealed class HeartbeatPayload
         Gpus = snapshot.Gpus,
         Disks = snapshot.Disks,
         Processes = snapshot.Processes,
+        Capabilities = WorkerCapabilities.Current,
     };
 }
