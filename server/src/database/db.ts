@@ -76,7 +76,9 @@ ensureColumn("users", "is_admin", "INTEGER NOT NULL DEFAULT 1");
 // Phase 2 (P2-8): audit trail for Agent commands specifically — not the
 // general M8 audit log (login, wake, CRUD), which doesn't exist yet.
 // status: "pending" (queued, not yet delivered) -> "sent" (included in a
-// heartbeat response) -> "ok" | "failed" (Agent reported back).
+// heartbeat response) -> "ok" | "failed" (Agent reported back), or
+// "superseded" (replaced by a newer command before the Agent picked it
+// up — see queueCommand in agent/commands.ts).
 db.exec(`
   CREATE TABLE IF NOT EXISTS command_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
