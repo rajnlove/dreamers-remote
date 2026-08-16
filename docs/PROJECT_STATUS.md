@@ -190,9 +190,11 @@ heartbeats every 5s.
      first real use, treat this the same way — confirm end-to-end
      (queue → heartbeat delivery → Agent executes → command-result
      recorded) on one workstation before trusting it on the other 3.
-6. **P2-9 (bulk agent deployment docs)** — largely done in practice
-   (this session deployed to all 4 machines), but not yet written up
-   as a repeatable doc beyond `agent/README.md`.
+6. **P2-9 (bulk agent deployment docs) — done.** Written up in
+   [agent/README.md](../agent/README.md#deploying-to-multiple-workstations-bulk),
+   covering what's different deploying to N workstations vs. one (same
+   publish folder reused, one registration token per machine, verify
+   each individually).
 
 ## Important commands
 

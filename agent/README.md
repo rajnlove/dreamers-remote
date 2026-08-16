@@ -5,15 +5,21 @@ and [../docs/ROADMAP.md](../docs/ROADMAP.md#phase-2--dreamers-agent-monitoring--
 for the design. Does not modify or replace the UltraVNC/noVNC remote
 desktop path — a separate process, separate concern.
 
-## Status: P2-0 through P2-6 complete, live-verified
+## Status: P2-0 through P2-7 complete and live-verified; P2-8 coded, not yet live-verified
 
 - **Metrics collected every `updateIntervalSeconds` (default 5)**: CPU,
   RAM, OS, uptime, GPU (NVIDIA/NVML, multi-GPU), disks, monitored VFX
   process status — all logged locally regardless of server connectivity.
 - **Registration + heartbeat**: once paired with the server, the same
-  snapshot is sent as a heartbeat; the dashboard shows it live.
-- **Not yet implemented**: Restart/Shutdown commands (P2-8), a
-  workstation detail page (P2-7).
+  snapshot is sent as a heartbeat; the dashboard shows it live, including
+  a per-workstation detail page (P2-7).
+- **Restart/Shutdown (P2-8)**: an admin-queued command rides the
+  response of whatever heartbeat call comes next (no inbound listener on
+  the Agent) and is executed via `AgentCommand`/`CommandExecutor`
+  (`Dreamers.Agent.Core/Commands/`) — structured whitelist only
+  (`restart`, `shutdown`), never arbitrary shell. Coded and unit-tested,
+  but nobody has clicked Restart against a real workstation yet — see
+  `docs/PROJECT_STATUS.md` before relying on it.
 
 ## Building — only needed on ONE machine, not on every workstation
 
@@ -31,7 +37,7 @@ winget install Microsoft.DotNet.SDK.8
 cd agent
 dotnet build Dreamers.Agent.sln
 dotnet test Dreamers.Agent.sln
-# Expect: 26 tests passed
+# Expect: 35 tests passed
 ```
 
 To see it running locally without installing a service yet:
@@ -83,6 +89,39 @@ Get-Content C:\ProgramData\DreamersRemote\logs\agent-*.log -Tail 20
 `Get-Service` should show `Running`. Within a few seconds the
 workstation's dashboard card should show a green AGENT badge and live
 metrics.
+
+## Deploying to multiple workstations (bulk)
+
+P2-9. What actually worked deploying to all 4 studio workstations this
+session — the single-workstation steps above still apply per machine,
+this just covers what's different at N machines instead of one:
+
+- **Publish once, reuse everywhere.** The `publish\` folder from step 1
+  isn't workstation-specific — nothing about it identifies which machine
+  it'll run on (that identity, the `agentId` UUID, is generated fresh by
+  each install, on first run, into that machine's own
+  `C:\ProgramData\DreamersRemote\agent.json`). Publish once, copy the
+  same folder to every target (network share is easiest on a studio LAN)
+  — no per-workstation rebuild.
+- **One registration token per workstation — never reused.** Tokens are
+  single-use and tied to one specific workstation row
+  (`POST /api/workstations/:id/agent-token`), so step 3 repeats for each
+  machine. There's no dashboard button for this yet — it's a raw API
+  call (session-cookie authenticated, admin-only). Issue each token
+  right before you're about to use it on that machine — they're
+  short-lived (15 minutes).
+- **Install command is identical across machines** —
+  `.\DreamersAgent.exe install <token>` — only the token argument
+  changes per workstation.
+- **Verify each one individually** (step 5) before moving to the next,
+  rather than installing on all 4 first and checking the dashboard at
+  the end — a bad copy or a firewall rule blocking one machine's
+  outbound HTTP is much faster to isolate machine-by-machine than after
+  the fact across 4.
+- **MAC addresses**: set each workstation's real MAC via
+  `PATCH /api/workstations/:id` (`ipconfig /all` on that machine) before
+  or after Agent install — unrelated to pairing, but easy to do in the
+  same sitting since you're already on the machine.
 
 **To remove**:
 
