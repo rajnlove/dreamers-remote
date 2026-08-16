@@ -11,20 +11,23 @@ Last updated: 2026-08-16
 
 ## Current Phase
 
-**Phase 2 — Dreamers Agent** (monitoring + safe management). Phase 1
-(Web Remote) is done and in daily use. Nothing from Phase 3 onward
-(Job Engine, Processing, Render Farm, Performance Remote, Studio
-Control Center, Studio OS Integration — see MASTER_PROJECT_SPEC.md) has
-been started; do not start any of it without an explicit request.
+**Phase 2 — Dreamers Agent — COMPLETE** (2026-08-16), with one known
+deferred issue (P2-8 Restart/Shutdown doesn't work on real hardware yet
+— see Known Issues; the user chose to defer debugging it rather than
+block phase completion on it). Phase 1 (Web Remote) is also done and in
+daily use. **Nothing from Phase 3 onward is started** (Job Engine,
+Processing, Render Farm, Performance Remote, Studio Control Center,
+Studio OS Integration — see MASTER_PROJECT_SPEC.md) — per the user's
+own rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P2-8 — Restart/Shutdown commands.** Code complete (server, Agent,
-web), builds and unit-tests clean. **Live-tested 2026-08-16, confirmed
-NOT working** — clicking Restart/Shutdown had no effect on the real
-workstation. Root cause not diagnosed; user chose to defer debugging
-(see Known Issues) rather than dig in immediately. Phase 2 has no other
-queued work — this is the last open item in it.
+**None active.** P2-8 and P2-9 were the last items in Phase 2's
+roadmap (see ROADMAP.md) — both are code-complete, closing out the
+phase. No further Phase 2 work is queued. The next milestone would be
+the first item of Phase 3 (Job Engine — queue, scheduler, worker, GPU
+slots per MASTER_PROJECT_SPEC.md §13-16), which has no design or
+scope breakdown yet and has not been requested to start.
 
 ## Completed
 
