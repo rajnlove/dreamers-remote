@@ -20,6 +20,9 @@ export interface WorkerInfo {
   // P3-6: manual admin gate — see workstations.jobs_enabled.
   jobsEnabled: boolean;
   capabilities: string[];
+  // P3-8: mechanism only -- { [softwareName]: version }, as last
+  // reported by the Agent's heartbeat.
+  softwareVersions: Record<string, string>;
   gpuSlots: GpuSlot[];
   // P3-6: current usage, for threshold-based gating in scheduler.ts.
   // Null when the Agent hasn't reported that metric (e.g. no NVML GPU).
@@ -45,6 +48,7 @@ export function listWorkers(): WorkerInfo[] {
         agentOnline: isAgentOnline(ws.last_seen),
         jobsEnabled: ws.jobs_enabled,
         capabilities: metrics?.capabilities ?? [],
+        softwareVersions: metrics?.softwareVersions ?? {},
         gpuSlots: (metrics?.gpus ?? []).map((gpu) => ({
           workstationId: ws.id,
           workstationName: ws.name,

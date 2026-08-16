@@ -47,5 +47,25 @@ export function validateCreateInput(body: unknown): JobInput {
     }
   }
 
-  return { type: b.type.trim(), priority, input, depends_on: dependsOn };
+  // P3-8: mechanism only — an object of string -> string, validated for
+  // shape here; whether any worker actually satisfies it is the
+  // scheduler's job (job/scheduler.ts), not this function's.
+  let requiredSoftware: Record<string, string> | null = null;
+  if (b.required_software !== undefined && b.required_software !== null) {
+    if (
+      typeof b.required_software !== "object" ||
+      Array.isArray(b.required_software)
+    ) {
+      throw new ValidationError("required_software must be an object of software name -> version");
+    }
+    const entries = Object.entries(b.required_software as Record<string, unknown>);
+    for (const [name, version] of entries) {
+      if (typeof version !== "string" || version.trim().length === 0) {
+        throw new ValidationError(`required_software["${name}"] must be a non-empty string`);
+      }
+    }
+    requiredSoftware = Object.fromEntries(entries) as Record<string, string>;
+  }
+
+  return { type: b.type.trim(), priority, input, depends_on: dependsOn, required_software: requiredSoftware };
 }

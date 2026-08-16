@@ -15,10 +15,17 @@ export function getJob(id: number): Job | undefined {
 export function createJob(input: JobInput): Job {
   const { lastInsertRowid } = db
     .prepare(
-      `INSERT INTO jobs (type, status, priority, created_at, progress, input, retry_count, depends_on)
-       VALUES (@type, 'QUEUED', @priority, @created_at, 0, @input, 0, @depends_on)`,
+      `INSERT INTO jobs (type, status, priority, created_at, progress, input, retry_count, depends_on, required_software)
+       VALUES (@type, 'QUEUED', @priority, @created_at, 0, @input, 0, @depends_on, @required_software)`,
     )
-    .run({ ...input, created_at: new Date().toISOString() });
+    .run({
+      ...input,
+      created_at: new Date().toISOString(),
+      // better-sqlite3 only binds string/number/null/buffer — the
+      // object form is JobInput's caller-facing shape, not the wire
+      // format `jobs.required_software` (see types.ts) actually stores.
+      required_software: input.required_software === null ? null : JSON.stringify(input.required_software),
+    });
   return getJob(Number(lastInsertRowid))!;
 }
 

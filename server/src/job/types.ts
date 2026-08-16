@@ -29,6 +29,12 @@ export interface Job {
   // P3-6: basic single-dependency — this job won't be scheduled until
   // the referenced job is COMPLETED. Null means no dependency.
   depends_on: number | null;
+  // P3-8: software version compatibility, mechanism only — JSON string
+  // of { [softwareName]: requiredVersion }, exact-match. Null means no
+  // requirement. Stored as a JSON string like `input`/`output` since
+  // it's a free-form set of key/value pairs, not something queried by
+  // column.
+  required_software: string | null;
 }
 
 export interface JobInput {
@@ -36,4 +42,5 @@ export interface JobInput {
   priority: number;
   input: string | null;
   depends_on: number | null;
+  required_software: Record<string, string> | null;
 }

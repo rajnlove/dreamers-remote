@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findAssignment, slotKeyString, workerUnits } from "./scheduler.js";
+import { findAssignment, slotKeyString, softwareRequirementsSatisfied, workerUnits } from "./scheduler.js";
 import type { WorkerInfo } from "./workers.js";
 
 function worker(overrides: Partial<WorkerInfo> = {}): WorkerInfo {
@@ -10,6 +10,7 @@ function worker(overrides: Partial<WorkerInfo> = {}): WorkerInfo {
     agentOnline: true,
     jobsEnabled: true,
     capabilities: ["test"],
+    softwareVersions: {},
     gpuSlots: [],
     cpuUtilizationPercent: 10,
     memoryUsagePercent: 10,
@@ -58,4 +59,36 @@ test("findAssignment skips units already marked busy", () => {
 
 test("findAssignment returns null when nothing can take the job", () => {
   assert.equal(findAssignment("test", [], new Set()), null);
+});
+
+test("softwareRequirementsSatisfied is true when no requirement given", () => {
+  assert.equal(softwareRequirementsSatisfied(worker({ softwareVersions: {} }), null), true);
+});
+
+test("softwareRequirementsSatisfied is true on an exact match", () => {
+  assert.equal(
+    softwareRequirementsSatisfied(worker({ softwareVersions: { test: "1.0.0" } }), { test: "1.0.0" }),
+    true,
+  );
+});
+
+test("softwareRequirementsSatisfied is false on a version mismatch", () => {
+  assert.equal(
+    softwareRequirementsSatisfied(worker({ softwareVersions: { test: "1.0.0" } }), { test: "2.0.0" }),
+    false,
+  );
+});
+
+test("softwareRequirementsSatisfied is false when the software is missing entirely", () => {
+  assert.equal(softwareRequirementsSatisfied(worker({ softwareVersions: {} }), { test: "1.0.0" }), false);
+});
+
+test("findAssignment skips a worker with an incompatible software version", () => {
+  const workers = [worker({ softwareVersions: { test: "0.9.0" } })];
+  assert.equal(findAssignment("test", workers, new Set(), { test: "1.0.0" }), null);
+});
+
+test("findAssignment picks a worker with a compatible software version", () => {
+  const workers = [worker({ softwareVersions: { test: "1.0.0" } })];
+  assert.deepEqual(findAssignment("test", workers, new Set(), { test: "1.0.0" }), { workerId: 1, gpuSlot: null });
 });

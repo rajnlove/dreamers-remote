@@ -146,3 +146,12 @@ ensureColumn("jobs", "depends_on", "INTEGER REFERENCES jobs(id)");
 // for now; a real state machine is a later refinement once a concrete
 // workflow needs to distinguish those cases from plain disabled.
 ensureColumn("workstations", "jobs_enabled", "INTEGER NOT NULL DEFAULT 1");
+
+// Phase 3 (P3-8): software version compatibility, mechanism only — no
+// real software checks exist yet (nothing to check until Phase 4/5
+// installs real tools like Houdini/FFmpeg/Octane). A job can optionally
+// require exact software versions (JSON string, name -> version); the
+// scheduler won't assign it to a worker whose reported
+// software_versions doesn't match every entry. Null means no
+// requirement, same as depends_on's null-means-none convention.
+ensureColumn("jobs", "required_software", "TEXT");

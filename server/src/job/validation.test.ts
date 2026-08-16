@@ -4,12 +4,18 @@ import { validateCreateInput } from "./validation.js";
 
 test("validateCreateInput accepts a minimal job and applies defaults", () => {
   const result = validateCreateInput({ type: "test" });
-  assert.deepEqual(result, { type: "test", priority: 0, input: null, depends_on: null });
+  assert.deepEqual(result, { type: "test", priority: 0, input: null, depends_on: null, required_software: null });
 });
 
 test("validateCreateInput trims type and keeps a given priority/input/depends_on", () => {
   const result = validateCreateInput({ type: "  test  ", priority: 5, input: '{"seconds":10}', depends_on: 3 });
-  assert.deepEqual(result, { type: "test", priority: 5, input: '{"seconds":10}', depends_on: 3 });
+  assert.deepEqual(result, {
+    type: "test",
+    priority: 5,
+    input: '{"seconds":10}',
+    depends_on: 3,
+    required_software: null,
+  });
 });
 
 test("validateCreateInput rejects a non-positive-integer depends_on", () => {
@@ -32,4 +38,19 @@ test("validateCreateInput rejects a non-integer priority", () => {
 
 test("validateCreateInput rejects a non-string input", () => {
   assert.throws(() => validateCreateInput({ type: "test", input: { seconds: 10 } }));
+});
+
+test("validateCreateInput accepts a required_software object", () => {
+  const result = validateCreateInput({ type: "test", required_software: { test: "1.0.0" } });
+  assert.deepEqual(result.required_software, { test: "1.0.0" });
+});
+
+test("validateCreateInput rejects a non-object required_software", () => {
+  assert.throws(() => validateCreateInput({ type: "test", required_software: "1.0.0" }));
+  assert.throws(() => validateCreateInput({ type: "test", required_software: ["1.0.0"] }));
+});
+
+test("validateCreateInput rejects a required_software entry with a non-string version", () => {
+  assert.throws(() => validateCreateInput({ type: "test", required_software: { test: 1 } }));
+  assert.throws(() => validateCreateInput({ type: "test", required_software: { test: "" } }));
 });

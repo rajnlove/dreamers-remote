@@ -33,19 +33,40 @@ export function workerUnits(worker: WorkerInfo): SlotKey[] {
   return worker.gpuSlots.map((s) => ({ workerId: worker.workstationId, gpuSlot: s.gpuIndex }));
 }
 
+// P3-8: mechanism only -- exact-match per entry, no version-range/
+// semver comparison (nothing real to compare against yet; see
+// MASTER_PROJECT_SPEC.md §16). A worker with no matching entry at all
+// for a required software name is incompatible, same as a missing
+// capability. Exported for the scheduler smoke-test/unit tests.
+export function softwareRequirementsSatisfied(
+  worker: WorkerInfo,
+  requiredSoftware: Record<string, string> | null,
+): boolean {
+  if (!requiredSoftware) return true;
+  return Object.entries(requiredSoftware).every(
+    ([name, version]) => worker.softwareVersions[name] === version,
+  );
+}
+
 // Pure — no DB access, so it's unit-testable on its own (see
 // scheduler.test.ts). Picks the first online, enabled, capability-
-// matching, under-threshold worker with a free (and, for a GPU unit,
-// under-threshold) unit, FIFO over the `workers` array order — the
-// array itself is expected to already be priority-sorted by the caller
-// (P3-6; findAssignment doesn't sort, it just walks in order). Returns
-// null if nothing can take the job right now (it stays QUEUED, tried
-// again next tick).
-export function findAssignment(jobType: string, workers: WorkerInfo[], busy: ReadonlySet<string>): SlotKey | null {
+// matching, software-compatible, under-threshold worker with a free
+// (and, for a GPU unit, under-threshold) unit, FIFO over the `workers`
+// array order — the array itself is expected to already be
+// priority-sorted by the caller (P3-6; findAssignment doesn't sort, it
+// just walks in order). Returns null if nothing can take the job right
+// now (it stays QUEUED, tried again next tick).
+export function findAssignment(
+  jobType: string,
+  workers: WorkerInfo[],
+  busy: ReadonlySet<string>,
+  requiredSoftware: Record<string, string> | null = null,
+): SlotKey | null {
   for (const worker of workers) {
     if (!worker.agentOnline) continue;
     if (!worker.jobsEnabled) continue;
     if (!worker.capabilities.includes(jobType)) continue;
+    if (!softwareRequirementsSatisfied(worker, requiredSoftware)) continue;
     if ((worker.cpuUtilizationPercent ?? 0) >= CPU_THRESHOLD_PERCENT) continue;
     if ((worker.memoryUsagePercent ?? 0) >= MEMORY_THRESHOLD_PERCENT) continue;
 
@@ -89,7 +110,8 @@ export function runScheduler(): void {
   for (const job of queued) {
     if (!isDependencySatisfied(job)) continue;
 
-    const assignment = findAssignment(job.type, workers, busy);
+    const requiredSoftware = job.required_software ? (JSON.parse(job.required_software) as Record<string, string>) : null;
+    const assignment = findAssignment(job.type, workers, busy, requiredSoftware);
     if (!assignment) continue;
 
     db.prepare(`UPDATE jobs SET status = 'ASSIGNED', worker_id = ?, gpu_slot = ? WHERE id = ?`).run(

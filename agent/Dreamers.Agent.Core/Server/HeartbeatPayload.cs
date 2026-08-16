@@ -27,6 +27,9 @@ internal sealed record HeartbeatPayload
     public IReadOnlyList<ProcessSnapshot>? Processes { get; init; }
     // P3-2: what job types this Agent can execute — see WorkerCapabilities.
     public IReadOnlyList<string>? Capabilities { get; init; }
+    // P3-8: installed software versions, mechanism only — see
+    // WorkerSoftwareVersions.
+    public IReadOnlyDictionary<string, string>? SoftwareVersions { get; init; }
     // P3-4: progress of the job this Agent is currently running, if any.
     public RunningJobPayload? RunningJob { get; init; }
 
@@ -50,5 +53,6 @@ internal sealed record HeartbeatPayload
         Disks = snapshot.Disks,
         Processes = snapshot.Processes,
         Capabilities = WorkerCapabilities.Current,
+        SoftwareVersions = WorkerSoftwareVersions.Current,
     };
 }

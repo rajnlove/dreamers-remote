@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 (P3-7 live-verified end-to-end on real hardware)
+Last updated: 2026-08-16 (Phase 3 complete — P3-8 done, P3-7 live-verified end-to-end on real hardware)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -11,22 +11,25 @@ Last updated: 2026-08-16 (P3-7 live-verified end-to-end on real hardware)
 
 ## Current Phase
 
-**Phase 3 — Dreamers Job Engine.** Started 2026-08-16 (explicit user
-request — "qua phase 3"). Phase 1 (Web Remote) and Phase 2 (Dreamers
-Agent) are both complete and in daily use; Phase 2 has one known
-deferred issue (P2-8 Restart/Shutdown doesn't work on real hardware yet
-— see Known Issues). Milestone breakdown for Phase 3 is in
+**Phase 3 — Dreamers Job Engine — COMPLETE (P3-0 through P3-8, all
+done).** Started 2026-08-16 (explicit user request — "qua phase 3"),
+finished same day. Phase 1 (Web Remote) and Phase 2 (Dreamers Agent)
+are both complete and in daily use; Phase 2 has one known deferred
+issue (P2-8 Restart/Shutdown doesn't work on real hardware yet — see
+Known Issues). Milestone breakdown for Phase 3 is in
 [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) (P3-0 through
 P3-8). **Nothing from Phase 4 onward is started** — per the user's own
-rule, do not start any of it without an explicit request.
+rule, do not start any of it without an explicit request. Waiting on
+the user for what's next (Phase 4 FFmpeg processing per the roadmap,
+or something else).
 
 ## Current Milestone
 
-**P3-8 — Software version compatibility mechanism**, up next — the
-last Phase 3 milestone per the roadmap. P3-1 through P3-7 are done: the
-full job engine loop works end-to-end (priority-ordered, dependency-
-aware, threshold-gated scheduling; real cancellation; retry; stale-job
-cleanup) and now has a working dashboard UI, browser-verified:
+None — Phase 3 is complete. P3-1 through P3-8 are all done: the full
+job engine loop works end-to-end (priority-ordered, dependency-aware,
+threshold-gated, software-version-aware scheduling; real cancellation;
+retry; stale-job cleanup), has a working dashboard UI, and has been
+verified live on real production hardware, not just locally:
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
   repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
   `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
@@ -91,6 +94,30 @@ cleanup) and now has a working dashboard UI, browser-verified:
   around for production builds) still broke `npm run dev` — fixed by
   also setting `optimizeDeps.esbuildOptions.target: "esnext"` in
   `vite.config.ts`.
+- P3-8: software version compatibility, **mechanism only** (per
+  MASTER_PROJECT_SPEC.md §16) — no real software checks exist yet
+  (nothing to check until Phase 4/5 installs real tools). Agent reports
+  `software_versions` (wire name `softwareVersions`, camelCase — see
+  note below) on every heartbeat, currently a fixed
+  `{"test":"1.0.0"}` placeholder
+  (`Dreamers.Agent.Core/Worker/WorkerSoftwareVersions.cs`, mirrors
+  `WorkerCapabilities`'s "test" placeholder). A job can optionally
+  carry `required_software` (`{name: version}`, exact-match only, no
+  semver range comparison); the scheduler
+  (`softwareRequirementsSatisfied` in `job/scheduler.ts`) won't assign
+  it to a worker that doesn't report a matching version, same
+  incompatible-worker-skipped behavior as a missing `capability`.
+  Stored as a new `jobs.required_software` TEXT column (JSON string,
+  null = no requirement — same convention as `depends_on`). **Real bug
+  caught while wiring this up**: the Agent's heartbeat payload is
+  actually camelCase throughout (`agentVersion`, `runningJob`, ...),
+  not the snake_case the rest of this API uses — `ServerClient.cs` sets
+  `PropertyNamingPolicy = JsonNamingPolicy.CamelCase`. First pass named
+  the new TS-side field `software_versions` (matching the DB column,
+  wrong for this payload) and it would have silently never matched the
+  Agent's actual `softwareVersions` JSON key; caught before committing
+  by re-reading the existing `AgentMetricsPayload` fields rather than
+  assuming the general snake_case convention applied here too.
 
 ## Completed
 
@@ -152,12 +179,18 @@ cleanup) and now has a working dashboard UI, browser-verified:
   process actually releasing its exe file handle, causing the update
   to silently fail and roll back to the old binary — fixed with a
   short retry loop around the file copy.
+- **Phase 3, P3-8 (software version compatibility, mechanism only)**:
+  `jobs.required_software` column, `softwareRequirementsSatisfied` in
+  the scheduler, Agent's `WorkerSoftwareVersions` placeholder. See
+  Current Milestone for detail, including the camelCase-vs-snake_case
+  bug caught before it shipped.
+
+**Phase 3 is now fully complete (P3-0 through P3-8).**
 
 ## In Progress
 
-Nothing — P3-1 through P3-7 finished this session. Next up is P3-8
-(software version compatibility mechanism), the last Phase 3 milestone
-(see Current Milestone).
+Nothing — Phase 3 (P3-0 through P3-8) finished this session. Waiting
+on the user for what's next.
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -202,14 +235,21 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-8 — Software version compatibility mechanism**, the last Phase 3
-milestone. See [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine)
-for the full P3-0 through P3-8 breakdown. Holding here rather than
-starting it — P3-7 is the natural point for the user to click through
-the Jobs page for real on the deployed dashboard first.
+**None decided yet — Phase 3 is complete.** Per the user's own rule, do
+not start Phase 4 (FFmpeg processing) or anything else from
+MASTER_PROJECT_SPEC.md without an explicit request. Waiting on the
+user.
+
+Remaining Phase 3 rollout item (not a new milestone, not blocking):
+`CGI-01`, `COMP-01`, `CGI-DUC` still need the Agent redeployed
+(double-click `DreamersAgent.exe`) to pick up P3-2's capability
+reporting and P3-8's software-version reporting — only `CGI-Render` has
+been updated so far. Every workstation the Agent runs on needs this
+manual step; it's not something CI/CD or this session can push out
+remotely.
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
-not blocking Phase 3, pick up whenever the user asks.
+not blocking, pick up whenever the user asks.
 
 ## Tests Performed
 
@@ -385,6 +425,27 @@ not blocking Phase 3, pick up whenever the user asks.
     `capabilities:[]` — same Agent redeploy needed on each,
     user's/team's call on when. Not blocking; the loop itself is now
     proven, this is just rollout remaining on 3 more machines.
+- **P3-8 software version compatibility**: `npm run typecheck`/
+  `test`/`build` clean (52/52 unit tests, up from 43 — added 6
+  `scheduler.test.ts` cases for `softwareRequirementsSatisfied`/
+  `findAssignment` and 3 `validation.test.ts` cases for
+  `required_software`). `dotnet build`/`test` clean (42/42, no new
+  Agent-side tests — `WorkerSoftwareVersions` is a static placeholder
+  mirroring `WorkerCapabilities`, which also has none). A sixth
+  throwaway smoke-test script (not committed) against a real temp
+  SQLite DB confirmed the full mechanism: a job requiring
+  `{"test":"1.0.0"}` stays `QUEUED` against a worker reporting
+  `"test":"0.9.0"`; bumping the worker's reported version to match gets
+  it `ASSIGNED` on the next scheduler run; a job with no
+  `required_software` is unaffected by version at all. **Process
+  note**: the smoke test's first version had a wrong expectation, not
+  the code — it seeded `workstations.last_seen` via SQLite's
+  `datetime('now')`, which returns a space-separated string without a
+  timezone marker; JS's `Date` parses that as local time, not UTC,
+  silently breaking `isAgentOnline`'s freshness check. Production code
+  never has this problem (it always writes `last_seen` via
+  `new Date().toISOString()`, not raw SQL) — fixed the test to match,
+  not the app.
 
 ## Required User Action
 
@@ -395,6 +456,13 @@ deferred by the user's own choice, to pick up whenever:
 - Decide when to resume debugging P2-8 Restart/Shutdown and/or the
   CGI-DUC multi-monitor issue (see Known Issues).
 - Eventually: change the admin password; decide on CPU temperature.
+- Optional: double-click-update the Agent on `CGI-01`, `COMP-01`,
+  `CGI-DUC` (same as already done on `CGI-Render`) whenever they need
+  to actually run jobs — not urgent, the job engine itself is proven
+  working.
+- Decide what's next now that Phase 3 is complete (Phase 4 FFmpeg
+  processing per the roadmap, or something else) — not started per the
+  "don't start a future phase without an explicit request" rule.
 
 ## Docker Status
 
