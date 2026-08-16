@@ -16,4 +16,8 @@ export interface Job {
   error: string | null;
   retry_count: number;
   depends_on: number | null;
+  required_software: string | null;
+  // Phase 4 (P4-2): only FFmpeg-style jobs report these -- null otherwise.
+  fps: number | null;
+  eta_seconds: number | null;
 }

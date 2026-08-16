@@ -66,6 +66,37 @@ export default function JobsPage() {
     }
   }
 
+  // Phase 4 (P4-2) demo: a real GPU-encoded FFmpeg job against a real
+  // source clip on the TrueNAS share, so the job engine's progress/fps
+  // reporting is visible on real work, not just the synthetic "test"
+  // type's sleep loop. Requires FFMPEG_ALLOWED_ROOTS (server) and
+  // allowed_paths.json (Agent) to already include this UNC root — see
+  // docs/PROJECT_STATUS.md's Phase 4 section.
+  const DEMO_SOURCE = "\\\\192.29.11.92\\web_data\\www\\Projects\\SOURCE\\A008C005_130101_R31Z.mov";
+  async function handleCreateFfmpegDemoJob() {
+    setCreating(true);
+    setActionError(null);
+    try {
+      const outputPath = `\\\\192.29.11.92\\web_data\\www\\Projects\\SOURCE\\dreamers_demo_${Date.now()}.mp4`;
+      await createJob({
+        type: "ffmpeg",
+        input: JSON.stringify({
+          sourcePath: DEMO_SOURCE,
+          outputPath,
+          codec: "h264_nvenc",
+          qualityMode: "cq",
+          quality: 20,
+          preset: "p4",
+          audioCodec: "aac",
+        }),
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   async function handleCancel(id: number) {
     setActionError(null);
     try {
@@ -96,8 +127,11 @@ export default function JobsPage() {
           <h1>JOBS</h1>
         </div>
         <div className="remote-toolbar">
-          <button className="btn btn-primary" onClick={handleCreateTestJob} disabled={creating}>
+          <button className="btn" onClick={handleCreateTestJob} disabled={creating}>
             {creating ? "ĐANG TẠO..." : "+ TEST JOB (10s)"}
+          </button>
+          <button className="btn btn-primary" onClick={handleCreateFfmpegDemoJob} disabled={creating}>
+            {creating ? "ĐANG TẠO..." : "+ FFMPEG DEMO (GPU encode thật)"}
           </button>
         </div>
       </header>
@@ -133,7 +167,11 @@ export default function JobsPage() {
                     ? `Máy: ${workerNames.get(job.worker_id) ?? `#${job.worker_id}`}${job.gpu_slot !== null ? ` (GPU ${job.gpu_slot})` : ""}`
                     : "Chưa gán máy"}
                 </span>
-                <span>{job.progress}%</span>
+                <span>
+                  {job.progress}%
+                  {job.fps !== null && ` · ${job.fps.toFixed(1)} fps`}
+                  {job.eta_seconds !== null && ` · còn ~${job.eta_seconds}s`}
+                </span>
               </div>
 
               {job.error && <div className="job-error">{job.error}</div>}

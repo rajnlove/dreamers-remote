@@ -250,6 +250,16 @@ real production hardware, not just locally:
   line, guaranteeing `Start()`'s own synchronous state-set always wins
   the race. **Not yet run against a real ffmpeg encode** — see Tests
   Performed and Known Issues.
+- **Jobs dashboard: FFmpeg visibility.** `web/src/pages/JobsPage.tsx`
+  gained a second button, "+ FFMPEG DEMO (GPU encode thật)", that
+  creates a real `ffmpeg` job against the real source clip verified
+  above (`\\192.29.11.92\web_data\www\Projects\SOURCE\
+  A008C005_130101_R31Z.mov`) — added so the user can actually watch a
+  real GPU encode happen on the dashboard, not just read about it in
+  this file. Job rows now also show `fps`/`eta_seconds` when a job
+  reports them (`web/src/types/job.ts` gained the matching fields).
+  Requires `FFMPEG_ALLOWED_ROOTS` (server) and `allowed_paths.json`
+  (Agent) to already include that UNC root — see Required User Action.
 
 ## In Progress
 
@@ -617,20 +627,39 @@ not blocking, pick up whenever the user asks.
 
 ## Required User Action
 
-Nothing blocking right now — all pending commits are pushed, deployed,
-and the 2 deprecated containers are deleted. Remaining items are all
-deferred by the user's own choice, to pick up whenever:
+**To see the FFmpeg demo working live on the real dashboard** (all
+commits up to and including the "+ FFMPEG DEMO" button are pushed, CI
+green, images on GHCR — none of this is deployed to TrueNAS yet):
+1. Dockge → `vncgi-remote-server` → **Update** (picks up all of P4-1/
+   P4-2's server code).
+2. Dockge → `vncgi-remote-web` → **Update** (picks up the new "+
+   FFMPEG DEMO" button).
+3. Add environment variable `FFMPEG_ALLOWED_ROOTS` =
+   `\\192.29.11.92\web_data\www\Projects` to `vncgi-remote-server`'s
+   container config in Dockge, then restart it.
+4. `CGI-Render`'s Agent already has `allowed_paths.json` configured
+   with that same root (done directly this session) and `ffmpeg`
+   installed — but the *running* Agent service there still predates
+   P4-1/P4-2 (`FfmpegJobRunner` doesn't exist in it yet). Double-click
+   `D:\AICODEX\agent\dist\DreamersAgent.exe` on `CGI-Render` once more
+   to update it.
+5. Open the dashboard → JOBS → "+ FFMPEG DEMO (GPU encode thật)" — a
+   real GPU-encoded video should appear at
+   `\\192.29.11.92\web_data\www\Projects\SOURCE\dreamers_demo_*.mp4`
+   shortly after, with `fps` visible on the job row while it runs.
+
+Everything else is deferred by the user's own choice, to pick up
+whenever:
 
 - Decide when to resume debugging P2-8 Restart/Shutdown and/or the
   CGI-DUC multi-monitor issue (see Known Issues).
 - Eventually: change the admin password; decide on CPU temperature.
-- Optional: double-click-update the Agent on `CGI-01`, `COMP-01`,
-  `CGI-DUC` (same as already done on `CGI-Render`) whenever they need
-  to actually run jobs — not urgent, the job engine itself is proven
-  working.
-- Decide what's next now that Phase 3 is complete (Phase 4 FFmpeg
-  processing per the roadmap, or something else) — not started per the
-  "don't start a future phase without an explicit request" rule.
+- Install `ffmpeg` + configure `allowed_paths.json` on `CGI-01`,
+  `COMP-01`, `CGI-DUC` too, whenever they need to actually run ffmpeg
+  jobs — not urgent, the mechanism itself is proven working on
+  `CGI-Render`.
+- Decide what's next after Phase 4's remaining milestones (P4-4 Topaz,
+  P4-5 multi-GPU verification) — see Next Task.
 
 ## Docker Status
 
