@@ -26,3 +26,9 @@ Wake-on-LAN. Runs on TrueNAS SCALE via Docker Compose.
   moving on.
 - Always keep [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) current — it's
   the source of truth for what's done and what's next.
+- Every Docker container/service/image/volume/network must have a documented
+  purpose and lifecycle status (PRODUCTION/TEST/TEMPORARY/FUTURE/DEPRECATED)
+  in [docs/CONTAINERS.md](docs/CONTAINERS.md) — no unexplained containers.
+  Never run `docker system prune -a` or delete anything on the TrueNAS host
+  without confirming no dependency/data loss first. Full rule:
+  [docs/DOCKER_LIFECYCLE.md](docs/DOCKER_LIFECYCLE.md).

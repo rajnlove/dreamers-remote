@@ -48,6 +48,41 @@ workstation yet. See below.
   held all session regardless of how it's asked; the user does these
   steps themselves.
 
+## Docker Status
+
+Per [DOCKER_LIFECYCLE.md](DOCKER_LIFECYCLE.md); full detail in
+[CONTAINERS.md](CONTAINERS.md).
+
+- **PRODUCTION**: `vncgi-remote-server`, `vncgi-remote-web`
+- **UNDER REVIEW**: `vncgi-remote`, `vncgi-remote-93` — real Dockge
+  stacks on the TrueNAS host that showed up while testing the remote
+  page (2026-08-16), never documented anywhere. Working hypothesis
+  (code archaeology only, **not confirmed** — this agent has no
+  TrueNAS/Dockge access): `vncgi-remote` is the Milestone 1
+  proof-of-concept `novnc` service (standalone websockify + noVNC
+  container, `docker/novnc.Dockerfile`) — architecturally superseded
+  once M2-M4 moved to noVNC-as-a-bundled-client-library +
+  server-side proxying inside `vncgi-remote-server` itself
+  (`server/src/remote/wsProxy.ts`). `vncgi-remote-93`'s `93` suffix
+  matches COMP-01's IP — likely a one-off M1 test of that same service
+  pointed at one hardcoded workstation. **Supporting evidence**: CI
+  (`.github/workflows/docker-build.yml`) still builds and pushes a
+  `dreamers-remote-novnc` image to GHCR on every push, alongside
+  `server`/`web` — despite the current architecture not calling for a
+  separate proxy container at all. That's either a leftover nobody
+  cleaned up, or evidence the `novnc` image is still deployed somewhere
+  (i.e. these two stacks) — can't tell which without inspecting the
+  actual running containers.
+  - **Needs the user to check** (no TrueNAS shell access from here):
+    in Dockge, open `vncgi-remote` and `vncgi-remote-93` and report
+    what compose definition/image each runs, whether currently
+    started, and any port bindings — or run `docker ps -a` / `docker
+    inspect` directly on the TrueNAS host. Do not remove either until
+    that's confirmed (see DOCKER_LIFECYCLE.md's cleanup rule).
+- **TEMPORARY**: none currently tracked.
+- **FUTURE**: none currently tracked.
+- **DEPRECATED**: none confirmed yet (candidates above, pending review).
+
 ## The 4 workstations (all agent-paired, all live)
 
 | Name | id | IP | Hostname | Hardware |
