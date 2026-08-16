@@ -324,7 +324,7 @@ async Task UpdateInPlaceAsync(string existingExePath)
     {
         try
         {
-            File.Copy(currentExePath, existingExePath, overwrite: true);
+            await CopyWithRetryAsync(currentExePath, existingExePath);
             Console.WriteLine("Da sao chep file moi vao noi cai dat.");
         }
         catch (Exception ex)
@@ -414,6 +414,28 @@ async Task FreshInteractiveInstallAsync()
     else
     {
         Console.WriteLine($"Dich vu chua bao RUNNING trong thoi gian cho. Kiem tra: Get-Service {ServiceName}");
+    }
+}
+
+// SCM reports STOPPED as soon as the service acknowledges the stop
+// request, which can land a moment before the .NET process actually
+// exits and releases its handle on its own exe — WaitForServiceStateAsync
+// above isn't enough on its own. Retry the copy for a few seconds to
+// absorb that gap instead of failing and rolling back to the old build.
+async Task CopyWithRetryAsync(string sourcePath, string destinationPath)
+{
+    const int maxAttempts = 10;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++)
+    {
+        try
+        {
+            File.Copy(sourcePath, destinationPath, overwrite: true);
+            return;
+        }
+        catch (IOException) when (attempt < maxAttempts)
+        {
+            await Task.Delay(500);
+        }
     }
 }
 

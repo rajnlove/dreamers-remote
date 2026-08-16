@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 (P3-7 browser-verified)
+Last updated: 2026-08-16 (P3-7 live-verified end-to-end on real hardware)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -143,9 +143,15 @@ cleanup) and now has a working dashboard UI, browser-verified:
   hardcoded CPU/RAM/GPU thresholds, basic single-job dependency
   (`jobs.depends_on`).
 - **Phase 3, P3-7 (Jobs dashboard page)**: full queue view, test-job
-  creation, cancel, retry — browser-verified end-to-end this session
-  (see Tests Performed). First Phase 3 UI; ready for the user's own
-  hands-on testing against the real deployed dashboard.
+  creation, cancel, retry — verified end-to-end both locally in a
+  browser and live on production against real Agent-run hardware (see
+  Tests Performed). Found and fixed a real bug along the way: the
+  Agent's double-click self-update (`UpdateInPlaceAsync` in
+  `agent/Dreamers.Agent/Program.cs`) could lose a race between the
+  Windows Service Control Manager reporting `STOPPED` and the old
+  process actually releasing its exe file handle, causing the update
+  to silently fail and roll back to the old binary — fixed with a
+  short retry loop around the file copy.
 
 ## In Progress
 
@@ -332,13 +338,53 @@ not blocking Phase 3, pick up whenever the user asks.
   (see P3-7 entry under Current Milestone) that no amount of
   typecheck/build/unit-testing would have surfaced, since it only
   breaks `vite dev`, not `vite build`.
-- **Not yet tested through the live HTTP API or a browser**: the
-  *deployed* dashboard (`vncgi-remote-web`/`vncgi-remote-server` on
-  TrueNAS) — all P3-7 verification above was against a local dev
-  server, not production. Also still untested live: a real Agent
-  actually picking up and running a job end-to-end through the UI
-  (only the local-DB engine loop has been verified, via smoke scripts
-  and now the UI against an Agent-less local backend).
+- **P3-7 — full live verification against production, real hardware,
+  real Agent** (same session, after the local browser pass above): the
+  user tested the deployed dashboard directly and hit a real dead end —
+  every job stayed `QUEUED` / "Chưa gán máy" forever. Root-caused via
+  `curl`'d `GET /api/workers` against the live server
+  (`http://192.29.11.92:8080`, session-cookie auth) rather than asking
+  the user to fetch/paste it: all 4 workstations reported
+  `"capabilities":[]`. Confirmed `vncgi-remote-server` itself *was*
+  already up to date (its `/api/workers` response already had the
+  P3-2/P3-6 shape), so the gap was purely Agent-side — none of the 4
+  workstations had ever had the Agent binary redeployed since P3-2
+  added capability reporting, since Agent updates are a manual
+  double-click per machine (`agent/README.md`), not something CI/CD
+  touches.
+  - Built a fresh `DreamersAgent.exe` and had the user double-click it
+    on `CGI-Render` (this dev machine also doubles as a studio
+    workstation) to update in place. First attempt failed with a real
+    bug, caught from the installer's own console output: `sc stop`
+    reports `STOPPED` to the Service Control Manager a moment before
+    the underlying .NET process has actually exited and released its
+    file handle, so the immediately-following `File.Copy` in
+    `UpdateInPlaceAsync` (`agent/Dreamers.Agent/Program.cs`) hit
+    "The process cannot access the file ... being used by another
+    process" and rolled back to the old binary rather than updating —
+    this is exactly the "double-click installer flow on a real
+    already-installed machine" scenario flagged as untested in earlier
+    entries here, and it turned out to have a genuine bug once
+    actually tried. **Fix**: wrap the copy in `CopyWithRetryAsync`
+    (up to 10 attempts, 500ms apart) to absorb that race instead of
+    failing outright — `dotnet build`/`test` clean (still 42/42,
+    Program.cs's install flow has no direct unit coverage, it's the
+    interactive entry point). Rebuilt, the user re-ran the updated
+    installer, and this time verified live: `CGI-Render`'s
+    `/api/workers` entry flipped to `"capabilities":["test"]`.
+  - Created a real job directly via `curl` (`POST /api/jobs`,
+    `{"type":"test","input":"{\"seconds\":8}"}`) against production and
+    polled `GET /api/jobs/8` myself: `QUEUED` → `ASSIGNED` (worker 3 /
+    CGI-Render, gpu_slot 1, immediately) → `RUNNING` (progress ticking,
+    62% mid-poll) → `COMPLETED` (progress 100, `finished_at` set) —
+    **the full job engine loop confirmed working end-to-end on real
+    production hardware**, not just local unit tests/smoke
+    scripts/local-dev browser testing. This is the first real
+    confirmation of the whole Phase 3 loop outside a dev machine.
+  - **Not yet updated**: `CGI-01`, `COMP-01`, `CGI-DUC` still report
+    `capabilities:[]` — same Agent redeploy needed on each,
+    user's/team's call on when. Not blocking; the loop itself is now
+    proven, this is just rollout remaining on 3 more machines.
 
 ## Required User Action
 
