@@ -15,11 +15,22 @@ export function getJob(id: number): Job | undefined {
 export function createJob(input: JobInput): Job {
   const { lastInsertRowid } = db
     .prepare(
-      `INSERT INTO jobs (type, status, priority, created_at, progress, input, retry_count)
-       VALUES (@type, 'QUEUED', @priority, @created_at, 0, @input, 0)`,
+      `INSERT INTO jobs (type, status, priority, created_at, progress, input, retry_count, depends_on)
+       VALUES (@type, 'QUEUED', @priority, @created_at, 0, @input, 0, @depends_on)`,
     )
     .run({ ...input, created_at: new Date().toISOString() });
   return getJob(Number(lastInsertRowid))!;
+}
+
+// P3-6: true if this job has no dependency, or its dependency is
+// COMPLETED. A job whose dependency FAILED/CANCELLED stays blocked
+// forever rather than silently running out of order — that's a
+// judgment call for a human (retry the dependency, or cancel this one),
+// not something the scheduler should guess at.
+export function isDependencySatisfied(job: Job): boolean {
+  if (job.depends_on === null) return true;
+  const dependency = getJob(job.depends_on);
+  return dependency?.status === "COMPLETED";
 }
 
 // No-op if the job is already in a terminal state (COMPLETED/FAILED/

@@ -128,3 +128,21 @@ db.exec(`
     retry_count INTEGER NOT NULL DEFAULT 0
   )
 `);
+
+// Phase 3 (P3-6): basic single-dependency support — job B waits for job
+// A. Not a full DAG (no multi-parent, no diamond dependencies) — one
+// optional predecessor is what "basic ... dependency" in the P3-6
+// milestone scope calls for; a real DAG is a later polish item if a
+// concrete workflow needs it.
+ensureColumn("jobs", "depends_on", "INTEGER REFERENCES jobs(id)");
+
+// Phase 3 (P3-6): manual admin gate on job assignment — covers the
+// DISABLED case from MASTER_PROJECT_SPEC.md §11's 5-state model
+// (AVAILABLE/BUSY/DISABLED/DEDICATED_WORKER/INTERACTIVE). BUSY is
+// derived at query time (does the worker have a free unit right now?),
+// not stored. DEDICATED_WORKER/INTERACTIVE as distinct states are
+// deliberately deferred — this boolean plus the CPU/RAM/GPU usage
+// thresholds in job/scheduler.ts cover "don't assign more work here"
+// for now; a real state machine is a later refinement once a concrete
+// workflow needs to distinguish those cases from plain disabled.
+ensureColumn("workstations", "jobs_enabled", "INTEGER NOT NULL DEFAULT 1");

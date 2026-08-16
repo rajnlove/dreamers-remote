@@ -35,5 +35,17 @@ export function validateCreateInput(body: unknown): JobInput {
     input = b.input;
   }
 
-  return { type: b.type.trim(), priority, input };
+  // P3-6: format only (positive integer) — whether the referenced job
+  // actually exists is checked in the route (api/jobs.ts), which is
+  // where the rest of this codebase's "does this id exist" checks live
+  // (throwing NotFoundError, not ValidationError).
+  let dependsOn: number | null = null;
+  if (b.depends_on !== undefined && b.depends_on !== null) {
+    dependsOn = Number(b.depends_on);
+    if (!Number.isInteger(dependsOn) || dependsOn <= 0) {
+      throw new ValidationError("depends_on must be a positive integer");
+    }
+  }
+
+  return { type: b.type.trim(), priority, input, depends_on: dependsOn };
 }

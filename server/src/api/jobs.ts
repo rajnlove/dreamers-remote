@@ -33,6 +33,9 @@ jobsRouter.get("/:id", (req, res, next) => {
 jobsRouter.post("/", (req, res, next) => {
   try {
     const input = validateCreateInput(req.body);
+    if (input.depends_on !== null && !getJob(input.depends_on)) {
+      throw new NotFoundError(`depends_on job ${input.depends_on} not found`);
+    }
     const created = createJob(input);
     // P3-3: try to assign immediately (a worker may already be free) —
     // also retried on every Agent heartbeat, so this isn't the only chance.

@@ -7,14 +7,24 @@ export interface GpuSlot {
   workstationName: string;
   gpuIndex: number;
   gpuName: string;
+  // P3-6: current utilization, for threshold-based gating — a slot can
+  // be heavily used by something outside the job engine entirely (an
+  // artist's interactive session) without a job of ours occupying it.
+  utilizationPercent: number;
 }
 
 export interface WorkerInfo {
   workstationId: number;
   workstationName: string;
   agentOnline: boolean;
+  // P3-6: manual admin gate — see workstations.jobs_enabled.
+  jobsEnabled: boolean;
   capabilities: string[];
   gpuSlots: GpuSlot[];
+  // P3-6: current usage, for threshold-based gating in scheduler.ts.
+  // Null when the Agent hasn't reported that metric (e.g. no NVML GPU).
+  cpuUtilizationPercent: number | null;
+  memoryUsagePercent: number | null;
 }
 
 // P3-2: a read-only view derived from what the Agent already reports on
@@ -33,13 +43,17 @@ export function listWorkers(): WorkerInfo[] {
         workstationId: ws.id,
         workstationName: ws.name,
         agentOnline: isAgentOnline(ws.last_seen),
+        jobsEnabled: ws.jobs_enabled,
         capabilities: metrics?.capabilities ?? [],
         gpuSlots: (metrics?.gpus ?? []).map((gpu) => ({
           workstationId: ws.id,
           workstationName: ws.name,
           gpuIndex: gpu.index,
           gpuName: gpu.name,
+          utilizationPercent: gpu.utilizationPercent,
         })),
+        cpuUtilizationPercent: metrics?.cpu?.utilizationPercent ?? null,
+        memoryUsagePercent: metrics?.memory?.usagePercent ?? null,
       };
     });
 }

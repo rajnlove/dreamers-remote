@@ -26,10 +26,14 @@ export interface Job {
   output: string | null;
   error: string | null;
   retry_count: number;
+  // P3-6: basic single-dependency — this job won't be scheduled until
+  // the referenced job is COMPLETED. Null means no dependency.
+  depends_on: number | null;
 }
 
 export interface JobInput {
   type: string;
   priority: number;
   input: string | null;
+  depends_on: number | null;
 }

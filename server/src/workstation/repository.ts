@@ -7,7 +7,8 @@ import type { Workstation, WorkstationInput, WorkstationUpdateInput } from "./ty
 // even hashed, since there's no reason for a dashboard client to see it.
 const PUBLIC_COLUMNS = `
   id, name, hostname, ip, mac_address, vnc_port, location, description,
-  enabled, created_at, updated_at, agent_id, last_seen, agent_version, os
+  enabled, created_at, updated_at, agent_id, last_seen, agent_version, os,
+  jobs_enabled
 `;
 
 interface WorkstationRow {
@@ -26,10 +27,11 @@ interface WorkstationRow {
   last_seen: string | null;
   agent_version: string | null;
   os: string | null;
+  jobs_enabled: number;
 }
 
 function rowToWorkstation(row: WorkstationRow): Workstation {
-  return { ...row, enabled: row.enabled === 1 };
+  return { ...row, enabled: row.enabled === 1, jobs_enabled: row.jobs_enabled === 1 };
 }
 
 export function listWorkstations(): Workstation[] {
@@ -51,12 +53,13 @@ export function createWorkstation(input: WorkstationInput): Workstation {
     result = db
       .prepare(
         `INSERT INTO workstations
-           (name, hostname, ip, mac_address, vnc_port, location, description, enabled, created_at, updated_at)
-         VALUES (@name, @hostname, @ip, @mac_address, @vnc_port, @location, @description, @enabled, @created_at, @updated_at)`,
+           (name, hostname, ip, mac_address, vnc_port, location, description, enabled, jobs_enabled, created_at, updated_at)
+         VALUES (@name, @hostname, @ip, @mac_address, @vnc_port, @location, @description, @enabled, @jobs_enabled, @created_at, @updated_at)`,
       )
       .run({
         ...input,
         enabled: input.enabled ? 1 : 0,
+        jobs_enabled: input.jobs_enabled ? 1 : 0,
         created_at: now,
         updated_at: now,
       });
@@ -80,7 +83,7 @@ export function updateWorkstation(id: number, input: WorkstationUpdateInput): Wo
       `UPDATE workstations
          SET name = @name, hostname = @hostname, ip = @ip, mac_address = @mac_address,
              vnc_port = @vnc_port, location = @location, description = @description,
-             enabled = @enabled, updated_at = @updated_at
+             enabled = @enabled, jobs_enabled = @jobs_enabled, updated_at = @updated_at
          WHERE id = @id`,
     ).run({
       id: merged.id,
@@ -92,6 +95,7 @@ export function updateWorkstation(id: number, input: WorkstationUpdateInput): Wo
       location: merged.location,
       description: merged.description,
       enabled: merged.enabled ? 1 : 0,
+      jobs_enabled: merged.jobs_enabled ? 1 : 0,
       updated_at: now,
     });
   } catch (err) {

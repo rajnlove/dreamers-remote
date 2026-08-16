@@ -65,6 +65,7 @@ export function validateCreateInput(body: unknown): WorkstationInput {
     location: optionalString(b.location, "location"),
     description: optionalString(b.description, "description"),
     enabled: b.enabled === undefined ? true : Boolean(b.enabled),
+    jobs_enabled: b.jobs_enabled === undefined ? true : Boolean(b.jobs_enabled),
   };
 }
 
@@ -110,6 +111,9 @@ export function validateUpdateInput(body: unknown): WorkstationUpdateInput {
   }
   if (b.enabled !== undefined) {
     result.enabled = Boolean(b.enabled);
+  }
+  if (b.jobs_enabled !== undefined) {
+    result.jobs_enabled = Boolean(b.jobs_enabled);
   }
 
   if (Object.keys(result).length === 0) {

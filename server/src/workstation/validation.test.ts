@@ -45,6 +45,7 @@ test("validateCreateInput accepts a well-formed workstation and applies defaults
   });
   assert.equal(result.vnc_port, 5900);
   assert.equal(result.enabled, true);
+  assert.equal(result.jobs_enabled, true);
   assert.equal(result.location, null);
 });
 

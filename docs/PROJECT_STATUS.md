@@ -22,11 +22,12 @@ rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P3-6 — Priority + workstation availability + dependency**, up next.
-P3-1 through P3-5 are done — the full job engine loop works end-to-end
-including real cancellation, retry, and stale-job cleanup, just with
-only a trivial built-in `test` job type and no UI to drive it yet
-(that's P3-7):
+**P3-7 — Jobs dashboard page**, up next — the first Phase 3 milestone
+with an actual UI, and the natural point to hand this to the user for
+hands-on testing. P3-1 through P3-6 are done: the full job engine loop
+works end-to-end (priority-ordered, dependency-aware, threshold-gated
+scheduling; real cancellation; retry; stale-job cleanup) — just with
+only a trivial built-in `test` job type and no UI to drive it yet:
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
   repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
   `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
@@ -63,6 +64,22 @@ only a trivial built-in `test` job type and no UI to drive it yet
   loss, network drop) gets marked FAILED with an explanatory error
   instead of sitting RUNNING forever and permanently occupying its
   slot — checked on every scheduler run via `failStaleRunningJobs()`.
+- P3-6: priority-ordered scheduling (`jobs.priority`, was already a
+  column since P3-1 but ignored until now — `ORDER BY priority DESC,
+  id ASC`); `workstations.jobs_enabled` (manual admin on/off switch
+  for job assignment — distinct from `enabled`, which gates monitoring/
+  probing); hardcoded CPU/RAM/GPU usage thresholds (90% — see
+  `CPU_THRESHOLD_PERCENT` etc. in `scheduler.ts`) gating new
+  assignment; basic single-dependency (`jobs.depends_on` — a job won't
+  be scheduled until its dependency is `COMPLETED`). **Deliberate
+  simplification**: MASTER_PROJECT_SPEC.md §11's full 5-state model
+  (`AVAILABLE`/`BUSY`/`DISABLED`/`DEDICATED_WORKER`/`INTERACTIVE`) is
+  collapsed to just the `jobs_enabled` boolean + thresholds for now —
+  `BUSY` is derived at query time (free-unit check), not stored;
+  `DEDICATED_WORKER`/`INTERACTIVE` as distinct states are deferred
+  until a concrete workflow needs to tell them apart from plain
+  disabled. Thresholds are hardcoded, not yet admin-configurable (that
+  needs a real settings UI — Phase 6/7 territory).
 
 ## Completed
 
@@ -110,11 +127,16 @@ only a trivial built-in `test` job type and no UI to drive it yet
   observes (`TestJobRunner.Cancel`, `cancelJobId` in the heartbeat
   response), `POST /api/jobs/:id/retry`, stale-RUNNING-job cleanup
   (`failStaleRunningJobs`, called every scheduler run).
+- **Phase 3, P3-6 (priority + availability + dependency)**: priority-
+  ordered scheduling, `workstations.jobs_enabled` admin switch,
+  hardcoded CPU/RAM/GPU thresholds, basic single-job dependency
+  (`jobs.depends_on`).
 
 ## In Progress
 
-Nothing — P3-1 through P3-5 finished this session. Next up is P3-6
-(see Current Milestone).
+Nothing — P3-1 through P3-6 finished this session. Next up is P3-7,
+the Jobs dashboard page — first Phase 3 UI, good point to hand this to
+the user for hands-on testing (see Current Milestone).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -159,13 +181,14 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-6 — Priority + workstation availability + dependency.**
-Priority-ordered scheduling (the `jobs.priority` column already exists
-from P3-1 but `runScheduler()` still processes strict FIFO by `id`,
-ignoring it); workstation states
-(`AVAILABLE`/`BUSY`/`DISABLED`/`DEDICATED_WORKER`/`INTERACTIVE`) with
-configurable thresholds gating new assignment; basic job dependency
-(job B waits for job A). See
+**P3-7 — Jobs dashboard page.** Queue view (list `GET /api/jobs`),
+per-job status/progress/error display, cancel button
+(`POST /api/jobs/:id/cancel`), retry button on FAILED jobs
+(`POST /api/jobs/:id/retry`), and a "create a test job" control
+(`POST /api/jobs` with `type: "test"`) for exercising the engine
+without needing a real Phase 4/5 workload yet. This is the first
+Phase 3 milestone with an actual UI — natural point to stop and let
+the user click through it for real before continuing to P3-8. See
 [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full
 P3-0 through P3-8 breakdown.
 
@@ -262,6 +285,25 @@ not blocking Phase 3, pick up whenever the user asks.
   job whose worker's `last_seen` goes stale gets marked FAILED with an
   explanatory error, and the worker becomes assignable again once back
   online.
+- **P3-6 priority/availability/dependency**: typecheck/test/build
+  clean (43/43 unit tests). A fifth throwaway smoke-test script (with a
+  real bug of its own caught and fixed along the way — see below)
+  confirmed: a higher-priority job is assigned before an older
+  lower-priority one when only one unit is free; `jobs_enabled: false`
+  blocks new assignment to that worker; CPU-over-threshold blocks it
+  too; a GPU pinned above threshold on one worker correctly gets
+  skipped in favor of a free CPU-only unit on a different worker; a
+  dependent job stays `QUEUED` until its dependency is `COMPLETED`,
+  then gets scheduled. **Process note**: the smoke test's first version
+  had a wrong expectation, not the code — it assumed a freshly-freed
+  slot would go to the job it was testing, without accounting for older
+  still-`QUEUED` jobs from earlier scenarios in the same script (lower
+  id, same priority) legitimately winning that slot first under
+  `runScheduler()`'s real FIFO-among-equal-priority behavior. Fixed by
+  isolating each scenario's state rather than changing the scheduler.
+  Also hit the same known intermittent local-dev-only native crash
+  (see the Node.js entry above) once during this milestone — 3
+  subsequent clean full-suite runs confirmed it wasn't a regression.
 - **Not yet tested through the live HTTP API or a browser**: `/api/jobs`,
   `/api/workers`, or any Phase 3 endpoint. All verification so far is
   local (unit tests + smoke scripts against a temp DB), not against the

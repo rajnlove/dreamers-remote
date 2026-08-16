@@ -8,8 +8,11 @@ function worker(overrides: Partial<WorkerInfo> = {}): WorkerInfo {
     workstationId: 1,
     workstationName: "W1",
     agentOnline: true,
+    jobsEnabled: true,
     capabilities: ["test"],
     gpuSlots: [],
+    cpuUtilizationPercent: 10,
+    memoryUsagePercent: 10,
     ...overrides,
   };
 }
@@ -23,8 +26,8 @@ test("workerUnits produces one unit per reported GPU", () => {
   const units = workerUnits(
     worker({
       gpuSlots: [
-        { workstationId: 1, workstationName: "W1", gpuIndex: 0, gpuName: "RTX 3090" },
-        { workstationId: 1, workstationName: "W1", gpuIndex: 1, gpuName: "RTX 3090" },
+        { workstationId: 1, workstationName: "W1", gpuIndex: 0, gpuName: "RTX 3090", utilizationPercent: 0 },
+        { workstationId: 1, workstationName: "W1", gpuIndex: 1, gpuName: "RTX 3090", utilizationPercent: 0 },
       ],
     }),
   );
@@ -47,7 +50,7 @@ test("findAssignment skips a worker without the required capability", () => {
 
 test("findAssignment skips units already marked busy", () => {
   const w = worker({
-    gpuSlots: [{ workstationId: 1, workstationName: "W1", gpuIndex: 0, gpuName: "RTX 3090" }],
+    gpuSlots: [{ workstationId: 1, workstationName: "W1", gpuIndex: 0, gpuName: "RTX 3090", utilizationPercent: 0 }],
   });
   const busy = new Set([slotKeyString({ workerId: 1, gpuSlot: 0 })]);
   assert.equal(findAssignment("test", [w], busy), null);

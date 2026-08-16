@@ -17,6 +17,10 @@ export interface Workstation {
   last_seen: string | null;
   agent_version: string | null;
   os: string | null;
+  // Phase 3 (P3-6) — manual admin gate on job assignment, distinct from
+  // `enabled` (which controls whether the workstation is monitored/
+  // probed at all). See job/scheduler.ts.
+  jobs_enabled: boolean;
 }
 
 export interface WorkstationInput {
@@ -28,6 +32,7 @@ export interface WorkstationInput {
   location: string | null;
   description: string | null;
   enabled: boolean;
+  jobs_enabled: boolean;
 }
 
 export type WorkstationUpdateInput = Partial<WorkstationInput>;
