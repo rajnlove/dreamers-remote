@@ -72,3 +72,22 @@ Replace VNC with a higher-performance pipeline for VFX workstation use:
 
 V2 is a different risk profile (driver-level capture, hardware encode,
 custom transport) and should only start after V1 is stable in daily use.
+
+## Future phases (high-level only — not planned in detail, do not start)
+
+User-stated long-term direction (2026-08-16), recorded per the FUTURE
+status in [DOCKER_LIFECYCLE.md](DOCKER_LIFECYCLE.md)'s philosophy: note
+the phase now, don't build it now. This repo's "V1" = Phase 1 below,
+and its "Phase 2" (Dreamers Agent) = Phase 2 below; V2 (higher-perf
+capture pipeline, above) is a separate axis, not one of these phases.
+
+- **Phase 3 — Job Engine / Scheduler.**
+- **Phase 4 — FFmpeg + Topaz processing.**
+- **Phase 5 — Render Farm** (Houdini, After Effects, Cinema 4D).
+- **Phase 6 — Studio Control Center.**
+- **Phase 7 — Dreamers Studio OS Integration.**
+
+None of these have design docs, milestones, or scope breakdowns yet —
+that work hasn't started. **Explicitly out of scope for all of them**
+until stated otherwise: AI compute/training, browser activity
+monitoring.

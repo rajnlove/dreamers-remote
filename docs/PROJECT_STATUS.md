@@ -50,38 +50,42 @@ workstation yet. See below.
 
 ## Docker Status
 
-Per [DOCKER_LIFECYCLE.md](DOCKER_LIFECYCLE.md); full detail in
-[CONTAINERS.md](CONTAINERS.md).
+Per [DOCKER_LIFECYCLE.md](DOCKER_LIFECYCLE.md). Full detail (image,
+ports, volumes, environment, dependencies, cleanup condition) in
+[CONTAINERS.md](CONTAINERS.md) — this is the quick-glance summary.
+Audited 2026-08-16; no container left at UNKNOWN.
 
-- **PRODUCTION**: `vncgi-remote-server`, `vncgi-remote-web`
-- **DEPRECATED — removal confirmed 2026-08-16, pending user action in
-  Dockge**: `vncgi-remote`, `vncgi-remote-93`. Two Dockge stacks nobody
-  had documented, found while testing the remote page this session.
-  Both confirmed via Dockge inspection (compose.yaml + terminal log —
-  see [CONTAINERS.md](CONTAINERS.md) for full detail) to be the
-  Milestone 1 proof-of-concept standalone `novnc` proxy, one hardcoded
-  to CGI-01 (`vncgi-remote`, port 6080 → 192.29.11.94:5900) and one to
-  COMP-01 (`vncgi-remote-93`, port 6081 → 192.29.11.93:5900).
-  Architecturally obsolete (the real app proxies `/ws/vnc/:id` through
-  `vncgi-remote-server` itself, behind session login) **and a real
-  security gap while they exist**: reaching either directly bypassed
-  the dashboard login entirely — a live hole in the M6 auth work,
-  scoped to exactly these 2 of the 4 workstations. Both had logged
-  genuine recent WebSocket traffic (15/Aug/2026 12:39); user confirmed
-  that was their own testing, not another user, so removal is cleared.
-  - **Done same day**: repo-side cleanup — removed
-    `docker/novnc.Dockerfile`, `docker/novnc-entrypoint.sh`, the
-    `novnc` service from `docker/docker-compose.yml`, the `novnc` image
-    matrix entry from `.github/workflows/docker-build.yml`, and updated
-    `SETUP.md`/`ARCHITECTURE.md`/`.env.example` to stop describing it.
-  - **Still needed**: the user stopping and deleting both stacks
-    directly in Dockge — this agent has no Dockge access to do that
-    part. `vncgi-remote-93`'s log also had 2 unexplained hits from
-    `192.168.1.3` (not `192.29.11.x`, no known studio device matches) —
-    removing the container removes that access path regardless, but if
-    that IP shows up again elsewhere later it's worth tracking down.
-- **TEMPORARY**: none currently tracked.
-- **FUTURE**: none currently tracked.
+**PRODUCTION**
+- `vncgi-remote-server` — backend API + WS VNC proxy + WOL + Agent
+  endpoints. Required, live, daily use.
+- `vncgi-remote-web` — dashboard (nginx). Required, live, daily use.
+
+**TEST**
+- none currently tracked.
+
+**TEMPORARY**
+- none currently tracked.
+
+**FUTURE**
+- none currently tracked.
+
+**DEPRECATED**
+- `vncgi-remote` — M1-era standalone `novnc` proxy hardcoded to CGI-01
+  (port 6080). Not needed by the current app (superseded by
+  `vncgi-remote-server`'s `wsProxy.ts`) and was a real security gap
+  while running — reachable with no dashboard login at all, unlike
+  `/ws/vnc/:id`. User confirmed 2026-08-16 the recent traffic
+  (15/Aug/2026 12:39) was their own testing, not a dependency — removal
+  cleared. Repo-side cleanup done same day (Dockerfile, compose
+  service, CI build target, docs all removed/updated). **The live
+  Dockge stack itself is not yet deleted** — needs the user to Dừng →
+  Xóa directly, no Dockge access from here.
+- `vncgi-remote-93` — same situation, hardcoded to COMP-01 (port 6081).
+  Same confirmation, same repo cleanup done, same pending Dockge
+  deletion. One loose end the confirmation didn't explain: 2 log hits
+  from `192.168.1.3`, a subnet outside the known studio LAN range
+  (`192.29.11.x`) — removing the container removes that access path
+  either way, but worth tracking down if that IP resurfaces elsewhere.
 
 ## The 4 workstations (all agent-paired, all live)
 
