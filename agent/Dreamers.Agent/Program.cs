@@ -10,6 +10,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
+using System.Security.Principal;
 
 const string ServiceName = "DreamersAgent";
 const string ServiceDisplayName = "Dreamers Remote Agent";
@@ -28,6 +30,31 @@ if (args.Length > 0 && string.Equals(args[0], "register", StringComparison.Ordin
 
 if (args.Length > 0 && TryHandleServiceCommand(args[0]))
 {
+    return;
+}
+
+// Double-clicked in Explorer (no args, interactive, not the Windows
+// Service Control Manager starting it as a service) — non-technical
+// recipients shouldn't need to know install/register/start exist as
+// separate commands. Detect what's already on this machine and do the
+// right thing automatically. See "Deploying"/"Updating" sections in
+// agent/README.md.
+//
+// Gated on IsSingleFileBundle too: without it, "dotnet run --project
+// Dreamers.Agent" (documented above as the local dev-run flow — no args,
+// interactive, not a service either) would hit this same branch and hijack
+// it into the installer instead of actually running the worker. A
+// single-file-published exe has no separate assembly file on disk (it's
+// bundled into the one .exe), so Assembly.Location is empty; a "dotnet
+// build"/"dotnet run" output does have one. That's a reliable way to tell
+// "this is the thing we shipped to a recipient" apart from "this is a dev
+// build."
+#pragma warning disable IL3000 // Deliberate: the always-empty-in-single-file behavior IS the signal we want here, not a path we need.
+var isSingleFileBundle = string.IsNullOrEmpty(System.Reflection.Assembly.GetExecutingAssembly().Location);
+#pragma warning restore IL3000
+if (args.Length == 0 && isSingleFileBundle && Environment.UserInteractive && !WindowsServiceHelpers.IsWindowsService())
+{
+    await HandleInteractiveSetupAsync();
     return;
 }
 
@@ -188,4 +215,233 @@ void RunSc(string arguments)
     Console.Write(process.StandardOutput.ReadToEnd());
     Console.Error.Write(process.StandardError.ReadToEnd());
     process.WaitForExit();
+}
+
+// --- Double-click install/update.
+//
+// Elevation is checked and requested here, at the entry to this one flow
+// — deliberately NOT via a requireAdministrator app manifest, which would
+// force elevation (and a UAC prompt) on every single launch of this exe,
+// including "dotnet run --project Dreamers.Agent" (the documented local
+// dev-run flow above) and any non-interactive context with no UI to show
+// a UAC prompt on at all — both broke outright when this was tried as a
+// manifest setting instead.
+async Task HandleInteractiveSetupAsync()
+{
+    if (!IsRunningElevated())
+    {
+        Console.WriteLine("Can quyen Administrator de cai dat/cap nhat - dang mo lai voi quyen cao hon...");
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath))
+        {
+            Console.WriteLine("Loi: khong xac dinh duoc duong dan file dang chay.");
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = true, Verb = "runas" });
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // User clicked "No" on the UAC prompt.
+            Console.WriteLine("Da huy quyen Administrator - khong the cai dat/cap nhat.");
+            Console.WriteLine("Nhan phim bat ky de dong cua so nay...");
+            Console.ReadKey();
+        }
+        return;
+    }
+
+    Console.WriteLine("=========================================================");
+    Console.WriteLine(" Dreamers Remote Agent - Cai dat / Cap nhat tu dong");
+    Console.WriteLine("=========================================================");
+    Console.WriteLine();
+
+    var existingExePath = GetInstalledServiceExePath();
+    if (existingExePath is not null && File.Exists(existingExePath))
+    {
+        await UpdateInPlaceAsync(existingExePath);
+    }
+    else
+    {
+        await FreshInteractiveInstallAsync();
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Nhan phim bat ky de dong cua so nay...");
+    Console.ReadKey();
+}
+
+bool IsRunningElevated()
+{
+    using var identity = WindowsIdentity.GetCurrent();
+    return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+}
+
+// Reads HKLM\SYSTEM\CurrentControlSet\Services\DreamersAgent\ImagePath —
+// set by "sc create ... binPath= ..." (see HandleInstallAsync /
+// FreshInteractiveInstallAsync) — rather than assuming a fixed install
+// location, since existing installs on the 4 studio workstations were set
+// up by hand at whatever path an admin chose.
+string? GetInstalledServiceExePath()
+{
+    try
+    {
+        using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+        var imagePath = key?.GetValue("ImagePath") as string;
+        return string.IsNullOrWhiteSpace(imagePath) ? null : imagePath.Trim().Trim('"');
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+async Task UpdateInPlaceAsync(string existingExePath)
+{
+    Console.WriteLine($"Da tim thay Agent dang cai dat tai: {existingExePath}");
+
+    var currentExePath = Environment.ProcessPath;
+    if (string.IsNullOrEmpty(currentExePath))
+    {
+        Console.WriteLine("Loi: khong xac dinh duoc duong dan file dang chay - dung lai.");
+        return;
+    }
+
+    var sameFile = string.Equals(
+        Path.GetFullPath(currentExePath), Path.GetFullPath(existingExePath), StringComparison.OrdinalIgnoreCase);
+
+    Console.WriteLine("Dang dung dich vu de cap nhat...");
+    RunSc($"stop {ServiceName}");
+    if (!await WaitForServiceStateAsync("STOPPED", TimeSpan.FromSeconds(20)))
+    {
+        Console.WriteLine("Canh bao: dich vu khong bao STOPPED trong thoi gian cho - van thu cap nhat.");
+    }
+
+    if (!sameFile)
+    {
+        try
+        {
+            File.Copy(currentExePath, existingExePath, overwrite: true);
+            Console.WriteLine("Da sao chep file moi vao noi cai dat.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Loi khi sao chep file: {ex.Message}");
+            Console.WriteLine("Dang khoi dong lai dich vu voi ban cu (chua cap nhat)...");
+            RunSc($"start {ServiceName}");
+            return;
+        }
+    }
+    else
+    {
+        Console.WriteLine("Ban dang chay dung file da cai dat san - chi khoi dong lai dich vu.");
+    }
+
+    Console.WriteLine("Dang khoi dong lai dich vu...");
+    RunSc($"start {ServiceName}");
+    Console.WriteLine();
+    if (await WaitForServiceStateAsync("RUNNING", TimeSpan.FromSeconds(20)))
+    {
+        Console.WriteLine("HOAN TAT! Agent da duoc CAP NHAT va dang chay.");
+    }
+    else
+    {
+        Console.WriteLine("Dich vu chua bao RUNNING trong thoi gian cho. Kiem tra thu cong:");
+        Console.WriteLine($"  Get-Service {ServiceName}");
+        Console.WriteLine(@"  Get-Content C:\ProgramData\DreamersRemote\logs\agent-*.log -Tail 20");
+    }
+}
+
+// No existing install found — fresh machine. Installs to a fixed, stable
+// location (not wherever this exe happens to be double-clicked from,
+// e.g. Desktop/Downloads) since that path gets baked into the service
+// definition and needs to still exist on every future boot.
+async Task FreshInteractiveInstallAsync()
+{
+    Console.WriteLine("Chua tim thay Agent nao dang cai dat tren may nay.");
+    Console.WriteLine("Bat dau cai dat moi...");
+    Console.WriteLine();
+
+    const string targetDir = @"C:\Program Files\DreamersRemote";
+    Directory.CreateDirectory(targetDir);
+    var targetExePath = Path.Combine(targetDir, "DreamersAgent.exe");
+
+    var currentExePath = Environment.ProcessPath;
+    if (string.IsNullOrEmpty(currentExePath))
+    {
+        Console.WriteLine("Loi: khong xac dinh duoc duong dan file dang chay - dung lai.");
+        return;
+    }
+
+    if (!string.Equals(Path.GetFullPath(currentExePath), Path.GetFullPath(targetExePath), StringComparison.OrdinalIgnoreCase))
+    {
+        File.Copy(currentExePath, targetExePath, overwrite: true);
+        Console.WriteLine($"Da sao chep vao: {targetDir}");
+    }
+
+    RunSc($"create {ServiceName} binPath= \"{targetExePath}\" DisplayName= \"{ServiceDisplayName}\" start= auto");
+    RunSc($"description {ServiceName} \"Collects workstation metrics and executes whitelisted management commands for Dreamers Remote.\"");
+    Console.WriteLine("Da tao dich vu Windows.");
+    Console.WriteLine();
+
+    Console.WriteLine("Neu ban co MA DANG KY (registration token) tu quan tri vien, dan vao day roi nhan Enter.");
+    Console.WriteLine("Chua co thi cu nhan Enter de bo qua - Agent van chay va ghi log cuc bo, dang ky sau cung duoc.");
+    Console.Write("Ma dang ky: ");
+    var token = Console.ReadLine();
+
+    if (!string.IsNullOrWhiteSpace(token))
+    {
+        if (!await TryRegisterAsync(token.Trim()))
+        {
+            Console.WriteLine("Dang ky that bai - dich vu van duoc cai va khoi dong. Thu lai dang ky sau bang:");
+            Console.WriteLine($"  \"{targetExePath}\" register <ma-dang-ky>");
+        }
+    }
+    else
+    {
+        Console.WriteLine("Da bo qua dang ky - Agent chi ghi log cuc bo cho den khi duoc dang ky.");
+    }
+
+    RunSc($"start {ServiceName}");
+    Console.WriteLine();
+    if (await WaitForServiceStateAsync("RUNNING", TimeSpan.FromSeconds(20)))
+    {
+        Console.WriteLine("HOAN TAT! Agent da duoc CAI DAT va dang chay.");
+    }
+    else
+    {
+        Console.WriteLine($"Dich vu chua bao RUNNING trong thoi gian cho. Kiem tra: Get-Service {ServiceName}");
+    }
+}
+
+async Task<bool> WaitForServiceStateAsync(string expectedState, TimeSpan timeout)
+{
+    var deadline = DateTime.UtcNow + timeout;
+    while (DateTime.UtcNow < deadline)
+    {
+        if (QueryServiceState()?.Contains(expectedState, StringComparison.OrdinalIgnoreCase) == true)
+        {
+            return true;
+        }
+        await Task.Delay(500);
+    }
+    return false;
+}
+
+string? QueryServiceState()
+{
+    var psi = new ProcessStartInfo("sc.exe", $"query {ServiceName}")
+    {
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        UseShellExecute = false,
+    };
+
+    using var process = Process.Start(psi);
+    if (process is null) return null;
+
+    var output = process.StandardOutput.ReadToEnd();
+    process.WaitForExit();
+    return output;
 }

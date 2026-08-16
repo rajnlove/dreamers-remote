@@ -8,6 +8,24 @@
     <AssemblyName>DreamersAgent</AssemblyName>
     <OutputType>Exe</OutputType>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      Defaults so a plain "dotnet publish -c Release -r win-x64" already
+      produces ONE DreamersAgent.exe with nothing else needed alongside it
+      — recipients with no .NET/PowerShell knowledge just get a single
+      file. See agent/README.md for the full publish command.
+    -->
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <!-- Skip .pdb generation on Release publishes so the output really is
+       the single DreamersAgent.exe recipients are told to expect — the
+       trade-off is less detail in a crash's stack trace, acceptable for
+       how this ships (Debug builds during development keep full symbols). -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,16 +33,14 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <!-- AddHttpClient<T>() / IHttpClientFactory, for ServerClient (P2-5). -->
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
+    <!-- Reads HKLM\...\Services\DreamersAgent\ImagePath, so the interactive
+         double-click setup (Program.cs) can find an existing install to
+         update in place, without hardcoding a path. -->
+    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Dreamers.Agent.Core\Dreamers.Agent.Core.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>

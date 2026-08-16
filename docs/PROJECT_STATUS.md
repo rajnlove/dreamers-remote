@@ -190,6 +190,25 @@ heartbeats every 5s.
      first real use, treat this the same way — confirm end-to-end
      (queue → heartbeat delivery → Agent executes → command-result
      recorded) on one workstation before trusting it on the other 3.
+   - **Deploying the new Agent build got a real UX pass** (user feedback:
+     the multi-step PowerShell update procedure was too much to hand to
+     someone non-technical). `dotnet publish` now produces exactly one
+     `DreamersAgent.exe` (`PublishSingleFile`, `DebugType=none` — see
+     both `.csproj` files), and double-clicking it with no arguments
+     (`HandleInteractiveSetupAsync` in
+     [Program.cs](../agent/Dreamers.Agent/Program.cs)) auto-detects
+     whether this machine already has the Agent installed and either
+     updates it in place or does a fresh install, self-elevating via a
+     UAC prompt, prompting for a registration token only when actually
+     needed. CGI-Render already runs the P2-8 build from the old manual
+     procedure (verified via service log); **the double-click flow
+     itself has not been run for real yet** — same "coded, not
+     live-verified" caveat as P2-8. One real bug already caught and
+     fixed via self-review before it shipped: an earlier version gated
+     elevation via a `requireAdministrator` app manifest, which also
+     silently broke `dotnet run` (blocks any non-elevated/non-interactive
+     launch, including local dev testing) — reverted to a runtime check
+     + self-relaunch (`Verb=runas`) scoped to just this one code path.
 6. **P2-9 (bulk agent deployment docs) — done.** Written up in
    [agent/README.md](../agent/README.md#deploying-to-multiple-workstations-bulk),
    covering what's different deploying to N workstations vs. one (same

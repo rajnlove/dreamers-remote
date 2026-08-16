@@ -7,6 +7,12 @@
     <RootNamespace>Dreamers.Agent.Core</RootNamespace>
   </PropertyGroup>
 
+  <!-- Keep the Release publish of Dreamers.Agent down to a single .exe —
+       see the matching note in Dreamers.Agent.csproj. -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Not just .Abstractions: RollingFileLoggerExtensions uses
          ILoggingBuilder.AddProvider(), which lives in the main
