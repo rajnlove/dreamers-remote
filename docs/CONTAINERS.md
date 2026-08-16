@@ -23,8 +23,8 @@ ask the user for it if a future check needs to go beyond what's below.
 |---|---|---|---|
 | `vncgi-remote-server` | PRODUCTION | YES | V1 / Phase 2 |
 | `vncgi-remote-web` | PRODUCTION | YES | V1 |
-| `vncgi-remote` | DEPRECATED (removal confirmed, pending Dockge action) | NO | M1 (obsolete) |
-| `vncgi-remote-93` | DEPRECATED (removal confirmed, pending Dockge action) | NO | M1 (obsolete) |
+| `vncgi-remote` | REMOVED (2026-08-16) | NO | M1 (obsolete) |
+| `vncgi-remote-93` | REMOVED (2026-08-16) | NO | M1 (obsolete) |
 
 ---
 
@@ -86,11 +86,12 @@ ask the user for it if a future check needs to go beyond what's below.
 - **Cleanup condition**: never, while V1 is in use.
 - **Notes**: live-verified in production, daily use.
 
-## `vncgi-remote` — DEPRECATED, confirmed 2026-08-16
+## `vncgi-remote` — REMOVED 2026-08-16
 
-- **Status**: DEPRECATED. Removal **confirmed by the user** (2026-08-16:
-  the recent traffic below was their own testing, not another
-  user/service) — cleared to remove, not yet actually deleted.
+- **Status**: REMOVED. User confirmed the recent traffic below was
+  their own testing (not another user/service), then stopped and
+  deleted this stack in Dockge the same day. Kept here as a historical
+  record, not an open item.
 - **Purpose (historical)**: Milestone 1 proof-of-concept — standalone
   websockify + noVNC proxy, browser → this container → UltraVNC, before
   the DB-driven multi-workstation app existed.
@@ -127,17 +128,15 @@ ask the user for it if a future check needs to go beyond what's below.
 - **Required for web remote?**: **No.** The current remote flow
   (`Browser → noVNC client lib (bundled in web/) → vncgi-remote-server's
   wsProxy.ts → UltraVNC`) does not call this container at all.
-- **Cleanup condition**: user confirmed no dependency (was their own
-  test traffic) → cleared. **STOP → VERIFY → REMOVE still pending** —
-  needs the user to do it directly in Dockge (Dừng → Xóa); this agent
-  has no Dockge access.
+- **Cleanup condition**: STOP → VERIFY → REMOVE, completed —
+  user-confirmed no dependency, then deleted in Dockge 2026-08-16.
 - **Notes**: terminal log showed real `ws://` connections to
-  `/websockify` as recently as 15/Aug/2026 12:39.
+  `/websockify` as recently as 15/Aug/2026 12:39, hours before removal.
 
-## `vncgi-remote-93` — DEPRECATED, confirmed 2026-08-16
+## `vncgi-remote-93` — REMOVED 2026-08-16
 
-- **Status**: DEPRECATED. Same confirmation as `vncgi-remote` — cleared
-  to remove, not yet actually deleted.
+- **Status**: REMOVED. Same confirmation and same-day deletion as
+  `vncgi-remote`.
 - **Purpose (historical)**: same M1 proof-of-concept, pointed at a
   different workstation (COMP-01) — likely created as a second manual
   test before the DB-driven app existed. The `93` suffix matches
@@ -158,8 +157,7 @@ ask the user for it if a future check needs to go beyond what's below.
   going forward (same as `vncgi-remote`).
 - **Required for web remote?**: **No** — same reasoning as
   `vncgi-remote`.
-- **Cleanup condition**: cleared per user confirmation. **STOP → VERIFY
-  → REMOVE still pending** in Dockge.
+- **Cleanup condition**: STOP → VERIFY → REMOVE, completed 2026-08-16.
 - **Notes**: terminal log showed connections as recently as
   15/Aug/2026 12:39:30. Also logged 2 hits from `192.168.1.3` — a
   subnet that doesn't match any known studio workstation

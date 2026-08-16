@@ -20,8 +20,11 @@ been started; do not start any of it without an explicit request.
 ## Current Milestone
 
 **P2-8 — Restart/Shutdown commands.** Code complete (server, Agent,
-web), builds and unit-tests clean. **Not yet live-verified** — nobody
-has clicked Restart against a real workstation yet.
+web), builds and unit-tests clean. **Live-tested 2026-08-16, confirmed
+NOT working** — clicking Restart/Shutdown had no effect on the real
+workstation. Root cause not diagnosed; user chose to defer debugging
+(see Known Issues) rather than dig in immediately. Phase 2 has no other
+queued work — this is the last open item in it.
 
 ## Completed
 
@@ -41,26 +44,38 @@ has clicked Restart against a real workstation yet.
 - **Obsolete M1 `novnc` service removed from the repo**: Dockerfile,
   entrypoint, compose service, CI build target, and doc references all
   removed/updated 2026-08-16 (user confirmed no live dependency).
+- **Deprecated Docker containers deleted**: `vncgi-remote` and
+  `vncgi-remote-93` stopped and removed in Dockge by the user
+  2026-08-16. Only `vncgi-remote-server`/`vncgi-remote-web` remain.
 
 ## In Progress
 
-- **P2-8 live verification** — blocked on deploying the new
-  `DreamersAgent.exe` to a real, non-CGI-Render workstation and clicking
-  Restart/Shutdown for real. See "Next Task".
-- **Remote-session latency + multi-monitor tuning** — `TCP_NODELAY`,
-  WS compression off, noVNC quality tuning, and a "100% (SCROLL TO
-  PAN)" mode are all coded and pushed, but **not confirmed working on
-  real hardware**. A first attempt at the pan feature (noVNC
-  `clipViewport`/`dragViewport`) looked correct from source but turned
-  out broken when actually tested — treat the current scroll-based
-  version with the same caution until someone confirms it live.
-- **Deprecated Docker containers (`vncgi-remote`, `vncgi-remote-93`)** —
-  removal confirmed by the user, repo-side cleanup done, but the live
-  Dockge stacks themselves are not yet stopped/deleted (this agent has
-  no Dockge access to do it).
+Nothing actively in progress — the two items below were tested live and
+found broken; user chose to defer debugging them (see Known Issues).
+No other Phase 2 work is queued.
 
 ## Known Issues
 
+- **P2-8 Restart/Shutdown: live-tested, confirmed NOT working
+  ("không có tác dụng").** Deprioritized by the user 2026-08-16 — fix
+  later, not now. Root cause not yet diagnosed. Most likely suspect:
+  the workstation tested may still have been running the pre-P2-8
+  Agent build (an old heartbeat handler would silently ignore an
+  unrecognized `command` field in the response rather than error) —
+  unconfirmed which workstation was tested or whether that workstation
+  had actually received the new single-file `DreamersAgent.exe`. When
+  picked back up: confirm the target workstation's Agent version first
+  (dashboard shows `agentVersion`), then re-trace
+  queue → heartbeat delivery → Agent parse → execute → command-result.
+- **Multi-monitor on CGI-DUC: live-tested, confirmed NOT working
+  ("không có tác dụng").** Deprioritized by the user 2026-08-16 — fix
+  later, not now. Root cause not yet diagnosed — specifically unknown
+  whether FIT TO SCREEN now shows both monitors (i.e. whether the
+  earlier UltraVNC "System HookDll" unchecking actually fixed capture)
+  or whether that's still broken, which would explain why the
+  client-side SCROLL TO PAN mode has nothing extra to scroll to. When
+  picked back up: start by answering that one diagnostic question
+  before touching any code again.
 - **Wake-on-LAN doesn't wake real hardware** (`COMP-01`, `CGI-DUC`) even
   though the server-side magic-packet send is verified working.
   Suspected NIC/BIOS limitation (`HPE Ethernet 10Gb 561FLR-T`, S5 wake
@@ -71,32 +86,18 @@ has clicked Restart against a real workstation yet.
   kernel-mode driver (which Phase 2's spec rules out); a WMI best-effort
   read is unreliable across BIOSes. User hasn't decided if it's worth
   adding on those terms.
-- **`192.168.1.3` unexplained** in `vncgi-remote-93`'s access log (2
-  hits, timeout + 404) — a subnet outside the known studio LAN range.
-  Not resolved by the user's "it was my testing" confirmation for the
-  rest of that traffic. Worth tracking down if it resurfaces.
-- **CGI-DUC multi-monitor capture** — root cause diagnosed (UltraVNC's
-  `vnchook.dll`-based capture doesn't reliably follow multi-monitor
-  coordinates; user unchecked "System HookDll" in UltraVNC → Capture),
-  but whether that alone fixed it (does FIT TO SCREEN now show both
-  monitors?) was never confirmed.
+- **`192.168.1.3` unexplained** in `vncgi-remote-93`'s old access log (2
+  hits, timeout + 404, before that container was deleted) — a subnet
+  outside the known studio LAN range, never identified. Worth watching
+  for if it resurfaces elsewhere.
 
 ## Next Task
 
-In order:
-
-1. Deploy the new single-file `DreamersAgent.exe` (see
-   agent/README.md) to one of CGI-01 / COMP-01 / CGI-DUC — **not
-   CGI-Render**, since that's the machine this agent runs on and a real
-   restart/shutdown there would kill the session. Click Restart or
-   Shutdown from that workstation's detail page and confirm the full
-   loop: command queued → delivered on next heartbeat → Agent executes
-   → `command_log` shows the result.
-2. Stop and delete the `vncgi-remote` and `vncgi-remote-93` stacks
-   directly in Dockge (Dừng → Xóa) — repo-side cleanup is already done,
-   this is the only remaining step.
-3. On CGI-DUC, confirm whether FIT TO SCREEN now shows both monitors
-   after the UltraVNC HookDll change, then test SCROLL TO PAN for real.
+No active task — P2-8 and multi-monitor debugging are deferred (see
+Known Issues), and there's no other queued Phase 2 work. Waiting on the
+user for either: (a) a decision to resume debugging one of the deferred
+issues, or (b) a new request. Do not start Phase 3 (Job Engine) without
+an explicit request.
 
 ## Tests Performed
 
@@ -131,12 +132,12 @@ In order:
 
 ## Required User Action
 
-- **Push 4 pending commits** to `main` (Docker lifecycle policy,
-  container audit + confirmation, novnc removal, expanded audit +
-  roadmap) — commits exist locally, awaiting confirmation to push.
-- Deploy the Agent build and live-test P2-8 (see Next Task #1).
-- Delete the 2 deprecated Dockge stacks (see Next Task #2).
-- Confirm the CGI-DUC multi-monitor fix (see Next Task #3).
+Nothing blocking right now — all pending commits are pushed, deployed,
+and the 2 deprecated containers are deleted. Remaining items are all
+deferred by the user's own choice, to pick up whenever:
+
+- Decide when to resume debugging P2-8 Restart/Shutdown and/or the
+  CGI-DUC multi-monitor issue (see Known Issues).
 - Eventually: change the admin password; decide on CPU temperature.
 
 ## Docker Status
@@ -157,16 +158,16 @@ Audited 2026-08-16; no container left at UNKNOWN.
 
 **FUTURE** — none currently tracked.
 
-**DEPRECATED**
-- `vncgi-remote` — M1-era standalone `novnc` proxy hardcoded to CGI-01
-  (port 6080). Superseded by `vncgi-remote-server`'s `wsProxy.ts`; was
-  a real security gap while running (reachable with no dashboard login
-  at all). User confirmed 2026-08-16 the recent traffic was their own
-  testing — removal cleared. Repo-side cleanup done; **live Dockge
-  stack still needs to be stopped/deleted by the user.**
-- `vncgi-remote-93` — same situation, hardcoded to COMP-01 (port 6081).
-  Same confirmation, same pending Dockge deletion. See "Known Issues"
-  for the one unexplained `192.168.1.3` log entry.
+**DEPRECATED — removed**
+- `vncgi-remote` and `vncgi-remote-93` — M1-era standalone `novnc`
+  proxies (hardcoded to CGI-01 port 6080 and COMP-01 port 6081), both a
+  real security gap while running (reachable with no dashboard login).
+  User confirmed 2026-08-16 the traffic was their own testing, then
+  stopped and deleted both in Dockge same day. Repo-side cleanup
+  (Dockerfile, compose service, CI build target, docs) done earlier the
+  same session. Nothing left running or in the repo. Kept in this list
+  as a record, not an open item. See "Known Issues" for the one
+  unexplained `192.168.1.3` log entry from `vncgi-remote-93`'s history.
 
 ## Active Workers
 
