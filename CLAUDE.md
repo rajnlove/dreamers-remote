@@ -1,12 +1,27 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repo.
+Guidance for Claude Code when working in this repo. Keep this file
+short — it's not project history; git commits hold that.
 
 ## What this is
 
 Dreamers Remote V1 — internal web app for the studio LAN: list Windows
 workstations, show online/offline, remote into them via UltraVNC + noVNC,
-Wake-on-LAN. Runs on TrueNAS SCALE via Docker Compose.
+Wake-on-LAN. Runs on TrueNAS SCALE via Docker Compose. This is Phase 1+2
+of a much larger long-term system — see
+[docs/MASTER_PROJECT_SPEC.md](docs/MASTER_PROJECT_SPEC.md) for the full
+vision (Job Engine, Render Farm, Performance Remote, Studio Control
+Center, ...). None of that is built yet and none of it should be started
+without an explicit request — follow the current milestone only.
+
+## Before architectural or implementation work
+
+Read, in order: [docs/MASTER_PROJECT_SPEC.md](docs/MASTER_PROJECT_SPEC.md)
+(long-term direction), [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md)
+(current state), [docs/CONTAINERS.md](docs/CONTAINERS.md) (what's
+actually deployed). Follow the current milestone only — do not implement
+a future phase because the spec mentions it. Update
+`docs/PROJECT_STATUS.md` after finishing a milestone.
 
 ## Rules
 
