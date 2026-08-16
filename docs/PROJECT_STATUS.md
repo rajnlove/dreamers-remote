@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16
+Last updated: 2026-08-16 (P3-7 browser-verified)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -22,12 +22,11 @@ rule, do not start any of it without an explicit request.
 
 ## Current Milestone
 
-**P3-7 — Jobs dashboard page**, up next — the first Phase 3 milestone
-with an actual UI, and the natural point to hand this to the user for
-hands-on testing. P3-1 through P3-6 are done: the full job engine loop
-works end-to-end (priority-ordered, dependency-aware, threshold-gated
-scheduling; real cancellation; retry; stale-job cleanup) — just with
-only a trivial built-in `test` job type and no UI to drive it yet:
+**P3-8 — Software version compatibility mechanism**, up next — the
+last Phase 3 milestone per the roadmap. P3-1 through P3-7 are done: the
+full job engine loop works end-to-end (priority-ordered, dependency-
+aware, threshold-gated scheduling; real cancellation; retry; stale-job
+cleanup) and now has a working dashboard UI, browser-verified:
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
   repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
   `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
@@ -80,6 +79,18 @@ only a trivial built-in `test` job type and no UI to drive it yet:
   until a concrete workflow needs to tell them apart from plain
   disabled. Thresholds are hardcoded, not yet admin-configurable (that
   needs a real settings UI — Phase 6/7 territory).
+- P3-7: Jobs dashboard page (`web/src/pages/JobsPage.tsx`, linked from
+  the main dashboard header). Polls `GET /api/jobs` every 3s, shows
+  id/type/status pill/priority/depends_on/retry_count/progress bar/
+  assigned worker+GPU slot/error per job, a "+ TEST JOB (10s)" button
+  (`POST /api/jobs` with `type:"test"`), cancel button on QUEUED/
+  ASSIGNED/RUNNING jobs, retry button on FAILED jobs. Also fixed a real
+  bug found only by browser-testing this: Vite's dev-server dependency
+  pre-bundling step has its own `esbuild` target separate from
+  `build.target`, so `@novnc/novnc`'s top-level await (already worked
+  around for production builds) still broke `npm run dev` — fixed by
+  also setting `optimizeDeps.esbuildOptions.target: "esnext"` in
+  `vite.config.ts`.
 
 ## Completed
 
@@ -131,12 +142,16 @@ only a trivial built-in `test` job type and no UI to drive it yet:
   ordered scheduling, `workstations.jobs_enabled` admin switch,
   hardcoded CPU/RAM/GPU thresholds, basic single-job dependency
   (`jobs.depends_on`).
+- **Phase 3, P3-7 (Jobs dashboard page)**: full queue view, test-job
+  creation, cancel, retry — browser-verified end-to-end this session
+  (see Tests Performed). First Phase 3 UI; ready for the user's own
+  hands-on testing against the real deployed dashboard.
 
 ## In Progress
 
-Nothing — P3-1 through P3-6 finished this session. Next up is P3-7,
-the Jobs dashboard page — first Phase 3 UI, good point to hand this to
-the user for hands-on testing (see Current Milestone).
+Nothing — P3-1 through P3-7 finished this session. Next up is P3-8
+(software version compatibility mechanism), the last Phase 3 milestone
+(see Current Milestone).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -181,16 +196,11 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P3-7 — Jobs dashboard page.** Queue view (list `GET /api/jobs`),
-per-job status/progress/error display, cancel button
-(`POST /api/jobs/:id/cancel`), retry button on FAILED jobs
-(`POST /api/jobs/:id/retry`), and a "create a test job" control
-(`POST /api/jobs` with `type: "test"`) for exercising the engine
-without needing a real Phase 4/5 workload yet. This is the first
-Phase 3 milestone with an actual UI — natural point to stop and let
-the user click through it for real before continuing to P3-8. See
-[ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) for the full
-P3-0 through P3-8 breakdown.
+**P3-8 — Software version compatibility mechanism**, the last Phase 3
+milestone. See [ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine)
+for the full P3-0 through P3-8 breakdown. Holding here rather than
+starting it — P3-7 is the natural point for the user to click through
+the Jobs page for real on the deployed dashboard first.
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking Phase 3, pick up whenever the user asks.
@@ -304,10 +314,31 @@ not blocking Phase 3, pick up whenever the user asks.
   Also hit the same known intermittent local-dev-only native crash
   (see the Node.js entry above) once during this milestone — 3
   subsequent clean full-suite runs confirmed it wasn't a regression.
-- **Not yet tested through the live HTTP API or a browser**: `/api/jobs`,
-  `/api/workers`, or any Phase 3 endpoint. All verification so far is
-  local (unit tests + smoke scripts against a temp DB), not against the
-  deployed server.
+- **P3-7 Jobs dashboard — full local browser verification** (first
+  time this session testing a UI in an actual browser, not just
+  typecheck/build): ran the compiled server (`node dist/index.js` —
+  avoids the intermittent native crash below more reliably than `tsx`)
+  against a throwaway local SQLite file, and the web app via
+  `npm run dev`, both stopped and cleaned up afterward (temp DB
+  deleted, not committed). Logged in, opened `/jobs`: empty state
+  renders correctly, "+ TEST JOB (10s)" creates a job that appears
+  immediately as `QUEUED` with a 0% progress bar and "Chưa gán máy"
+  (correct — no live Agent is connected to this local-only test
+  backend, so it never gets past `QUEUED`), cancel button flips it to
+  `CANCELLED` and correctly removes the action buttons, back-link to
+  the dashboard works. Console/network errors present in the log were
+  all confirmed stale (pre-login 401s, pre-fix connection-refused
+  entries), not live issues. Caught and fixed one real bug this way
+  (see P3-7 entry under Current Milestone) that no amount of
+  typecheck/build/unit-testing would have surfaced, since it only
+  breaks `vite dev`, not `vite build`.
+- **Not yet tested through the live HTTP API or a browser**: the
+  *deployed* dashboard (`vncgi-remote-web`/`vncgi-remote-server` on
+  TrueNAS) — all P3-7 verification above was against a local dev
+  server, not production. Also still untested live: a real Agent
+  actually picking up and running a job end-to-end through the UI
+  (only the local-DB engine loop has been verified, via smoke scripts
+  and now the UI against an Agent-less local backend).
 
 ## Required User Action
 

@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import RemotePage from "./pages/RemotePage";
 import WorkstationDetail from "./pages/WorkstationDetail";
+import JobsPage from "./pages/JobsPage";
 import Login from "./pages/Login";
 import { getCurrentUser, type CurrentUser } from "./api/auth";
 
@@ -45,6 +46,7 @@ export default function App() {
           path="/workstations/:id"
           element={user ? <WorkstationDetail /> : <Navigate to="/login" replace />}
         />
+        <Route path="/jobs" element={user ? <JobsPage /> : <Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );

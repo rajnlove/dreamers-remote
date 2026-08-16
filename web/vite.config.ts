@@ -8,6 +8,13 @@ export default defineConfig({
   build: {
     target: "esnext",
   },
+  // dev server's dependency pre-bundling step uses its own esbuild target
+  // (defaults to an older list), separate from build.target above
+  optimizeDeps: {
+    esbuildOptions: {
+      target: "esnext",
+    },
+  },
   server: {
     port: 5173,
     proxy: {

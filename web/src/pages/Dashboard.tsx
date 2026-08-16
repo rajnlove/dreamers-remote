@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import WorkstationCard from "../components/WorkstationCard";
 import { getWorkstationsStatus, listWorkstations } from "../api/workstations";
 import { logout, type CurrentUser } from "../api/auth";
@@ -56,6 +57,9 @@ export default function Dashboard({ user, onLogout }: Props) {
       <header className="header dashboard-header">
         <h1>DREAMERS REMOTE</h1>
         <div className="dashboard-user">
+          <Link className="btn" to="/jobs">
+            JOBS
+          </Link>
           <span className="card-ip">{user.username}</span>
           <button className="btn" onClick={handleLogout}>
             LOG OUT
