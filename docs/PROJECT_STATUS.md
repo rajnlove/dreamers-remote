@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 (Phase 3 complete — P3-8 done, P3-7 live-verified end-to-end on real hardware)
+Last updated: 2026-08-16 (Phase 3 complete; Phase 4 started, P4-0 docs done, blocked on open questions below)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -11,25 +11,26 @@ Last updated: 2026-08-16 (Phase 3 complete — P3-8 done, P3-7 live-verified end
 
 ## Current Phase
 
-**Phase 3 — Dreamers Job Engine — COMPLETE (P3-0 through P3-8, all
-done).** Started 2026-08-16 (explicit user request — "qua phase 3"),
-finished same day. Phase 1 (Web Remote) and Phase 2 (Dreamers Agent)
-are both complete and in daily use; Phase 2 has one known deferred
-issue (P2-8 Restart/Shutdown doesn't work on real hardware yet — see
-Known Issues). Milestone breakdown for Phase 3 is in
-[ROADMAP.md](ROADMAP.md#phase-3--dreamers-job-engine) (P3-0 through
-P3-8). **Nothing from Phase 4 onward is started** — per the user's own
-rule, do not start any of it without an explicit request. Waiting on
-the user for what's next (Phase 4 FFmpeg processing per the roadmap,
-or something else).
+**Phase 4 — Processing (FFmpeg + Topaz).** Started 2026-08-16 (explicit
+user request, after Phase 3 finished same day). Phase 1 (Web Remote),
+Phase 2 (Dreamers Agent), and Phase 3 (Dreamers Job Engine) are all
+complete and in daily/live use; Phase 2 has one known deferred issue
+(P2-8 Restart/Shutdown doesn't work on real hardware yet — see Known
+Issues). Milestone breakdown for Phase 4 is in
+[ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz) (P4-0
+onward) — **provisional past P4-1**, real work is blocked on open
+architecture questions the spec doesn't answer (see "Info still needed
+from user" below). **Nothing from Phase 5 onward is started.**
 
 ## Current Milestone
 
-None — Phase 3 is complete. P3-1 through P3-8 are all done: the full
-job engine loop works end-to-end (priority-ordered, dependency-aware,
-threshold-gated, software-version-aware scheduling; real cancellation;
-retry; stale-job cleanup), has a working dashboard UI, and has been
-verified live on real production hardware, not just locally:
+**P4-0 (docs) done.** P4-1 onward is blocked on open questions — see
+"Info still needed from user." Phase 3 (P3-1 through P3-8) is fully
+complete: the full job engine loop works end-to-end (priority-ordered,
+dependency-aware, threshold-gated, software-version-aware scheduling;
+real cancellation; retry; stale-job cleanup), has a working dashboard
+UI, and has been verified live on real production hardware, not just
+locally:
 - P3-1: `jobs` table, `server/src/job/` (types, validation,
   repository), `POST/GET /api/jobs`, `GET /api/jobs/:id`,
   `POST /api/jobs/:id/cancel` — all behind `requireAuth`.
@@ -235,18 +236,17 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**None decided yet — Phase 3 is complete.** Per the user's own rule, do
-not start Phase 4 (FFmpeg processing) or anything else from
-MASTER_PROJECT_SPEC.md without an explicit request. Waiting on the
-user.
+**P4-1 — FFmpeg capability + real capability detection**, blocked on
+the user answering the open questions below (file-access architecture
+mainly — P4-1 itself doesn't strictly need them, but there's no point
+detecting FFmpeg capability without knowing what P4-2 will need to run
+it against). See [ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)
+for the full P4-0 through P4-5 breakdown (provisional past P4-1).
 
-Remaining Phase 3 rollout item (not a new milestone, not blocking):
-`CGI-01`, `COMP-01`, `CGI-DUC` still need the Agent redeployed
-(double-click `DreamersAgent.exe`) to pick up P3-2's capability
-reporting and P3-8's software-version reporting — only `CGI-Render` has
-been updated so far. Every workstation the Agent runs on needs this
-manual step; it's not something CI/CD or this session can push out
-remotely.
+All 4 workstations' Agents are now updated and reporting both
+`capabilities` (P3-2) and `softwareVersions` (P3-8) correctly —
+verified live via `/api/workers` 2026-08-16. Rollout item from earlier
+is done.
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking, pick up whenever the user asks.
@@ -609,3 +609,24 @@ dotnet publish Dreamers.Agent -c Release -r win-x64 -o .\dist
   Dockge's default bind-mount (`./data`) onto a proper named dataset —
   candidates seen: `pool_cgivn_share`, `pool_cgivn_work`. Nothing
   currently depends on this.
+- **Phase 4 blockers, added 2026-08-16** — MASTER_PROJECT_SPEC.md §17
+  says "User Upload → TrueNAS Storage → PHP creates Job → Dreamers Job
+  Queue → Windows Worker → FFmpeg NVENC → Result → TrueNAS" but this
+  repo has no visibility into the PHP/upload side of that flow:
+  - **What creates the job?** Is there already a PHP app on TrueNAS
+    that will call `POST /api/jobs`, or does that not exist yet either
+    (i.e. is building it part of Phase 4's scope too)? If it exists:
+    where does it live, what auth would it use to call our API (the
+    session-cookie auth `/api/jobs` currently requires assumes a
+    logged-in dashboard user, not a server-to-server caller)?
+  - **How does a Windows worker reach the source file and write the
+    result?** SMB share from TrueNAS mounted on each of the 4
+    workstations? If so, what's the mount point / UNC path convention,
+    and does it already exist or does Phase 4 need to set it up? This
+    blocks P4-2 (the actual FFmpeg job runner) — it can't be written
+    without knowing what a job's `input`/`output` paths will look like.
+  - **Job input schema** — once file access is answered: what does an
+    FFmpeg job actually need to specify (source path, target codec/
+    container, resolution, bitrate/quality preset, output path)? Can
+    default to something reasonable once the above is answered, but
+    worth confirming rather than guessing given it's a new contract.

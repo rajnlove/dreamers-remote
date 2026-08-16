@@ -119,6 +119,60 @@ execution (Phase 4/5), Octane/plugin-specific license checks (Phase 5),
 Studio Control Center dashboard (Phase 6/7 in MASTER_PROJECT_SPEC.md's
 numbering).
 
+## Phase 4 — Processing (FFmpeg + Topaz)
+
+Started 2026-08-16 (explicit user request). The first real job type on
+top of Phase 3's job engine — the queue/scheduler/GPU-slot/capability/
+software-version machinery already exists and works
+(`docs/PROJECT_STATUS.md`'s Phase 3 section); Phase 4 plugs a real
+workload into it instead of the `test` placeholder. See
+[MASTER_PROJECT_SPEC.md §17-20](MASTER_PROJECT_SPEC.md#17-phase-4--ffmpeg-processing-future)
+for the full requirements. **Milestone breakdown below is
+provisional** — P4-2 onward depends on answers to open questions not
+yet resolved (see `docs/PROJECT_STATUS.md`'s "Info still needed from
+user"): specifically, what creates a job (the spec says "PHP creates
+Job" — an external system this repo doesn't know about yet) and how a
+Windows worker reads the source file / writes the result relative to
+TrueNAS storage.
+
+- **P4-0 — Docs.** This section, plus PROJECT_STATUS.md's open
+  questions. No code.
+- **P4-1 — FFmpeg capability + real capability detection.** Agent
+  detects whether `ffmpeg.exe` is actually present (real check,
+  replacing the hardcoded `["test"]` capability list from P3-2) and
+  reports it as a `ffmpeg` capability; report NVENC support
+  (H.264/HEVC/AV1) as part of Agent's software-version reporting
+  (P3-8's mechanism, first real use of it). No job execution yet.
+- **P4-2 — FFmpeg job runner on the Agent.** Given a job `input` (needs
+  a defined schema: source path, target codec/container, bitrate/
+  quality, output path), runs `ffmpeg.exe` with GPU encode
+  (NVENC) preferred, parses ffmpeg's own progress output to report
+  0-100 back to the server (reusing P3-4's progress-reporting pattern),
+  writes the result file, reports success/failure. **Blocked on**: how
+  the worker actually reaches the source file and writes the result —
+  needs the file-access architecture question answered first (see open
+  questions).
+- **P4-3 — Job creation entry point.** However jobs actually get
+  created for real files — could be `POST /api/jobs` called by an
+  external system (the spec's "PHP creates Job"), could be something
+  else. **Blocked on the same open question as P4-2.**
+- **P4-4 — Topaz as a second, independent worker type.** Per
+  MASTER_PROJECT_SPEC.md §20: its own capability/job type, not
+  hardcoded into the scheduler alongside FFmpeg — the scheduler already
+  treats job `type` generically (P3-1 onward), so this should mostly be
+  "write a TopazJobRunner," not scheduler changes.
+- **P4-5 — Multi-GPU verification with real workloads.** P3's scheduler
+  already assigns independent GPU slots (`workstationId` + `gpuIndex`)
+  rather than treating a multi-GPU machine as one unit; this milestone
+  is about confirming that holds up for two concurrent real FFmpeg
+  encodes on the same 2-GPU box (e.g. `CGI-Render`), not new scheduler
+  work.
+
+**Explicitly out of scope for Phase 4**: Houdini/After Effects/Cinema
+4D render (Phase 5), Performance Remote (Phase 6), any UI beyond
+extending the existing Jobs dashboard (P3-7) to show FFmpeg-specific
+job detail if/when needed.
+
 ## V2 (document only — do not implement now)
 
 Replace VNC with a higher-performance pipeline for VFX workstation use:
@@ -144,7 +198,6 @@ breakdown above — V2 (higher-perf capture pipeline, above) is a
 separate axis, not one of these phases; it's the technical content of
 Phase 6 below, described independently before the master spec existed.
 
-- **Phase 4 — Processing** (FFmpeg + Topaz).
 - **Phase 5 — Render Farm** (Houdini, After Effects, Cinema 4D).
 - **Phase 6 — Performance Remote** (native GPU-accelerated remote —
   same direction as this file's "V2" section above).
