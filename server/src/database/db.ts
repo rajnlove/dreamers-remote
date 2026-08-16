@@ -65,3 +65,28 @@ db.exec(`
     created_at TEXT NOT NULL
   )
 `);
+
+// Phase 2 (P2-8): V1 has exactly one (admin) account and no registration
+// endpoint (see seedAdminUser), so this can't be false yet — it exists to
+// gate restart/shutdown separately from plain requireAuth ahead of a real
+// M7 role system, not because it does anything today. DEFAULT 1 so SQLite
+// backfills the existing seeded admin row, not just new ones.
+ensureColumn("users", "is_admin", "INTEGER NOT NULL DEFAULT 1");
+
+// Phase 2 (P2-8): audit trail for Agent commands specifically — not the
+// general M8 audit log (login, wake, CRUD), which doesn't exist yet.
+// status: "pending" (queued, not yet delivered) -> "sent" (included in a
+// heartbeat response) -> "ok" | "failed" (Agent reported back).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS command_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workstation_id INTEGER NOT NULL REFERENCES workstations(id),
+    command TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    issued_by INTEGER NOT NULL REFERENCES users(id),
+    issued_at TEXT NOT NULL,
+    sent_at TEXT,
+    completed_at TEXT,
+    detail TEXT
+  )
+`);

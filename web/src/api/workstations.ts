@@ -37,3 +37,14 @@ export function getWorkstationMetrics(id: number): Promise<WorkstationStatus> {
 export function wakeWorkstation(id: number): Promise<{ sent: boolean }> {
   return request<{ sent: boolean }>(`/api/workstations/${id}/wake`, { method: "POST" });
 }
+
+export type AgentCommand = "restart" | "shutdown";
+
+/** Admin-only (P2-8). Queued, not immediate — delivered on the Agent's next heartbeat (up to ~5s). */
+export function sendAgentCommand(id: number, command: AgentCommand): Promise<{ queued: boolean; commandLogId: number }> {
+  return request<{ queued: boolean; commandLogId: number }>(`/api/workstations/${id}/command`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command }),
+  });
+}

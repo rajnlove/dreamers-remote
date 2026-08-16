@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Dreamers.Agent;
+using Dreamers.Agent.Core.Commands;
 using Dreamers.Agent.Core.Configuration;
 using Dreamers.Agent.Core.Credentials;
 using Dreamers.Agent.Core.Logging;
@@ -43,6 +44,7 @@ builder.Services.AddSingleton(config);
 builder.Services.AddSingleton(processesConfig);
 builder.Services.AddSingleton(new AgentCredentialStore(dataDirectory));
 builder.Services.AddSingleton<MetricsCollector>();
+builder.Services.AddSingleton<CommandExecutor>();
 builder.Services.AddHttpClient<ServerClient>();
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getWorkstation, getWorkstationMetrics } from "../api/workstations";
+import { getWorkstation, getWorkstationMetrics, sendAgentCommand, type AgentCommand } from "../api/workstations";
 import type { Workstation, WorkstationStatus } from "../types/workstation";
 
 const POLL_MS = 5000;
@@ -27,6 +27,9 @@ export default function WorkstationDetail() {
   const [workstation, setWorkstation] = useState<Workstation | null>(null);
   const [status, setStatus] = useState<WorkstationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmCommand, setConfirmCommand] = useState<AgentCommand | null>(null);
+  const [commandBusy, setCommandBusy] = useState(false);
+  const [commandMessage, setCommandMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -61,6 +64,24 @@ export default function WorkstationDetail() {
 
   const metrics = status?.agentOnline ? status.metrics : null;
 
+  async function confirmSendCommand() {
+    if (!id || !confirmCommand) return;
+    const command = confirmCommand;
+    setConfirmCommand(null);
+    setCommandBusy(true);
+    setCommandMessage(null);
+    try {
+      await sendAgentCommand(Number(id), command);
+      setCommandMessage(
+        `Đã gửi lệnh ${command.toUpperCase()} — máy sẽ thực hiện trong lần heartbeat tiếp theo (tối đa ~5s).`,
+      );
+    } catch (err) {
+      setCommandMessage(`Gửi lệnh thất bại: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCommandBusy(false);
+    }
+  }
+
   return (
     <div className="app">
       <header className="header remote-header">
@@ -76,16 +97,27 @@ export default function WorkstationDetail() {
               REMOTE
             </Link>
           )}
-          <button className="btn" disabled title="Chưa hỗ trợ — sẽ có ở milestone tiếp theo">
+          <button
+            className="btn"
+            disabled={!status?.agentOnline || commandBusy}
+            title={status?.agentOnline ? undefined : "Agent chưa online — không gửi được lệnh"}
+            onClick={() => setConfirmCommand("restart")}
+          >
             RESTART
           </button>
-          <button className="btn" disabled title="Chưa hỗ trợ — sẽ có ở milestone tiếp theo">
+          <button
+            className="btn"
+            disabled={!status?.agentOnline || commandBusy}
+            title={status?.agentOnline ? undefined : "Agent chưa online — không gửi được lệnh"}
+            onClick={() => setConfirmCommand("shutdown")}
+          >
             SHUTDOWN
           </button>
         </div>
       </header>
 
       {error && <div className="error">{error}</div>}
+      {commandMessage && <div className="notice">{commandMessage}</div>}
 
       {workstation && (
         <div className="detail-body">
@@ -200,6 +232,25 @@ export default function WorkstationDetail() {
               Agent chưa online — không có dữ liệu CPU/RAM/GPU/disk/apps để hiển thị.
             </div>
           )}
+        </div>
+      )}
+
+      {confirmCommand && (
+        <div className="password-overlay">
+          <div className="password-form">
+            <p>
+              Bạn có chắc muốn <strong>{confirmCommand.toUpperCase()}</strong> máy{" "}
+              <strong>{workstation?.name}</strong> không?
+            </p>
+            <div className="remote-toolbar">
+              <button className="btn" onClick={() => setConfirmCommand(null)}>
+                HỦY
+              </button>
+              <button className="btn btn-primary" onClick={confirmSendCommand}>
+                XÁC NHẬN {confirmCommand.toUpperCase()}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

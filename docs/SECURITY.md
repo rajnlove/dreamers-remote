@@ -83,6 +83,22 @@ credential, never by the user's session cookie — a compromised Agent
 credential should not grant access to `/api/workstations/*` or the VNC
 proxy, and vice versa.
 
+## Phase 2 — Agent command execution (P2-8)
+
+Structured whitelist only (`server/src/agent/commands.ts`'s `AGENT_COMMANDS`
+— currently `restart`, `shutdown`), never arbitrary shell — mirrored on the
+Agent side by `AgentCommandParser`/`CommandExecutor`, which only ever
+invoke Windows' own `shutdown.exe` with fixed, known-safe arguments.
+
+The Agent has no inbound listener (matches the pairing model above — it
+never accepts unsolicited connections), so a command isn't pushed: an
+admin queues it via `POST /api/workstations/:id/command`
+(`requireAdmin`-gated), and it's handed to the Agent inside the response
+to whatever heartbeat call comes next — same agent-credential
+authentication as every other Agent-facing route, no new attack surface.
+Every queue/deliver/result transition is recorded in the `command_log`
+table (not the general M8 audit log, which doesn't exist yet).
+
 ## Explicitly out of scope for V1
 
 - Internet exposure of any kind (app, VNC, or WebSocket proxy).

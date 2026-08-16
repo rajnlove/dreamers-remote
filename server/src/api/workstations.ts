@@ -13,6 +13,8 @@ import { sendMagicPacket } from "../wol/wol.js";
 import { createRegistrationToken } from "../agent/registrationTokens.js";
 import { isAgentOnline } from "../agent/onlineStatus.js";
 import { getMetrics } from "../agent/metricsCache.js";
+import { isAgentCommand, queueCommand } from "../agent/commands.js";
+import { requireAdmin } from "../auth/middleware.js";
 import type { Workstation } from "../workstation/types.js";
 
 export const workstationsRouter = Router();
@@ -136,6 +138,31 @@ workstationsRouter.post("/:id/agent-token", (req, res, next) => {
     const ws = getWorkstation(id);
     if (!ws) throw new NotFoundError("Workstation not found");
     res.json(createRegistrationToken(id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin-only (see requireAdmin) — restart/shutdown are destructive enough
+// to warrant gating separately from the rest of this admin-only router.
+// Structured command enum only, never arbitrary shell (docs/SECURITY.md).
+// Delivered on the Agent's next heartbeat, not pushed — see agent/commands.ts.
+workstationsRouter.post("/:id/command", requireAdmin, (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    const ws = getWorkstation(id);
+    if (!ws) throw new NotFoundError("Workstation not found");
+
+    const { command } = req.body as Record<string, unknown>;
+    if (!isAgentCommand(command)) {
+      throw new ValidationError("command must be one of: restart, shutdown");
+    }
+    if (!ws.agent_id) {
+      throw new ValidationError("Workstation has no Agent paired");
+    }
+
+    const commandLogId = queueCommand(id, command, req.session.userId!);
+    res.status(202).json({ queued: true, commandLogId });
   } catch (err) {
     next(err);
   }

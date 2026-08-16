@@ -57,7 +57,13 @@ public sealed class ServerClient
         return result.AgentCredential;
     }
 
-    public async Task SendHeartbeatAsync(string credential, SystemMetricsSnapshot snapshot, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Returns the pending command name (e.g. "restart"), if the server had
+    /// one queued for this workstation — null otherwise. See P2-8: there's
+    /// no inbound listener on the Agent, so a queued restart/shutdown rides
+    /// this response instead of being pushed.
+    /// </summary>
+    public async Task<string?> SendHeartbeatAsync(string credential, SystemMetricsSnapshot snapshot, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/heartbeat");
         request.Headers.Add("X-Agent-Id", _config.AgentId);
@@ -65,10 +71,29 @@ public sealed class ServerClient
         request.Content = JsonContent.Create(HeartbeatPayload.FromSnapshot(snapshot), options: JsonOptions);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException($"Heartbeat failed ({(int)response.StatusCode}): {body}");
+        }
+
+        var result = JsonSerializer.Deserialize<HeartbeatResponse>(body, JsonOptions);
+        return result?.Command;
+    }
+
+    public async Task SendCommandResultAsync(
+        string credential, string command, bool ok, string? detail, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/command-result");
+        request.Headers.Add("X-Agent-Id", _config.AgentId);
+        request.Headers.Add("X-Agent-Credential", credential);
+        request.Content = JsonContent.Create(new CommandResultRequest { Command = command, Ok = ok, Detail = detail }, options: JsonOptions);
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException($"Heartbeat failed ({(int)response.StatusCode}): {body}");
+            throw new InvalidOperationException($"command-result failed ({(int)response.StatusCode}): {body}");
         }
     }
 
@@ -85,5 +110,18 @@ public sealed class ServerClient
         public int WorkstationId { get; init; }
         public string? WorkstationName { get; init; }
         public string AgentCredential { get; init; } = string.Empty;
+    }
+
+    private sealed class HeartbeatResponse
+    {
+        public bool Ok { get; init; }
+        public string? Command { get; init; }
+    }
+
+    private sealed class CommandResultRequest
+    {
+        public string Command { get; init; } = string.Empty;
+        public bool Ok { get; init; }
+        public string? Detail { get; init; }
     }
 }

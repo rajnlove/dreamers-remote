@@ -138,6 +138,11 @@ body {
   color: var(--red);
 }
 
+.notice {
+  padding: 2rem;
+  color: var(--green);
+}
+
 .back-link {
   color: var(--text-dim);
   text-decoration: none;

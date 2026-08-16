@@ -1,3 +1,4 @@
+using Dreamers.Agent.Core.Commands;
 using Dreamers.Agent.Core.Configuration;
 using Dreamers.Agent.Core.Credentials;
 using Dreamers.Agent.Core.Metrics;
@@ -22,19 +23,22 @@ public sealed class Worker : BackgroundService
     private readonly MetricsCollector _metricsCollector;
     private readonly AgentCredentialStore _credentialStore;
     private readonly ServerClient _serverClient;
+    private readonly CommandExecutor _commandExecutor;
 
     public Worker(
         ILogger<Worker> logger,
         AgentConfig config,
         MetricsCollector metricsCollector,
         AgentCredentialStore credentialStore,
-        ServerClient serverClient)
+        ServerClient serverClient,
+        CommandExecutor commandExecutor)
     {
         _logger = logger;
         _config = config;
         _metricsCollector = metricsCollector;
         _credentialStore = credentialStore;
         _serverClient = serverClient;
+        _commandExecutor = commandExecutor;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -120,8 +124,13 @@ public sealed class Worker : BackgroundService
             {
                 try
                 {
-                    await _serverClient.SendHeartbeatAsync(credential, snapshot, stoppingToken);
+                    var pendingCommand = await _serverClient.SendHeartbeatAsync(credential, snapshot, stoppingToken);
                     _logger.LogDebug("Heartbeat sent.");
+
+                    if (pendingCommand is not null)
+                    {
+                        await HandlePendingCommandAsync(credential, pendingCommand, stoppingToken);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -149,5 +158,39 @@ public sealed class Worker : BackgroundService
         }
 
         _logger.LogInformation("Dreamers Agent stopping. AgentId={AgentId}", _config.AgentId);
+    }
+
+    // P2-8: a restart/shutdown queued by an admin rides the heartbeat
+    // response (see ServerClient.SendHeartbeatAsync) rather than being
+    // pushed — the Agent has no inbound listener. Structured whitelist
+    // only, never arbitrary shell: unrecognized command names are logged
+    // and dropped, never executed. See docs/SECURITY.md.
+    private async Task HandlePendingCommandAsync(string credential, string commandName, CancellationToken cancellationToken)
+    {
+        if (!AgentCommandParser.TryParse(commandName, out var command))
+        {
+            _logger.LogWarning("Server sent an unrecognized command {Command} — ignoring", commandName);
+            return;
+        }
+
+        _logger.LogWarning("Executing {Command}, requested via the dashboard", command);
+
+        try
+        {
+            _commandExecutor.Execute(command);
+            await _serverClient.SendCommandResultAsync(credential, commandName, ok: true, detail: null, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to execute {Command}", command);
+            try
+            {
+                await _serverClient.SendCommandResultAsync(credential, commandName, ok: false, ex.Message, cancellationToken);
+            }
+            catch (Exception reportEx)
+            {
+                _logger.LogWarning(reportEx, "Failed to report command failure to server");
+            }
+        }
     }
 }

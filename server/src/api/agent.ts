@@ -5,6 +5,7 @@ import { requireAgentAuth, type AgentAuthenticatedRequest } from "../agent/middl
 import { setMetrics, type AgentMetricsPayload } from "../agent/metricsCache.js";
 import { consumeRegistrationToken } from "../agent/registrationTokens.js";
 import { getWorkstation } from "../workstation/repository.js";
+import { isAgentCommand, recordCommandResult, takePendingCommand } from "../agent/commands.js";
 
 // Mounted at /api/agent, NOT behind requireAuth — these are called by the
 // Agent itself, which has no user session. Authentication is per-route:
@@ -54,5 +55,22 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   recordHeartbeat(workstationId, body.agentVersion, body.os);
   setMetrics(workstationId, body);
 
+  // P2-8: no inbound listener on the Agent — a pending restart/shutdown
+  // rides the next heartbeat response instead of being pushed. See
+  // agent/commands.ts and docs/PROJECT_STATUS.md.
+  const command = takePendingCommand(workstationId);
+  res.json(command ? { ok: true, command } : { ok: true });
+});
+
+agentRouter.post("/command-result", requireAgentAuth, (req, res) => {
+  const { workstationId } = req as AgentAuthenticatedRequest;
+  const { command, ok, detail } = req.body as Record<string, unknown>;
+
+  if (!isAgentCommand(command) || typeof ok !== "boolean") {
+    res.status(400).json({ error: "command (restart|shutdown) and ok (boolean) are required" });
+    return;
+  }
+
+  recordCommandResult(workstationId, command, ok, typeof detail === "string" ? detail : undefined);
   res.json({ ok: true });
 });
