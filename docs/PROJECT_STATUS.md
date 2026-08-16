@@ -103,10 +103,23 @@ In order:
 - `dotnet build Dreamers.Agent.sln` / `dotnet test` — clean, 35/35
   passing (Agent + Core). Re-run after every Agent-side change this
   session, including the single-file installer rework.
-- Server (`server/`): **cannot build or test on this machine** — no
-  Node.js installed here. CI (GitHub Actions) is the real gate; confirm
-  https://github.com/rajnlove/dreamers-remote/actions is green before
-  relying on a server change.
+- **Node.js installed on this machine 2026-08-16** (v24.19.0 LTS, plus
+  Python 3.12 for `better-sqlite3`'s native build — this machine already
+  had MSVC Build Tools 2026, so Python was the only missing piece).
+  First time `server/`'s own typecheck/test/build could be run directly
+  instead of relying solely on CI:
+  - `npm run typecheck` — caught 2 real type errors on first run
+    (`req.params.id` narrowed to `string | undefined`;
+    `Duplex.setNoDelay` doesn't exist, needed a `net.Socket` cast for
+    the P2-8 TCP_NODELAY fix). Both fixed; clean on re-run.
+  - `npm test` — 31/31 passing.
+  - `npm run build` — clean.
+  - `web/`'s `npm run typecheck` / `npm run build` — also run for the
+    first time this session; both clean, no errors found.
+  - `package-lock.json` committed for both `server/` and `web/` for the
+    first time (never existed before — Node wasn't available to
+    generate one); Dockerfiles updated to `npm ci` instead of
+    `npm install` for reproducible builds now that a lockfile exists.
 - CGI-Render's Agent service verified live after a manual P2-8 update
   (stop → replace binary → start): clean startup log, heartbeats
   succeeding every 5s.
@@ -248,9 +261,12 @@ heartbeats every 5s.
 ## Important commands
 
 ```bash
-# Server (needs Node — not available on this machine as of this
-# writing; CI is the real build gate)
-cd server && npm install && npm run typecheck && npm test && npm run dev
+# Server + web (Node.js — installed on this machine 2026-08-16, v24.19.0
+# LTS; run "npm install" once per checkout, it's not committed)
+cd server && npm install && npm run typecheck && npm test && npm run build
+cd web && npm install && npm run typecheck && npm run build
+# CI (GitHub Actions) remains the authoritative gate for what actually
+# ships — these are for local iteration.
 
 # Agent (needs .NET 8 SDK — IS available on this machine)
 cd agent

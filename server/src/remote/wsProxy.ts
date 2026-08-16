@@ -50,8 +50,11 @@ export function setupVncProxy(server: HttpServer, sessionMiddleware: RequestHand
 
       // Nagle's algorithm is on by default and can hold small interactive
       // packets (mouse/keyboard, small framebuffer deltas) for tens of ms
-      // before sending — disable it on both legs of the bridge.
-      socket.setNoDelay(true);
+      // before sending — disable it on both legs of the bridge. Node's
+      // "upgrade" event types `socket` as the generic `stream.Duplex`
+      // (shared with HTTP/2, where it wouldn't be a raw TCP socket), but
+      // this is a plain http.Server, so it's always actually a net.Socket.
+      (socket as net.Socket).setNoDelay(true);
 
       wss.handleUpgrade(req, socket, head, (ws) => {
         bridgeToVnc(ws, workstation.ip, workstation.vnc_port);

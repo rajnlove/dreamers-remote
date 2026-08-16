@@ -21,7 +21,7 @@ export const workstationsRouter = Router();
 
 const UNSET_MAC = "00:00:00:00:00:00";
 
-function parseId(raw: string): number {
+function parseId(raw: string | undefined): number {
   const id = Number(raw);
   if (!Number.isInteger(id) || id <= 0) {
     throw new ValidationError("id must be a positive integer");
