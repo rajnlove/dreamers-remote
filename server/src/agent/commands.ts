@@ -21,6 +21,18 @@ interface PendingCommand {
 const pendingByWorkstationId = new Map<number, PendingCommand>();
 
 export function queueCommand(workstationId: number, command: AgentCommand, issuedBy: number): number {
+  // A command not yet picked up by a heartbeat is about to be replaced in
+  // the Map below — without this, its command_log row would stay stuck at
+  // "pending" forever (never delivered, never updated), silently
+  // misrepresenting the audit trail as if it were still in flight.
+  const previous = pendingByWorkstationId.get(workstationId);
+  if (previous) {
+    db.prepare(`UPDATE command_log SET status = 'superseded', completed_at = ? WHERE id = ?`).run(
+      new Date().toISOString(),
+      previous.commandLogId,
+    );
+  }
+
   const { lastInsertRowid } = db
     .prepare(
       `INSERT INTO command_log (workstation_id, command, status, issued_by, issued_at)
