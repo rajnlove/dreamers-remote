@@ -1,6 +1,12 @@
 # Project Status
 
-Last updated: 2026-08-17 late (Phase 4 P4-0/P4-1/P4-2 done + demo button deployed and live; P4-3 NAS credential mechanism built, deployed, and a real marshaling bug in it found+fixed — down to one remaining ACL-propagation issue on `www/Projects` specifically, see Required User Action. All P4-3 code is UNCOMMITTED.)
+Last updated: 2026-08-18 (Phase 4 P4-0 through P4-3 all done. P4-3 NAS
+credential mechanism built, committed (`0e0d5a4`), deployed to a second
+workstation (COMP-01) from scratch this session, and the last blocker —
+a TrueNAS ACL gap on `www/Projects` — is now fixed and confirmed
+working end-to-end there: NAS health check passes, `ffmpeg` capability
+reports for real. CGI-Render likely fixed too (same TrueNAS-side ACL)
+but not yet independently re-confirmed — see Required User Action.)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -804,39 +810,79 @@ CI green, images on GHCR.
       failed. This flip-flopped between "can read, can't write" and
       "can't even read" across a couple of restarts right after the
       user applied the dataset ACL with "Apply permissions
-      recursively" — **still open as of this handoff**, likely either
-      (a) the recursive ACL apply job hadn't actually finished
-      propagating yet when a restart raced it, or (b) `www` and/or
-      `www/Projects` is a separate dataset/mountpoint under `web_data`
-      that didn't actually inherit the recursive apply from the parent
-      dataset's ACL editor. **Next step, not yet done**: open TrueNAS's
-      ACL Editor *directly* at
-      `/mnt/pool_cgivn_work/web_data/www/Projects` (not at the
-      `web_data` root) and confirm `render_agent` actually has
-      Read+Write there specifically, then restart the service (the
-      health check is computed once, Lazy, per process lifetime — a
-      config/ACL fix alone does nothing until the next restart) and
-      re-check the log.
+      recursively" — root cause never fully pinned down (leading
+      theories were recursive-apply propagation lag, or `www`/
+      `www/Projects` being a separate dataset that didn't inherit from
+      the parent's ACL editor), but see **RESOLVED 2026-08-18** below —
+      the user fixed the ACL directly in TrueNAS's editor at
+      `/mnt/pool_cgivn_work/web_data/www/Projects` and it's now
+      confirmed working.
 
-   **All code changes above are UNCOMMITTED in the working tree as of
-   this handoff** (see `git status`) — new files under
-   `agent/Dreamers.Agent.Core/Credentials/NasCredentialStore.cs`,
-   `agent/Dreamers.Agent.Core/Ffmpeg/NasConnector.cs`,
-   `agent/Dreamers.Agent.Core/Ffmpeg/NasHealthChecker.cs`, plus edits
-   to `FfmpegJobRunner.cs`, `Worker.cs`, `WorkerCapabilities.cs`,
-   `Program.cs`, `agent/README.md`, and this file. `agent/dist/` and
-   `agent/publish/DreamersAgent.exe` both already reflect the latest
-   fix (marshaling + explicit provider) as of this handoff; don't
-   assume that on a *different* machine without checking timestamps
-   first, since `dist`/`publish` aren't committed to git.
-   Repeat the same `nas-credential`/restart steps on
-   `CGI-01`/`COMP-01`/`CGI-DUC` whenever they're given
-   `ffmpeg`/`allowed_paths.json` too (not urgent — see below).
-5. Open the dashboard → JOBS → "+ FFMPEG DEMO (GPU encode thật)" — a
-   real GPU-encoded video should appear at
+   **All code changes above are committed** — `0e0d5a4` (`feat(agent):
+   P4-3 -- dedicated NAS credential for LocalSystem SMB access`),
+   pushed, `git status` clean. (An earlier version of this handoff said
+   UNCOMMITTED; that was stale by the time it was actually committed.)
+
+   **2026-08-18: same mechanism deployed and reproduced on COMP-01**
+   (a second, independent workstation — this session was running on
+   COMP-01, not CGI-Render, discovered by checking the local agent log's
+   reported `Host=CGIVN`/hardware against the Active Workers table
+   below). Full rollout from scratch, same steps as CGI-Render:
+   installed .NET 8 SDK (winget) since this machine never had it,
+   `dotnet build`/`test` clean (84/84, matches CGI-Render's count
+   exactly), `dotnet publish` a fresh `DreamersAgent.exe`, installed
+   ffmpeg (`BtbN.FFmpeg.GPL.7.1`, same known-compatible build — this
+   machine's driver is 610.62, also NVENC-API-13.1-capable). Hit the
+   **exact same PATH pitfall** again: winget put ffmpeg on the user's
+   PATH, not Machine PATH; fixed by adding it to Machine PATH
+   (`[Environment]::SetEnvironmentVariable(..., "Machine")`, elevated).
+   Wrote `allowed_paths.json` with the same UNC root. After
+   `nas-credential render_agent` (user typed the password interactively
+   — Claude never handles it, hard rule) and a service restart:
+   **`NAS health check failed (Permission): ... cannot read
+   "\\192.29.11.92\web_data\www\Projects" (access denied)`** — identical
+   failure mode to CGI-Render's, down to the exact wording. This was
+   strong confirmation the remaining blocker was purely a TrueNAS-side
+   ACL issue on `www/Projects`, not anything machine-specific.
+
+   **RESOLVED 2026-08-18**: user fixed the ACL on `www/Projects`
+   directly in TrueNAS's ACL Editor (exact change not visible from this
+   session — no TrueNAS UI/API access here, see the access-boundary
+   note two paragraphs up). Restarted `DreamersAgent` on COMP-01 after
+   the fix: `NAS health check passed: Authenticated to
+   "\\192.29.11.92\web_data" and verified read/write access to
+   "\\192.29.11.92\web_data\www\Projects".` `ffmpeg` also independently
+   confirmed resolvable via the Machine PATH (`where.exe ffmpeg`
+   against a `Machine`-scope-only `$env:PATH`, simulating exactly what
+   `LocalSystem` sees) — so COMP-01 now reports the `ffmpeg` capability
+   for real, both preconditions (`FfmpegDetector.Available` and
+   `NasHealth.Ok`) satisfied. **P4-3 is now fully working end-to-end on
+   at least one real workstation.**
+
+   Since the fix was on TrueNAS's side (the ACL applies to the
+   `render_agent` account regardless of which Windows box connects),
+   CGI-Render very likely now passes its own health check too without
+   any further change there — **not yet independently confirmed**, this
+   session has no network access to CGI-Render (`\\192.29.11.95\c$\...`
+   unreachable from COMP-01) to check its log directly. Whoever's next
+   on CGI-Render: just restart `DreamersAgent` there (no code/config
+   change needed, it already has the P4-3 binary and credential from
+   the original debugging session) and check
+   `C:\ProgramData\DreamersRemote\logs\agent-*.log` for the same "NAS
+   health check passed" line.
+
+   `CGI-01`/`CGI-DUC` still need the full rollout (ffmpeg install +
+   Machine PATH + `allowed_paths.json` + `nas-credential`) whenever
+   they're needed for real jobs — not urgent, the mechanism itself is
+   now proven on two independent machines.
+5. **No longer blocked** — step 4 is resolved on COMP-01. Open the
+   dashboard → JOBS → "+ FFMPEG DEMO (GPU encode thật)" — a real
+   GPU-encoded video should appear at
    `\\192.29.11.92\web_data\www\Projects\SOURCE\dreamers_demo_*.mp4`
-   shortly after, with `fps` visible on the job row while it runs.
-   Blocked on step 4's NAS credential above.
+   shortly after, with `fps` visible on the job row while it runs. Not
+   yet actually clicked/verified this session — worth doing next to
+   close the loop with a real end-to-end job, not just a passing health
+   check.
 
 Everything else is deferred by the user's own choice, to pick up
 whenever:
