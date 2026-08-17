@@ -1,12 +1,13 @@
 # Project Status
 
-Last updated: 2026-08-18 (Phase 4 P4-0 through P4-3 all done. P4-3 NAS
-credential mechanism built, committed (`0e0d5a4`), deployed to a second
-workstation (COMP-01) from scratch this session, and the last blocker —
-a TrueNAS ACL gap on `www/Projects` — is now fixed and confirmed
-working end-to-end there: NAS health check passes, `ffmpeg` capability
-reports for real. CGI-Render likely fixed too (same TrueNAS-side ACL)
-but not yet independently re-confirmed — see Required User Action.)
+Last updated: 2026-08-18 (Phase 4 P4-0 through P4-3 all done and fully
+verified. P4-3 NAS credential mechanism built, committed (`0e0d5a4`),
+deployed to a second workstation (COMP-01) from scratch this session;
+the last blocker — a TrueNAS ACL gap on `www/Projects` — is fixed, and
+a real "+ FFMPEG DEMO" job (job 30) ran end-to-end on COMP-01: dashboard
+click → scheduled → real NVENC encode → real output file on the
+TrueNAS share. CGI-Render likely fixed too (same TrueNAS-side ACL) but
+not yet independently re-confirmed — see Required User Action.)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -875,14 +876,16 @@ CI green, images on GHCR.
    Machine PATH + `allowed_paths.json` + `nas-credential`) whenever
    they're needed for real jobs — not urgent, the mechanism itself is
    now proven on two independent machines.
-5. **No longer blocked** — step 4 is resolved on COMP-01. Open the
-   dashboard → JOBS → "+ FFMPEG DEMO (GPU encode thật)" — a real
-   GPU-encoded video should appear at
-   `\\192.29.11.92\web_data\www\Projects\SOURCE\dreamers_demo_*.mp4`
-   shortly after, with `fps` visible on the job row while it runs. Not
-   yet actually clicked/verified this session — worth doing next to
-   close the loop with a real end-to-end job, not just a passing health
-   check.
+5. **DONE 2026-08-18** — clicked "+ FFMPEG DEMO (GPU encode thật)" on
+   the live dashboard: job 30, dispatched to COMP-01, `Dreamers.Agent.Worker:
+   Job 30 finished: success` in the agent log seconds later. Output
+   file confirmed non-empty (3.9MB) on the real share at
+   `\\192.29.11.92\web_data\www\Projects\SOURCE\
+   dreamers_demo_1786991142581.mp4`. **This is full end-to-end proof of
+   P4-3** — dashboard click → `POST /api/jobs` → scheduler → heartbeat
+   delivery → `FfmpegJobRunner` → NAS session → real NVENC encode →
+   output written back to the real TrueNAS share → job-result reported
+   — not just a passing health check. P4-3 is now closed on COMP-01.
 
 Everything else is deferred by the user's own choice, to pick up
 whenever:
