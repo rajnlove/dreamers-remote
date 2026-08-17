@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-08-16 evening (Phase 4 P4-0/P4-1/P4-2 done + demo button deployed and live; blocked on SSH key setup for TrueNAS before finishing deployment — see Required User Action)
+Last updated: 2026-08-17 late (Phase 4 P4-0/P4-1/P4-2 done + demo button deployed and live; P4-3 NAS credential mechanism built, deployed, and a real marshaling bug in it found+fixed — down to one remaining ACL-propagation issue on `www/Projects` specifically, see Required User Action. All P4-3 code is UNCOMMITTED.)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -627,36 +627,39 @@ not blocking, pick up whenever the user asks.
 
 ## Required User Action
 
-### Immediate blocker (as of this exact point, 2026-08-16 evening): SSH key for TrueNAS
+### SSH key for TrueNAS — no longer blocking, still unresolved
 
-The user gave a standing instruction: for any future Docker/Dockge
-change, prefer terminal/filesystem/`docker`/`docker compose`/API over
-asking them to click through the Dockge UI — only ask for a UI action
-when nothing else can reach it, and when asking, hand over one
-complete, ready-to-paste action, never something requiring them to
-think/edit/test.
-
-To make that possible, an SSH keypair was generated on this dev
-machine (`CGI-Render`) at `~/.ssh/truenas_dreamers` (private) /
-`~/.ssh/truenas_dreamers.pub` (public). TrueNAS's SSH port (22) is
-confirmed open from here. **What's needed from the user**: add the
-public key below to whichever TrueNAS user they'd SSH in as (TrueNAS
-UI: Credentials → Users → [user] → Edit → "SSH Public Key" field), and
-say which username that is. Once that's done, Docker/Dockge changes
-(including the `FFMPEG_ALLOWED_ROOTS` env var below) can be done via
-SSH directly — find the real compose file, edit it, `docker compose`
-validate/up, read logs, verify — without further Dockge UI round-trips.
+An SSH keypair exists at `~/.ssh/truenas_dreamers` (private) /
+`~/.ssh/truenas_dreamers.pub` (public) on this dev machine
+(`CGI-Render`), generated for future Docker/Dockge changes over
+SSH/`docker compose` instead of the Dockge browser UI. **Still not
+added to any TrueNAS user** — `ssh -i ~/.ssh/truenas_dreamers
+<user>@192.29.11.92 'echo ok'` still returns "Permission denied
+(publickey)" as of 2026-08-16. Public key, if the user wants to add it
+later:
 
 ```
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICAIAWHHeopplrdd1CRYL0j5N4QvZyyjxe9HBFH3fpzJ claude-code@dreamers-remote-dev
 ```
 
-**Do not re-generate this key in a future session** — check whether
+**Discovery 2026-08-16**: turns out unnecessary for Dockge work. The
+Browser pane tool (`mcp__Claude_Browser__*`) already had an
+authenticated Dockge session (cookie persisted in that browser
+profile, no login step needed) — used it directly to edit
+`vncgi-remote-server`'s compose.yaml, Save, and Deploy. No SSH, no
+Claude-in-Chrome extension required. **Prefer this path first** for
+any future Dockge UI change: open `http://192.29.11.92:31014` in the
+Browser pane and check whether it's still authenticated before asking
+the user for anything. Caveats hit doing this: the compose.yaml
+CodeMirror editor's `End`/`Backspace`/`Ctrl+End` keys did not register
+through the automation layer — double-click-to-select-word + retype
+worked reliably instead. The in-Dockge container terminal (xterm.js)
+did not accept typed input at all through this tool.
+
+Do not re-generate the SSH key in a future session — check whether
 `~/.ssh/truenas_dreamers` already exists on this machine first (it's
 local, not committed to git, so a fresh session won't see it in the
-repo — check the actual filesystem). If the user says they already
-added it, verify with `ssh -i ~/.ssh/truenas_dreamers <user>@192.29.11.92 'echo ok'`
-before assuming it's still pending.
+repo — check the actual filesystem).
 
 ### Once SSH access works: finish the FFmpeg demo deployment
 
@@ -668,23 +671,172 @@ CI green, images on GHCR.
    behavior.
 2. ~~Dockge → `vncgi-remote-web` → Update~~ **DONE** — the "+ FFMPEG
    DEMO" button is visible on the live dashboard.
-3. **STILL PENDING**: set environment variable `FFMPEG_ALLOWED_ROOTS` =
+3. ~~set environment variable `FFMPEG_ALLOWED_ROOTS` =
    `\\192.29.11.92\web_data\www\Projects` on `vncgi-remote-server`,
-   restart it. Confirmed still missing as of this point — clicking "+
-   FFMPEG DEMO" on the live dashboard returns
-   `sourcePath must be under a configured allowed root (FFMPEG_ALLOWED_ROOTS)`.
-   Do this via SSH/docker compose once available (see above), not
-   Dockge UI, per the user's standing instruction.
-4. `CGI-Render`'s Agent already has `allowed_paths.json` configured
-   with that same root (done directly this session) and `ffmpeg`
-   installed — but the *running* Agent service there still predates
-   P4-1/P4-2 (`FfmpegJobRunner` doesn't exist in it yet). Double-click
-   `D:\AICODEX\agent\dist\DreamersAgent.exe` on `CGI-Render` once more
-   to update it — this one genuinely needs the user (UAC prompt).
+   restart it~~ **DONE 2026-08-16** — added via Dockge UI's compose
+   editor directly (browser automation, no SSH), Saved + Deployed;
+   Dockge showed `Container vncgi-remote-server-server-1  Started`.
+   **Verified**: clicked "+ FFMPEG DEMO" on the live dashboard (user
+   was already logged in) — job #21/#22 both created and QUEUED with
+   no `sourcePath must be under a configured allowed root` error, so
+   the env var is confirmed live. Jobs stay QUEUED/unassigned though —
+   that's step 4 below, not this one.
+4. ~~`CGI-Render`'s Agent service still predates P4-1/P4-2~~ **DONE
+   2026-08-17** — turns out `D:\AICODEX\agent\dist\DreamersAgent.exe`
+   *was* already current (P3-8's `softwareVersions` mechanism, plus
+   this session's build timestamps, both confirmed it); the real
+   blocker was the service being **Stopped**, not stale. User started
+   it (elevated). Verified via `GET http://192.29.11.92:8080/api/workers`
+   (same-origin session cookie from the Browser pane, no SSH) —
+   `capabilities` still came back `["test"]` only even after the
+   restart.
+
+   Root-caused from there, in order:
+   1. **PATH scope**: `ffmpeg.exe` (WinGet) was on user `rajn-x`'s PATH,
+      not the **Machine** PATH — `DreamersAgent` runs as `LocalSystem`,
+      which only sees Machine PATH, so `FfmpegDetector` never found it.
+      Fixed: added ffmpeg's `bin` dir to the Machine PATH (elevated,
+      user-run), restarted service → `capabilities` became
+      `["test","ffmpeg"]`. Demo jobs (#23-26) then got ASSIGNED to
+      `CGI-Render` immediately — confirming the scheduler side works —
+      but all FAILED: `sourcePath does not exist:
+      "\\192.29.11.92\web_data\www\Projects\SOURCE\A008C005_130101_R31Z.mov"`,
+      even though the file demonstrably exists (verified from this same
+      machine as user `rajn-x`, which has an active SMB session per
+      `net use`).
+   2. **No SMB session for LocalSystem**: same PATH-scope problem, one
+      layer up — `LocalSystem` has no mapped drive, no Credential
+      Manager entry, no interactive-user SMB session at all, for
+      `\\192.29.11.92\...` (or any UNC host), independent of who's
+      logged in. `File.Exists()`/ffmpeg.exe on that path silently
+      behave as "doesn't exist" rather than "access denied".
+
+   **Fix implemented this session (P4-3)**: `NasCredentialStore`
+   (DPAPI `LocalMachine`-scoped, mirrors `AgentCredentialStore`),
+   `NasConnector` (`WNetAddConnection2`/`WNetCancelConnection2`
+   P/Invoke — a session to `\\host\share`, deliberately not a mapped
+   drive letter, not the interactive user's Credential Manager),
+   `NasHealthChecker` (authenticate + real read + real write probe
+   against the first allowed root, run once at startup), and
+   `WorkerCapabilities` now gates `"ffmpeg"` on
+   `FfmpegDetector.Available && NasHealthChecker.Check(...).Ok` — a
+   worker whose NAS check fails never advertises `ffmpeg`, so the
+   scheduler never assigns it a job that's certain to fail.
+   `FfmpegJobRunner` re-asserts the NAS session (best-effort,
+   `NasConnector.TryEnsureConnected`) before its existing
+   `File.Exists` check. New CLI: `DreamersAgent.exe nas-credential
+   <username>` (password prompted + masked, never a CLI arg, never
+   sent to/typed by Claude — see agent/README.md's new "NAS credential
+   (P4-3)" section). 84/84 tests pass (`dotnet test`); rebuilt and
+   republished to `agent/dist/` (`dotnet publish ... -o dist`, run via
+   PowerShell — Bash mangled the `-o .\dist` argument into a literal
+   `.dist` folder the first time; that stray folder was deleted).
+
+   **Dedicated NAS user created**: TrueNAS local user `render_agent`
+   (SMB User ✓, primary group `render_agent`), password set by the
+   user directly in `nas-credential render_agent` on `CGI-Render` (P4-3
+   CLI — password never seen by Claude). Confirmed-working credential:
+   independently verified via `runas /netonly /user:render_agent` +
+   `net use \\192.29.11.92\web_data` → success, and via a temporary
+   `schtasks /RU SYSTEM` one-off task running the same `net use` →
+   also success. So the credential/account itself has been solid since
+   early in this debugging session — everything below was chasing
+   *other* bugs, not this one.
+
+   **Debugging journey for the "ffmpeg" capability never appearing**
+   (all on `CGI-Render`, all confirmed via `GET
+   http://192.29.11.92:8080/api/workers`'s `capabilities` field and
+   `C:\ProgramData\DreamersRemote\logs\agent-*.log`'s "NAS health
+   check" line — grep that log first before re-debugging any of this):
+
+   1. Every attempt returned `NasConnectCategory.Network`, Win32 error
+      **67** (`ERROR_BAD_NET_NAME`), even though `\\192.29.11.92\web_data`
+      demonstrably exists and `render_agent` demonstrably works against
+      it (both proven above). Chased and ruled out, in order: stale
+      credential (re-saved, same result), a
+      cancel-before-retry-on-conflict race (removed the reactive retry
+      entirely, same result), a leftover `\\host\IPC$`/bare-host
+      session under a different identity (added explicit
+      cancel-everything-first, same result), password
+      truncation/typo (decrypted the DPAPI blob locally to check
+      length twice — consistent both times, so not this).
+   2. Added `DreamersAgent.exe test-nas` (new permanent diagnostic
+      command — runs the exact `NasHealthChecker.Check` the service
+      runs at startup, but interactively) specifically to A/B "is this
+      a Windows-Service-context bug or a code bug". It reproduced
+      error 67 *interactively too* — proving it was a plain code bug,
+      not a Session-0/LocalSystem-specific limitation (which had been
+      the leading theory up to that point).
+   3. **Root cause, found and fixed**: `NasConnector`'s `NetResource`
+      P/Invoke struct (mirrors `NETRESOURCEW`) was declared
+      `[StructLayout(LayoutKind.Sequential)]` with no `CharSet`. A
+      `DllImport`'s `CharSet` only governs a P/Invoke method's own
+      direct string *parameters* (which is why `lpPassword`/
+      `lpUsername` — passed directly to `WNetAddConnection2`, not
+      through the struct — were never affected); it does **not**
+      propagate into a struct parameter's own string fields, which
+      default to ANSI. Since `WNetAddConnection2` resolves to the
+      `...W` (UTF-16) entry point, it was reading `lpRemoteName`
+      (`\\192.29.11.92\web_data`) as UTF-16 over bytes that were
+      actually single-byte ANSI — silently corrupting the string into
+      garbage before the SMB layer ever saw it, which is exactly what
+      `ERROR_BAD_NET_NAME` reports. Confirmed by deliberately setting
+      `lpProvider` (another struct string field, added while chasing a
+      real-but-secondary WebDAV/`WebClient`-service concern) and
+      watching the error change to a *different*, equally-nonsensical
+      one (`ERROR_BAD_PROVIDER`, 1204) — a second garbled string
+      producing a second garbage-appropriate error, which is what
+      nailed it down as an encoding bug rather than anything
+      network/credential/permission-related. **Fix**: struct is now
+      `[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]`.
+      Also kept the explicit `lpProvider = "Microsoft Windows Network"`
+      (queried from this machine's own
+      `HKLM\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\NetworkProvider`
+      → `Name`, not guessed) since `WebClient` (WebDAV) really is
+      Running on this machine and TrueNAS really does also expose a
+      `WebDAV` share alongside `web_data` — a real, if secondary,
+      source of provider-resolution ambiguity worth closing off
+      regardless.
+   4. After the marshaling fix, deployed to the real service and the
+      failure category correctly changed to something *meaningful* for
+      the first time: `Permission` — connected fine, but
+      read/write on `\\192.29.11.92\web_data\www\Projects` specifically
+      failed. This flip-flopped between "can read, can't write" and
+      "can't even read" across a couple of restarts right after the
+      user applied the dataset ACL with "Apply permissions
+      recursively" — **still open as of this handoff**, likely either
+      (a) the recursive ACL apply job hadn't actually finished
+      propagating yet when a restart raced it, or (b) `www` and/or
+      `www/Projects` is a separate dataset/mountpoint under `web_data`
+      that didn't actually inherit the recursive apply from the parent
+      dataset's ACL editor. **Next step, not yet done**: open TrueNAS's
+      ACL Editor *directly* at
+      `/mnt/pool_cgivn_work/web_data/www/Projects` (not at the
+      `web_data` root) and confirm `render_agent` actually has
+      Read+Write there specifically, then restart the service (the
+      health check is computed once, Lazy, per process lifetime — a
+      config/ACL fix alone does nothing until the next restart) and
+      re-check the log.
+
+   **All code changes above are UNCOMMITTED in the working tree as of
+   this handoff** (see `git status`) — new files under
+   `agent/Dreamers.Agent.Core/Credentials/NasCredentialStore.cs`,
+   `agent/Dreamers.Agent.Core/Ffmpeg/NasConnector.cs`,
+   `agent/Dreamers.Agent.Core/Ffmpeg/NasHealthChecker.cs`, plus edits
+   to `FfmpegJobRunner.cs`, `Worker.cs`, `WorkerCapabilities.cs`,
+   `Program.cs`, `agent/README.md`, and this file. `agent/dist/` and
+   `agent/publish/DreamersAgent.exe` both already reflect the latest
+   fix (marshaling + explicit provider) as of this handoff; don't
+   assume that on a *different* machine without checking timestamps
+   first, since `dist`/`publish` aren't committed to git.
+   Repeat the same `nas-credential`/restart steps on
+   `CGI-01`/`COMP-01`/`CGI-DUC` whenever they're given
+   `ffmpeg`/`allowed_paths.json` too (not urgent — see below).
 5. Open the dashboard → JOBS → "+ FFMPEG DEMO (GPU encode thật)" — a
    real GPU-encoded video should appear at
    `\\192.29.11.92\web_data\www\Projects\SOURCE\dreamers_demo_*.mp4`
    shortly after, with `fps` visible on the job row while it runs.
+   Blocked on step 4's NAS credential above.
 
 Everything else is deferred by the user's own choice, to pick up
 whenever:

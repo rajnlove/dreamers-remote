@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Dreamers.Agent.Core.Configuration;
+using Dreamers.Agent.Core.Credentials;
 using Dreamers.Agent.Core.Ffmpeg;
 
 namespace Dreamers.Agent.Core.Jobs;
@@ -29,13 +30,15 @@ public sealed class FfmpegJobRunner : IJobRunner
     };
 
     private readonly AllowedPathsConfigStore _allowedPathsStore;
+    private readonly NasCredentialStore _nasCredentialStore;
     private readonly object _lock = new();
     private JobSnapshot? _current;
     private Process? _process;
 
-    public FfmpegJobRunner(AllowedPathsConfigStore allowedPathsStore)
+    public FfmpegJobRunner(AllowedPathsConfigStore allowedPathsStore, NasCredentialStore nasCredentialStore)
     {
         _allowedPathsStore = allowedPathsStore;
+        _nasCredentialStore = nasCredentialStore;
     }
 
     public bool IsBusy
@@ -109,6 +112,18 @@ public sealed class FfmpegJobRunner : IJobRunner
             {
                 throw new InvalidOperationException($"outputPath is not under an allowed root: \"{input.OutputPath}\"");
             }
+
+            // P4-3: LocalSystem (the service account) has no SMB session
+            // of its own to a UNC root — re-assert the dedicated NAS
+            // credential's session before touching the filesystem.
+            // Best-effort/no-op if unconfigured or already connected; a
+            // genuine failure here still surfaces as the existing
+            // "sourcePath does not exist" error just below, since an
+            // unauthenticated UNC path and a missing one look identical
+            // to File.Exists().
+            NasConnector.TryEnsureConnected(input.SourcePath, _nasCredentialStore);
+            NasConnector.TryEnsureConnected(input.OutputPath, _nasCredentialStore);
+
             if (!File.Exists(input.SourcePath))
             {
                 throw new InvalidOperationException($"sourcePath does not exist: \"{input.SourcePath}\"");

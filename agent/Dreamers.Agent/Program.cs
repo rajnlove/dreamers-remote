@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using System.Security.Principal;
+using System.Text;
 
 const string ServiceName = "DreamersAgent";
 const string ServiceDisplayName = "Dreamers Remote Agent";
@@ -26,6 +27,18 @@ if (args.Length > 0 && string.Equals(args[0], "install", StringComparison.Ordina
 if (args.Length > 0 && string.Equals(args[0], "register", StringComparison.OrdinalIgnoreCase))
 {
     await HandleRegisterAsync(args);
+    return;
+}
+
+if (args.Length > 0 && string.Equals(args[0], "nas-credential", StringComparison.OrdinalIgnoreCase))
+{
+    HandleNasCredential(args);
+    return;
+}
+
+if (args.Length > 0 && string.Equals(args[0], "test-nas", StringComparison.OrdinalIgnoreCase))
+{
+    HandleTestNas();
     return;
 }
 
@@ -71,7 +84,16 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton(config);
 builder.Services.AddSingleton(processesConfig);
 builder.Services.AddSingleton(new AgentCredentialStore(dataDirectory));
-builder.Services.AddSingleton(new AllowedPathsConfigStore(dataDirectory));
+var allowedPathsStore = new AllowedPathsConfigStore(dataDirectory);
+var nasCredentialStore = new NasCredentialStore(dataDirectory);
+builder.Services.AddSingleton(allowedPathsStore);
+builder.Services.AddSingleton(nasCredentialStore);
+// P4-3: the "ffmpeg" capability (WorkerCapabilities.Current) depends on
+// a NAS read/write health check that needs these two stores — wired
+// once here, before the host (and its first heartbeat) starts, rather
+// than threading them through the static class's constructor (it's
+// read from a static context in HeartbeatPayload.FromSnapshot).
+Dreamers.Agent.Core.Worker.WorkerCapabilities.Initialize(nasCredentialStore, allowedPathsStore);
 builder.Services.AddSingleton<MetricsCollector>();
 builder.Services.AddSingleton<CommandExecutor>();
 builder.Services.AddSingleton<TestJobRunner>();
@@ -178,6 +200,87 @@ async Task<bool> TryRegisterAsync(string token)
         Console.Error.WriteLine($"Registration failed: {ex.Message}");
         return false;
     }
+}
+
+// --- One-time-per-machine NAS credential setup: DreamersAgent.exe
+// nas-credential <username>. Password is prompted interactively
+// (masked, never an argv/command-line argument — those are visible to
+// any other process on the machine via Task Manager / Get-Process
+// CommandLine) and stored via DPAPI (NasCredentialStore), the same
+// pattern as AgentCredentialStore. Deliberately NOT a mapped drive
+// letter and NOT the interactive user's own Credential Manager entry —
+// this needs to work identically for the Windows Service running as
+// LocalSystem, with no interactive user logged in at all. Re-run this
+// (with the same username/password) on all 4 render workstations to
+// deploy the same NAS access everywhere.
+void HandleNasCredential(string[] commandArgs)
+{
+    if (commandArgs.Length < 2 || string.IsNullOrWhiteSpace(commandArgs[1]))
+    {
+        Console.Error.WriteLine("Usage: DreamersAgent.exe nas-credential <username>");
+        return;
+    }
+
+    var username = commandArgs[1];
+    Console.Write($"Password for {username}: ");
+    var password = ReadPasswordMasked();
+    Console.WriteLine();
+
+    if (string.IsNullOrEmpty(password))
+    {
+        Console.Error.WriteLine("No password entered — nothing saved.");
+        return;
+    }
+
+    var dir = AgentConfigStore.DefaultDataDirectory;
+    new NasCredentialStore(dir).Save(new NasCredential(username, password));
+    Console.WriteLine("NAS credential saved (encrypted at rest via DPAPI).");
+    Console.WriteLine("Restart the service for the ffmpeg capability's health check to pick it up:");
+    Console.WriteLine("  DreamersAgent.exe stop");
+    Console.WriteLine("  DreamersAgent.exe start");
+}
+
+// --- Diagnostic: DreamersAgent.exe test-nas. Runs the exact same
+// NasHealthChecker.Check the Windows Service runs at startup, but from
+// an interactive/console process instead -- lets an admin tell apart
+// "the credential/share/ACL is wrong" (fails here too) from "something
+// specific to running as the Windows Service" (succeeds here, still
+// fails as the service) without needing to restart the service or dig
+// through its log file for every attempt.
+void HandleTestNas()
+{
+    var dir = AgentConfigStore.DefaultDataDirectory;
+    var result = Dreamers.Agent.Core.Ffmpeg.NasHealthChecker.Check(
+        new NasCredentialStore(dir), new AllowedPathsConfigStore(dir));
+
+    Console.WriteLine($"Category: {result.Category}");
+    Console.WriteLine($"Ok: {result.Ok}");
+    Console.WriteLine($"Message: {result.Message}");
+}
+
+string ReadPasswordMasked()
+{
+    var password = new StringBuilder();
+    while (true)
+    {
+        var key = Console.ReadKey(intercept: true);
+        if (key.Key == ConsoleKey.Enter) break;
+        if (key.Key == ConsoleKey.Backspace)
+        {
+            if (password.Length > 0)
+            {
+                password.Length--;
+                Console.Write("\b \b");
+            }
+            continue;
+        }
+        if (!char.IsControl(key.KeyChar))
+        {
+            password.Append(key.KeyChar);
+            Console.Write('*');
+        }
+    }
+    return password.ToString();
 }
 
 // --- uninstall/start/stop: thin wrappers around the built-in sc.exe,

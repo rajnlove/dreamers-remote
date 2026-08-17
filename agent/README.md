@@ -195,6 +195,51 @@ these (checked here on the Agent, independently of the server's own
 `FFMPEG_ALLOWED_ROOTS` check — defense in depth) or the job fails
 immediately with a clear error instead of touching the filesystem.
 Hand-editable; restart the service after changing it. This machine
-also needs `ffmpeg`/`ffprobe` on `PATH` for the `ffmpeg` capability to
-be reported at all — see `WorkerCapabilities`/`FfmpegDetector` in
+also needs `ffmpeg`/`ffprobe` on `PATH` — the **Machine** (System)
+PATH, not just your own user PATH, since the Windows Service runs as
+LocalSystem and only sees that one — for the `ffmpeg` capability to be
+reported at all — see `WorkerCapabilities`/`FfmpegDetector` in
 `Dreamers.Agent.Core`.
+
+### NAS credential (P4-3)
+
+LocalSystem also has no SMB session of its own to a UNC root like
+`\\192.29.11.92\web_data\...` — no mapped drive, no Credential
+Manager entry, nothing, regardless of who's logged in interactively.
+Without a dedicated credential, `File.Exists()`/ffmpeg.exe both treat
+a real, readable file on that share as if it doesn't exist at all
+(permission failure surfaces as "not found", not "access denied").
+
+Configure it once per machine:
+
+```
+DreamersAgent.exe nas-credential <username>
+Password for <username>: ********      <- prompted, masked, never an argv/CLI argument
+DreamersAgent.exe stop
+DreamersAgent.exe start
+```
+
+Stored via DPAPI (`NasCredentialStore`, `LocalMachine` scope — same
+pattern as the agent's own server credential), never plaintext, never
+logged, never committed. Re-run the same two lines (same
+username/password) on every render workstation to deploy identical NAS
+access everywhere.
+
+On startup the Agent authenticates to the *first* configured allowed
+root and verifies both read (`Directory.GetFileSystemEntries`) and
+write (round-trips a small probe file) actually work — not just that
+the SMB handshake succeeds — before ever reporting the `ffmpeg`
+capability (see `NasHealthChecker`/`WorkerCapabilities`). If it fails,
+the service log at startup names the specific cause:
+
+- **Authentication** — no credential configured, or the NAS rejected
+  it (wrong username/password).
+- **Permission** — authenticated fine, but the account can't read or
+  can't write the configured allowed root (share/NTFS ACLs).
+- **Network** — host or share unreachable.
+
+Check `C:\ProgramData\DreamersRemote\logs\agent-*.log` for the exact
+message. A worker with a failing NAS health check simply never
+advertises `ffmpeg` in its capabilities — the scheduler (server-side)
+never assigns it an ffmpeg job in the first place, rather than
+assigning one that's certain to fail.

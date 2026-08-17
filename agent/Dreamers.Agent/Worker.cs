@@ -69,6 +69,28 @@ public sealed class Worker : BackgroundService
                 "Metrics will still be collected and logged locally in the meantime.");
         }
 
+        // P4-3: computed once here (Lazy, see WorkerCapabilities) and
+        // logged with its specific authentication/permission/network
+        // category — the heartbeat itself only ever sends a bare
+        // "ffmpeg" capability present-or-absent, this is the one place
+        // an operator can see *why* it's absent without digging through
+        // NasHealthChecker's source.
+        var nasHealth = Core.Worker.WorkerCapabilities.NasHealth;
+        if (nasHealth.Ok)
+        {
+            _logger.LogInformation("NAS health check passed: {Message}", nasHealth.Message);
+        }
+        else if (nasHealth.Category == Core.Ffmpeg.NasConnectCategory.NotConfigured)
+        {
+            _logger.LogInformation("NAS health check skipped: {Message}", nasHealth.Message);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "NAS health check failed ({Category}): {Message} — the \"ffmpeg\" capability will not be reported until this is fixed.",
+                nasHealth.Category, nasHealth.Message);
+        }
+
         var interval = TimeSpan.FromSeconds(Math.Max(1, _config.UpdateIntervalSeconds));
 
         while (!stoppingToken.IsCancellationRequested)

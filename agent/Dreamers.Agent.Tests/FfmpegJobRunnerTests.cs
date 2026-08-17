@@ -1,4 +1,5 @@
 using Dreamers.Agent.Core.Configuration;
+using Dreamers.Agent.Core.Credentials;
 using Dreamers.Agent.Core.Ffmpeg;
 using Dreamers.Agent.Core.Jobs;
 using Xunit;
@@ -18,7 +19,11 @@ public class FfmpegJobRunnerTests
         var dir = Path.Combine(Path.GetTempPath(), "dreamers-agent-tests-" + Guid.NewGuid());
         var store = new AllowedPathsConfigStore(dir);
         store.Save(new AllowedPathsConfig { AllowedRoots = allowedRoots.ToList() });
-        return new FfmpegJobRunner(store);
+        // No NAS credential ever saved here -- NasConnector.TryEnsureConnected
+        // becomes a no-op (Load() returns null), same as before this
+        // dependency existed, so these tests still don't need a real NAS.
+        var nasCredentialStore = new NasCredentialStore(dir);
+        return new FfmpegJobRunner(store, nasCredentialStore);
     }
 
     private static async Task<JobSnapshot> WaitForFinishedAsync(FfmpegJobRunner runner, int jobId)
