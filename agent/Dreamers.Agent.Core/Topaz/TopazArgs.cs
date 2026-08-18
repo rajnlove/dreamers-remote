@@ -32,7 +32,14 @@ public static class TopazArgs
     private const int DefaultCqQuality = 23;
     private const string DefaultVbrBitrate = "8M";
 
-    public static List<string> Build(TopazJobInput input)
+    // gpuSlot: the GPU index the scheduler reserved this job's unit on
+    // (see IJobRunner.Start's doc comment) -- null leaves both the
+    // upscale filter and the encode step on their own defaults (Auto).
+    // When present, pins BOTH the "tvai_up" model AND the NVENC encoder
+    // to the same device -- pinning only one would let the driver put
+    // the upscale and the encode on different physical GPUs, defeating
+    // the point of an explicit slot reservation.
+    public static List<string> Build(TopazJobInput input, int? gpuSlot = null)
     {
         if (!ModelPattern.IsMatch(input.Model))
         {
@@ -67,14 +74,21 @@ public static class TopazArgs
             throw new ArgumentException($"Malformed bitrate: \"{input.Bitrate}\"");
         }
 
+        var device = gpuSlot?.ToString() ?? "-2"; // -2 = Auto, Topaz's own default
+
         var args = new List<string>
         {
             "-y",
             "-i", input.SourcePath,
-            "-vf", $"tvai_up=model={input.Model}:scale={input.Scale}:device=-2",
+            "-vf", $"tvai_up=model={input.Model}:scale={input.Scale}:device={device}",
             "-c:v", input.Codec,
             "-preset", input.Preset,
         };
+
+        if (gpuSlot is { } gpu)
+        {
+            args.AddRange(new[] { "-gpu", gpu.ToString() });
+        }
 
         if (input.QualityMode == "cq")
         {

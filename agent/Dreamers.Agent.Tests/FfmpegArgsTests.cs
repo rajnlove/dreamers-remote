@@ -86,6 +86,21 @@ public class FfmpegArgsTests
     }
 
     [Fact]
+    public void OmitsGpuFlagWhenNoSlotAssigned()
+    {
+        var args = FfmpegArgs.Build(Input(), gpuSlot: null);
+        Assert.DoesNotContain("-gpu", args);
+    }
+
+    [Fact]
+    public void PinsDeviceWhenAGpuSlotIsAssigned()
+    {
+        var args = FfmpegArgs.Build(Input(), gpuSlot: 1);
+        Assert.Contains("-gpu", args);
+        Assert.Equal("1", args[args.IndexOf("-gpu") + 1]);
+    }
+
+    [Fact]
     public void AlwaysIncludesMachineReadableProgressFlags()
     {
         var args = FfmpegArgs.Build(Input());

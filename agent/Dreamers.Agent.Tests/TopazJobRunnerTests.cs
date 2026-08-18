@@ -39,7 +39,7 @@ public class TopazJobRunnerTests
         var runner = NewRunner("\\\\nas\\Projects");
         var input = """{"sourcePath":"C:\\evil\\in.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
-        runner.Start(1, input);
+        runner.Start(1, input, null);
         var finished = await WaitForFinishedAsync(runner, 1);
 
         Assert.False(finished.Success);
@@ -52,7 +52,7 @@ public class TopazJobRunnerTests
         var runner = NewRunner("\\\\nas\\Projects");
         var input = """{"sourcePath":"\\\\nas\\Projects\\in.mov","outputPath":"C:\\evil\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
-        runner.Start(1, input);
+        runner.Start(1, input, null);
         var finished = await WaitForFinishedAsync(runner, 1);
 
         Assert.False(finished.Success);
@@ -65,7 +65,7 @@ public class TopazJobRunnerTests
         var runner = NewRunner(); // deny-all default
         var input = """{"sourcePath":"\\\\nas\\Projects\\in.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
-        runner.Start(1, input);
+        runner.Start(1, input, null);
         var finished = await WaitForFinishedAsync(runner, 1);
 
         Assert.False(finished.Success);
@@ -77,7 +77,7 @@ public class TopazJobRunnerTests
         var runner = NewRunner("\\\\nas\\Projects");
         var input = """{"sourcePath":"\\\\nas\\Projects\\does-not-exist-12345.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
-        runner.Start(1, input);
+        runner.Start(1, input, null);
         var finished = await WaitForFinishedAsync(runner, 1);
 
         Assert.False(finished.Success);
@@ -90,8 +90,8 @@ public class TopazJobRunnerTests
         var runner = NewRunner("\\\\nas\\Projects");
         var input = """{"sourcePath":"\\\\nas\\Projects\\in.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
-        runner.Start(1, input);
-        Assert.Throws<InvalidOperationException>(() => runner.Start(2, input));
+        runner.Start(1, input, null);
+        Assert.Throws<InvalidOperationException>(() => runner.Start(2, input, null));
     }
 
     [Fact]
@@ -100,11 +100,11 @@ public class TopazJobRunnerTests
         var runner = NewRunner(); // deny-all -- fails fast, which is fine for this test
         var input = """{"sourcePath":"\\\\nas\\Projects\\in.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
-        runner.Start(1, input);
+        runner.Start(1, input, null);
         await WaitForFinishedAsync(runner, 1);
         runner.Reset();
 
-        runner.Start(2, input);
+        runner.Start(2, input, null);
         Assert.True(runner.IsBusy);
     }
 }

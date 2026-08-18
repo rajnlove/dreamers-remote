@@ -88,7 +88,7 @@ public sealed class ServerClient
         }
 
         var result = JsonSerializer.Deserialize<HeartbeatResponse>(body, JsonOptions);
-        var job = result?.Job is { } j ? new AssignedJob(j.Id, j.Type, j.Input) : null;
+        var job = result?.Job is { } j ? new AssignedJob(j.Id, j.Type, j.Input, j.GpuSlot) : null;
         return new HeartbeatResult(result?.Command, job, result?.CancelJobId);
     }
 
@@ -154,6 +154,10 @@ public sealed class ServerClient
         public int Id { get; init; }
         public string Type { get; init; } = string.Empty;
         public string? Input { get; init; }
+        // P4-5 prep: the GPU index the scheduler reserved this job's
+        // unit on (server/src/api/agent.ts's heartbeat route, mirroring
+        // the DB's jobs.gpu_slot column) -- null for a CPU-only unit.
+        public int? GpuSlot { get; init; }
     }
 
     private sealed class CommandResultRequest
@@ -173,6 +177,6 @@ public sealed class ServerClient
 
 public sealed record RunningJobStatus(int Id, int Progress, double? Fps = null, int? EtaSeconds = null);
 
-public sealed record AssignedJob(int Id, string Type, string? Input);
+public sealed record AssignedJob(int Id, string Type, string? Input, int? GpuSlot = null);
 
 public sealed record HeartbeatResult(string? Command, AssignedJob? Job, int? CancelJobId);

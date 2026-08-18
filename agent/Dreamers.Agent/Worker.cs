@@ -213,9 +213,10 @@ public sealed class Worker : BackgroundService
                         if (_jobRunners.TryGetValue(assignedJob.Type, out var runner))
                         {
                             _logger.LogInformation(
-                                "Starting job {JobId} ({JobType}), requested via the dashboard",
-                                assignedJob.Id, assignedJob.Type);
-                            runner.Start(assignedJob.Id, assignedJob.Input);
+                                "Starting job {JobId} ({JobType}), requested via the dashboard{GpuSlot}",
+                                assignedJob.Id, assignedJob.Type,
+                                assignedJob.GpuSlot is { } slot ? $" on GPU slot {slot}" : string.Empty);
+                            runner.Start(assignedJob.Id, assignedJob.Input, assignedJob.GpuSlot);
                         }
                         else
                         {

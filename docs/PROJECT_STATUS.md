@@ -9,8 +9,13 @@ production dashboard against COMP-01. P4-4 — Topaz Video AI upscale
 worker, mirroring the `ffmpeg` job type — pushed (`7fbc402`), CI green,
 deployed via Dockge, confirmed with a real 1920x1080 → 3840x2160
 upscale on the real TrueNAS share. No license/LocalSystem blocker found
-for Topaz (unlike P4-3's NAS problem). Next milestone: P4-5 (multi-GPU
-verification, needs `CGI-Render`).)
+for Topaz (unlike P4-3's NAS problem). **P4-5 groundwork laid** (explicit
+GPU device-targeting threaded end-to-end: `jobs.gpu_slot` → heartbeat
+response → `AssignedJob`/`IJobRunner.Start` → `-gpu N`/`device=N` on
+both `ffmpeg` and `topaz` jobs), unit-tested and confirmed against real
+single-GPU hardware, but **P4-5 itself is NOT done** — real concurrent
+multi-GPU verification needs `CGI-Render` (the only 2-GPU workstation),
+unreachable from this session.)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -58,12 +63,51 @@ day):
 
 ## Current Milestone
 
-**P4-5 (multi-GPU verification with real workloads)** is next — not
-started yet, needs `CGI-Render` (the only 2-GPU workstation). P4-0
-through P4-4 are all done — see ROADMAP.md for the full P4-0 through
-P4-5 breakdown. P4-3 (PHP integration) still has one open item: what
-auth PHP actually uses to call a session-cookie-gated endpoint (see
-"Info still needed from user") — not blocking P4-5. Phase 3
+**P4-5 (multi-GPU verification with real workloads)** — groundwork
+laid this session, **not yet actually verified**. Blocked purely on
+machine access: needs `CGI-Render` (the only 2-GPU workstation), which
+this session (running on COMP-01) has no network/SSH/admin-share path
+to. What's done ahead of that verification:
+- **Explicit GPU device-targeting, threaded end-to-end.** Previously,
+  neither `ffmpeg` nor `topaz` jobs told the encoder/model which GPU to
+  use — both left it to driver-default selection (`-2`/Auto for
+  Topaz's `tvai_up`, nothing at all for ffmpeg's NVENC), even though
+  the scheduler (`job/scheduler.ts`, since P3-3) already reserves an
+  independent `gpu_slot` per job on a multi-GPU worker. On a single-GPU
+  box this never mattered; on `CGI-Render`'s 2 GPUs it could silently
+  let two concurrent jobs fight over the same physical GPU despite the
+  scheduler believing they had separate slots — exactly what P4-5 is
+  supposed to confirm doesn't happen. Fixed by threading `gpu_slot` the
+  whole way through: `server/src/api/agent.ts`'s heartbeat response now
+  includes `gpuSlot` alongside `id`/`type`/`input` (reads
+  `assigned.gpu_slot`, already stored — no DB/scheduler change needed);
+  `agent/.../Server/ServerClient.cs`'s `AssignedJobPayload`/`AssignedJob`
+  carry it; `IJobRunner.Start` gained a third `int? gpuSlot` parameter
+  (implemented in `TestJobRunner` as an accepted-but-unused no-op,
+  `FfmpegJobRunner`/`TopazJobRunner` pass it through to
+  `FfmpegArgs.Build`/`TopazArgs.Build`); `FfmpegArgs` adds `-gpu N`
+  (ffmpeg's own documented NVENC option) when present; `TopazArgs` sets
+  `device=N` in the `tvai_up` filter (replacing the hardcoded `-2`) AND
+  adds `-gpu N` for the post-upscale encode step — pinning both to the
+  same device, since pinning only one would let the driver put the
+  upscale and the encode on different physical GPUs.
+- **Verified as far as this machine allows**: `dotnet test` 110/110
+  (4 new cases confirming `-gpu`/`device=` appear only when a slot is
+  assigned, and reflect the right index), server `typecheck`/`build`
+  clean. Real hardware proof (not just string assertions): ran both
+  `TopazJobRunner` (via a throwaway xUnit test) and a raw `ffmpeg -gpu
+  0 ...` invocation with an explicit `gpuSlot`/`-gpu 0` against this
+  machine's single real GPU — both completed successfully, confirming
+  the new flags are accepted by the real binaries, not just well-formed
+  strings. **What this does NOT prove**: that two concurrent jobs
+  actually land on independent physical GPUs rather than fighting over
+  one — that needs a real 2-GPU box (`CGI-Render`) running two jobs at
+  once, which is P4-5's actual remaining scope.
+
+P4-0 through P4-4 are all done — see ROADMAP.md for the full P4-0
+through P4-5 breakdown. P4-3 (PHP integration) still has one open item:
+what auth PHP actually uses to call a session-cookie-gated endpoint
+(see "Info still needed from user") — not blocking P4-5. Phase 3
 (P3-1 through P3-8) is fully complete: the full job engine loop works
 end-to-end (priority-ordered, dependency-aware, threshold-gated,
 software-version-aware scheduling; real cancellation; retry; stale-job
@@ -413,14 +457,20 @@ ffmpeg, real Topaz upscale, real NVENC hardware encode, real UNC/SMB
 share, real production source file, real dashboard-triggered jobs.
 Nothing left unverified in these milestones (see Tests Performed).
 
-Next: **P4-5 — multi-GPU verification with real workloads** (see
-[ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)) — needs
-`CGI-Render` specifically (the only 2-GPU workstation) to confirm two
-concurrent real encodes land on independent GPU slots rather than
-fighting over one. P4-3 (PHP integration) has no code to write per the
-architecture decision, but its one open item (PHP's auth mechanism)
-should get answered before PHP actually tries to call `POST /api/jobs`
-for real — see "Info still needed from user."
+Next: **P4-5 — multi-GPU verification with real workloads.** Explicit
+GPU device-targeting is now implemented and unit/single-GPU-tested (see
+Current Milestone) — what's left is purely the real verification step:
+on `CGI-Render` specifically (the only 2-GPU workstation), deploy the
+updated `DreamersAgent.exe`, fire two concurrent real `ffmpeg`/`topaz`
+jobs, and confirm via `nvidia-smi`/the dashboard's `gpu_slot` column
+that they actually land on independent physical GPUs rather than
+fighting over one. This session (running on COMP-01) has no path to
+`CGI-Render` — needs a session running there, or someone relaying
+commands the way COMP-01's rollout was done this session. P4-3 (PHP
+integration) has no code to write per the architecture decision, but
+its one open item (PHP's auth mechanism) should get answered before PHP
+actually tries to call `POST /api/jobs` for real — see "Info still
+needed from user."
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking, pick up whenever the user asks.
@@ -760,8 +810,37 @@ not blocking, pick up whenever the user asks.
   `POST /api/jobs` → scheduler → heartbeat delivery → `TopazJobRunner`
   → real `tvai_up` GPU upscale → real NVENC encode → output written
   back to the real TrueNAS share.
+- **P4-5 groundwork (GPU device-targeting, COMP-01, same day)**:
+  `dotnet build`/`test` clean, 110/110 (up from 106 — 4 new cases in
+  `FfmpegArgsTests.cs`/`TopazArgsTests.cs` confirming `-gpu`/`device=`
+  appear only when `gpuSlot` is provided and reflect the right index).
+  Server `typecheck`/`build` clean (same 75/77 `npm test` gap as
+  before, same pre-existing DB-binding cause, unrelated to this
+  change). **Real hardware proof this session's single GPU allows**:
+  two throwaway runs (not committed) — `TopazJobRunner` driven with an
+  explicit `gpuSlot: 0` completed a real upscale, and a raw
+  `ffmpeg -gpu 0 -c:v h264_nvenc ...` invocation completed a real
+  encode — confirming `-gpu N`/`device=N` are accepted by the real
+  tools, not just well-formed argument-list strings. **Explicitly not
+  proven**: whether this actually keeps two concurrent jobs on
+  independent physical GPUs — that requires `CGI-Render`'s real 2-GPU
+  hardware and is P4-5's actual remaining scope, not done this session.
 
 ## Required User Action
+
+### P4-5 — needs a session on CGI-Render to finish
+
+GPU device-targeting groundwork is committed (see Current Milestone/
+Tests Performed) but the actual P4-5 verification — two concurrent
+real `ffmpeg`/`topaz` jobs landing on independent GPUs, confirmed via
+`nvidia-smi`/the dashboard — needs to run on `CGI-Render` itself (the
+only 2-GPU workstation). Once someone has a Claude Code session there
+(or is relaying commands from one): rebuild+deploy the updated
+`DreamersAgent.exe` (same `dotnet publish` + elevated stop/copy/start
+pattern used on COMP-01 this session), fire two jobs at once (e.g. two
+"+ FFMPEG DEMO" clicks back to back, or one ffmpeg + one topaz), and
+watch `nvidia-smi` / the job rows' `gpu_slot` column to confirm they're
+actually on separate GPUs, not fighting over one.
 
 ### P4-4 — DONE, verified live in production 2026-08-18
 

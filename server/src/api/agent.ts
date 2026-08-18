@@ -94,12 +94,17 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   // job/repository.ts's getAssignedJobForWorker comment). If there IS
   // capacity, this rides the same "no inbound listener" pattern P2-8's
   // commands already use: deliver in the heartbeat response, not pushed.
-  let job: { id: number; type: string; input: string | null } | undefined;
+  let job: { id: number; type: string; input: string | null; gpuSlot: number | null } | undefined;
   if (!body.runningJob) {
     const assigned = getAssignedJobForWorker(workstationId);
     if (assigned) {
       startJob(assigned.id);
-      job = { id: assigned.id, type: assigned.type, input: assigned.input };
+      // P4-5 prep: gpuSlot lets the Agent explicitly pin GPU work to the
+      // slot the scheduler actually reserved (job/scheduler.ts) instead
+      // of leaving device selection to the encoder/model's own default,
+      // which could otherwise let two concurrent jobs land on the same
+      // physical GPU on a multi-GPU workstation.
+      job = { id: assigned.id, type: assigned.type, input: assigned.input, gpuSlot: assigned.gpu_slot };
     }
   }
 

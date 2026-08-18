@@ -32,7 +32,11 @@ public static class FfmpegArgs
     private const int DefaultCqQuality = 23;
     private const string DefaultVbrBitrate = "8M";
 
-    public static List<string> Build(FfmpegJobInput input)
+    // gpuSlot: the GPU index the scheduler reserved this job's unit on
+    // (see IJobRunner.Start's doc comment) -- null pins nothing, leaving
+    // NVENC's own default device selection. "-gpu N" is ffmpeg's NVENC
+    // encoders' own documented option for this, not a made-up flag.
+    public static List<string> Build(FfmpegJobInput input, int? gpuSlot = null)
     {
         if (!AllowedCodecs.Contains(input.Codec))
         {
@@ -75,6 +79,11 @@ public static class FfmpegArgs
             "-c:v", input.Codec,
             "-preset", input.Preset,
         };
+
+        if (gpuSlot is { } gpu)
+        {
+            args.AddRange(new[] { "-gpu", gpu.ToString() });
+        }
 
         if (input.QualityMode == "cq")
         {

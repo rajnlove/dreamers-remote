@@ -72,6 +72,23 @@ public class TopazArgsTests
     }
 
     [Fact]
+    public void DefaultsDeviceToAutoAndOmitsGpuFlagWhenNoSlotAssigned()
+    {
+        var args = TopazArgs.Build(Input(), gpuSlot: null);
+        Assert.Equal("tvai_up=model=iris-2:scale=2:device=-2", args[args.IndexOf("-vf") + 1]);
+        Assert.DoesNotContain("-gpu", args);
+    }
+
+    [Fact]
+    public void PinsBothTheUpscaleDeviceAndTheEncoderWhenAGpuSlotIsAssigned()
+    {
+        var args = TopazArgs.Build(Input(), gpuSlot: 1);
+        Assert.Equal("tvai_up=model=iris-2:scale=2:device=1", args[args.IndexOf("-vf") + 1]);
+        Assert.Contains("-gpu", args);
+        Assert.Equal("1", args[args.IndexOf("-gpu") + 1]);
+    }
+
+    [Fact]
     public void AlwaysIncludesMachineReadableProgressFlags()
     {
         var args = TopazArgs.Build(Input());

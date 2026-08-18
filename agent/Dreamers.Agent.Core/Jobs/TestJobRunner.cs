@@ -59,7 +59,9 @@ public sealed class TestJobRunner : IJobRunner
         }
     }
 
-    public void Start(int jobId, string? inputJson)
+    // gpuSlot is unused -- "test" is a synthetic sleep loop, no real GPU
+    // work to pin to a device (see IJobRunner.Start's doc comment).
+    public void Start(int jobId, string? inputJson, int? gpuSlot)
     {
         CancellationToken token;
         lock (_lock)

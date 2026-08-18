@@ -71,7 +71,7 @@ public sealed class TopazJobRunner : IJobRunner
         try { toKill?.Kill(entireProcessTree: true); } catch { /* already exited */ }
     }
 
-    public void Start(int jobId, string? inputJson)
+    public void Start(int jobId, string? inputJson, int? gpuSlot)
     {
         lock (_lock)
         {
@@ -82,10 +82,10 @@ public sealed class TopazJobRunner : IJobRunner
             _current = JobSnapshot.Starting(jobId);
         }
 
-        _ = RunAsync(jobId, inputJson);
+        _ = RunAsync(jobId, inputJson, gpuSlot);
     }
 
-    private async Task RunAsync(int jobId, string? inputJson)
+    private async Task RunAsync(int jobId, string? inputJson, int? gpuSlot)
     {
         try
         {
@@ -120,7 +120,7 @@ public sealed class TopazJobRunner : IJobRunner
             }
 
             var topazConfig = _topazConfigStore.LoadOrCreate();
-            var args = TopazArgs.Build(input);
+            var args = TopazArgs.Build(input, gpuSlot);
             var durationSeconds = FfprobeDuration.TryGetSeconds(input.SourcePath);
             var startedAt = DateTime.UtcNow;
 

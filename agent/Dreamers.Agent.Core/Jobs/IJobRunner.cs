@@ -21,7 +21,22 @@ public interface IJobRunner
 {
     bool IsBusy { get; }
     JobSnapshot? GetSnapshot();
-    void Start(int jobId, string? inputJson);
+
+    /// <summary>
+    /// P4-5 prep: gpuSlot is the GPU index the scheduler reserved this
+    /// job's unit on (server/src/job/scheduler.ts's workerUnits/
+    /// findAssignment already assign independent GPU slots on a
+    /// multi-GPU workstation) -- null for a CPU-only unit or a job type
+    /// that doesn't target a GPU. Runners that do GPU work (Ffmpeg/Topaz)
+    /// use it to explicitly pin the encoder/model to that device instead
+    /// of leaving it to driver-default GPU selection, which could
+    /// otherwise land two concurrent jobs on the same physical GPU even
+    /// though the scheduler reserved them independent slots -- see
+    /// docs/ROADMAP.md's P4-5. Not yet verified against real concurrent
+    /// multi-GPU hardware (needs a 2-GPU workstation); implemented and
+    /// unit-tested ahead of that verification.
+    /// </summary>
+    void Start(int jobId, string? inputJson, int? gpuSlot);
     void Cancel(int jobId);
 
     /// <summary>Call once the caller has reported a finished snapshot's result, to free up capacity for the next job.</summary>

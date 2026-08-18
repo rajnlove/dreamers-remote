@@ -199,12 +199,18 @@ configured allow-list before touching it.
   LocalSystem-equivalent context (no license/login blocker, unlike
   P4-3's NAS problem). See `docs/PROJECT_STATUS.md`'s Current Milestone
   and Tests Performed for full detail.
-- **P4-5 — Multi-GPU verification with real workloads.** P3's scheduler
-  already assigns independent GPU slots (`workstationId` + `gpuIndex`)
-  rather than treating a multi-GPU machine as one unit; this milestone
-  is about confirming that holds up for two concurrent real FFmpeg
-  encodes on the same 2-GPU box (e.g. `CGI-Render`), not new scheduler
-  work.
+- **P4-5 — Multi-GPU verification with real workloads.** IN PROGRESS.
+  P3's scheduler already assigns independent GPU slots (`workstationId`
+  + `gpuIndex`) rather than treating a multi-GPU machine as one unit;
+  this milestone is about confirming that holds up for two concurrent
+  real FFmpeg/Topaz jobs on the same 2-GPU box (e.g. `CGI-Render`), not
+  new scheduler work. **Groundwork done**: neither job type actually
+  told the encoder/model which GPU to target until now — `gpu_slot` is
+  threaded end-to-end (heartbeat response → `AssignedJob` →
+  `IJobRunner.Start` → `-gpu N`/`device=N`), unit-tested and confirmed
+  against real (single-GPU) hardware. **Not yet done**: the actual
+  concurrent-multi-GPU verification, which needs `CGI-Render` — see
+  `docs/PROJECT_STATUS.md`'s Required User Action.
 
 **Explicitly out of scope for Phase 4**: Houdini/After Effects/Cinema
 4D render (Phase 5), Performance Remote (Phase 6), any UI beyond
