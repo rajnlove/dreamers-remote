@@ -1,16 +1,16 @@
 # Project Status
 
 Last updated: 2026-08-18 (Phase 4 P4-0 through P4-4 all done and fully
-verified on COMP-01. P4-3 NAS credential mechanism committed
-(`0e0d5a4`), deployed to a second workstation (COMP-01) from scratch
-this session; the TrueNAS ACL gap on `www/Projects` is fixed, and a
-real "+ FFMPEG DEMO" job (job 30) ran end-to-end on COMP-01. P4-4 —
-Topaz Video AI upscale worker — built this same session, mirroring the
-`ffmpeg` job type; a real `tvai_up` upscale confirmed working through
-the Agent's own `TopazJobRunner` code, no license/LocalSystem blocker
-found (unlike P4-3's NAS problem). **Not yet pushed/deployed to
-production** — see Required User Action for the rollout steps. Next
-milestone: P4-5 (multi-GPU verification, needs `CGI-Render`).)
+verified **live in production**. P4-3 NAS credential mechanism
+committed (`0e0d5a4`), deployed to a second workstation (COMP-01); the
+TrueNAS ACL gap on `www/Projects` is fixed, real "+ FFMPEG DEMO" (job
+30) and "+ TOPAZ DEMO" (job 31) jobs both ran end-to-end on the real
+production dashboard against COMP-01. P4-4 — Topaz Video AI upscale
+worker, mirroring the `ffmpeg` job type — pushed (`7fbc402`), CI green,
+deployed via Dockge, confirmed with a real 1920x1080 → 3840x2160
+upscale on the real TrueNAS share. No license/LocalSystem blocker found
+for Topaz (unlike P4-3's NAS problem). Next milestone: P4-5 (multi-GPU
+verification, needs `CGI-Render`).)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -728,49 +728,76 @@ not blocking, pick up whenever the user asks.
   `Topaz Video AI detected: version 7.1.git` and `NAS health check
   passed` on the next startup, confirming the real, live `DreamersAgent`
   service (not just a test process) now has the `topaz` capability
-  ready to report. **Not yet done**: clicking "+ TOPAZ DEMO" on the
-  *live production* dashboard — that button only exists in this local
-  uncommitted checkout so far; needs the commit pushed, CI green, and
-  `vncgi-remote-web`/`vncgi-remote-server` updated in Dockge first, same
-  rollout P4-2's FFmpeg demo button needed — see Required User Action.
+  ready to report.
+- **P4-4 live production verification (same day)**: pushed (`7fbc402`),
+  CI green, `vncgi-remote-server`/`vncgi-remote-web` updated in Dockge,
+  user clicked "+ TOPAZ DEMO (Upscale thật)" on the real dashboard —
+  job 31, dispatched to COMP-01. **Real bug caught by this exact run**:
+  the user rebooted COMP-01 around the same time (to also finish
+  registering the pending VS C++ toolset, see below) — `DreamersAgent`
+  auto-started before the network adapter was fully up, so its one-time
+  Lazy NAS health check failed with `NasConnectCategory.Network`
+  (`Could not connect to "\\192.29.11.92\web_data" (Win32 error
+  1231)`), silently disabling both `ffmpeg`/`topaz` capabilities for
+  that process's whole lifetime — job 31 sat `QUEUED`/unassigned as a
+  result. Diagnosed by reading the log directly (`LastBootUpTime` lined
+  up with the failure timestamp almost exactly), confirmed the network
+  was fine moments later (`Test-NetConnection` succeeded), and simply
+  restarted the service — the next health check passed immediately and
+  job 31 was dispatched within the same second. **Not a code bug** (the
+  Lazy-per-process-lifetime design is intentional, see
+  `NasHealthChecker`'s doc comment) but a real operational gotcha worth
+  knowing: **a fresh boot needs the Agent service restarted once network
+  is actually up if the very first health check raced it** — worth a
+  short delay-before-first-check or a retry in a future session if this
+  recurs. Job 31 then completed for real:
+  `Dreamers.Agent.Worker: Job 31 finished: success`. Confirmed via
+  `ffprobe` directly against the real output file on the real share
+  (`dreamers_topaz_demo_1787033053716.mp4`, 14.2MB): source
+  `1920x1080` → output `3840x2160` (real 2x upscale to 4K), same
+  `3.44s` duration preserved. **This is full, real, production
+  end-to-end proof of P4-4** — dashboard click on the live site →
+  `POST /api/jobs` → scheduler → heartbeat delivery → `TopazJobRunner`
+  → real `tvai_up` GPU upscale → real NVENC encode → output written
+  back to the real TrueNAS share.
 
 ## Required User Action
 
-### P4-4 — deploy the Topaz demo to production (next, not yet done)
+### P4-4 — DONE, verified live in production 2026-08-18
 
-Agent-side and server-side P4-4 code is committed and verified locally
-(see Tests Performed) but not yet live. To actually see "+ TOPAZ DEMO"
-work on the real dashboard:
-1. Push this commit, confirm CI (GitHub Actions) is green.
-2. Dockge → `vncgi-remote-server` → **Update** (not Deploy — see "Live
-   infrastructure" in `CLAUDE.md`) — ships `topazValidation.ts`.
-3. Dockge → `vncgi-remote-web` → **Update** — ships the "+ TOPAZ DEMO"
-   button.
-4. COMP-01's `DreamersAgent` service is already updated and already
-   reports `topaz` (see Tests Performed) — nothing further needed there.
-5. Click "+ TOPAZ DEMO (Upscale thật)" on the live dashboard, confirm
-   it completes and a real upscaled file lands at
-   `\\192.29.11.92\web_data\www\Projects\SOURCE\dreamers_topaz_demo_*.mp4`.
-6. `CGI-01` also has Topaz Video AI installed (per the user) but hasn't
-   had the P4-3 NAS credential + P4-4 `topaz_config.json` rollout done
-   on it yet — same steps already proven on COMP-01, not urgent (COMP-01
-   alone proves the mechanism).
+Pushed (`7fbc402`), CI green, `vncgi-remote-server`/`vncgi-remote-web`
+updated in Dockge, "+ TOPAZ DEMO" clicked on the real dashboard, job 31
+completed for real (source `1920x1080` → output `3840x2160`). Full
+detail in Tests Performed, including a real operational bug hit and
+fixed along the way (a fresh COMP-01 reboot raced the Agent's one-time
+NAS health check — fixed by restarting the service once network was
+actually up).
 
-### COMP-01 local dev environment — pending reboot (not urgent)
+Remaining, not urgent: `CGI-01` also has Topaz Video AI installed (per
+the user) but hasn't had the P4-3 NAS credential + P4-4
+`topaz_config.json` rollout done on it yet — same steps already proven
+on COMP-01, not urgent (COMP-01 alone already proves the mechanism end
+to end, including in production).
 
-This session installed .NET 8 SDK, ffmpeg, Python 3.12, and a Visual
-Studio C++ Desktop workload (for `better-sqlite3`'s native build) on
-COMP-01 via winget/VS Installer. Everything works **except**
-`better-sqlite3`'s native addon, which needs a machine reboot to finish
-registering the C++ toolset (`vs_installer.exe modify` returned exit
-code 3010 = success-pending-reboot; confirmed still not visible to
-`vswhere` afterward). Worked around this session via
-`npm install --ignore-scripts` (skips native compilation, still lets
-`tsc`/most of `node:test` run — see Tests Performed) rather than forcing
-a reboot on a machine that's also in active studio use. After a
-convenient reboot, a plain `npm install` (no flags) in `server/` should
-succeed and unlock the full local `npm test` (currently 75/77, the 2
-gaps are exactly the DB-backed tests this affects).
+### COMP-01 local dev environment — VS C++ toolset still not registered (not urgent, doesn't block anything)
+
+This session installed .NET 8 SDK, ffmpeg, Python 3.12, and (attempted)
+a Visual Studio C++ Desktop workload on COMP-01 via winget/VS Installer,
+needed for `better-sqlite3`'s native addon. `vs_installer.exe modify`
+returned exit code 3010 (success-pending-reboot); the user rebooted the
+machine (same reboot that also caused the Agent NAS-health-check race
+above) — but `vswhere -requires
+Microsoft.VisualStudio.Component.VC.Tools.x86.x64` **still** shows
+nothing installed afterward, so the reboot alone didn't actually finish
+it (worth a fresh `vs_installer.exe modify` re-attempt or checking the
+VS Installer's own log next time someone's on this machine, not
+investigated further this session since it isn't blocking anything).
+Current workaround, still needed: `npm install --ignore-scripts` in
+`server/` (skips native compilation, still lets `tsc`/most of
+`node:test` run — 75/77, the 2 gaps are exactly the DB-backed tests
+this affects). **Not blocking real work** — CI (GitHub Actions, Linux)
+has no such gap and is what actually gates deployment; this only
+affects local iteration speed on COMP-01 specifically.
 
 ### SSH key for TrueNAS — no longer blocking, still unresolved
 
