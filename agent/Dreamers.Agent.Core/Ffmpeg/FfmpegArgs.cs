@@ -18,11 +18,15 @@ namespace Dreamers.Agent.Core.Ffmpeg;
 /// </summary>
 public static class FfmpegArgs
 {
-    private static readonly HashSet<string> AllowedCodecs = new() { "h264_nvenc", "hevc_nvenc", "av1_nvenc" };
-    private static readonly HashSet<string> AllowedQualityModes = new() { "cq", "vbr" };
-    private static readonly HashSet<string> AllowedPresets = new() { "p1", "p2", "p3", "p4", "p5", "p6", "p7" };
-    private static readonly HashSet<string> AllowedAudioCodecs = new() { "aac", "copy", "none" };
-    private static readonly Regex BitratePattern = new(@"^\d+[kKmM]$", RegexOptions.Compiled);
+    // internal, not private: reused by Topaz/TopazArgs.cs so a topaz
+    // job's post-upscale encode step validates against the exact same
+    // whitelist as an ffmpeg job's encode, instead of a copy-pasted
+    // second one that could drift out of sync.
+    internal static readonly HashSet<string> AllowedCodecs = new() { "h264_nvenc", "hevc_nvenc", "av1_nvenc" };
+    internal static readonly HashSet<string> AllowedQualityModes = new() { "cq", "vbr" };
+    internal static readonly HashSet<string> AllowedPresets = new() { "p1", "p2", "p3", "p4", "p5", "p6", "p7" };
+    internal static readonly HashSet<string> AllowedAudioCodecs = new() { "aac", "copy", "none" };
+    internal static readonly Regex BitratePattern = new(@"^\d+[kKmM]$", RegexOptions.Compiled);
     private static readonly Regex ResolutionPattern = new(@"^(\d{2,5})x(\d{2,5})$", RegexOptions.Compiled);
 
     private const int DefaultCqQuality = 23;

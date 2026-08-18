@@ -46,14 +46,18 @@ export function isPathUnderAllowedRoot(path: string, allowedRoots: readonly stri
   });
 }
 
-function requireEnum<T extends string>(value: unknown, allowed: readonly T[], field: string): T {
+// Exported (not module-private) so job/topazValidation.ts can reuse
+// these instead of copy-pasting -- a topaz job's post-upscale encode
+// step validates against the exact same codec/qualityMode/preset/
+// audioCodec enums and path/enum-checking helpers as an ffmpeg job.
+export function requireEnum<T extends string>(value: unknown, allowed: readonly T[], field: string): T {
   if (typeof value !== "string" || !allowed.includes(value as T)) {
     throw new ValidationError(`${field} must be one of: ${allowed.join(", ")}`);
   }
   return value as T;
 }
 
-function requirePath(value: unknown, field: string, allowedRoots: readonly string[]): string {
+export function requirePath(value: unknown, field: string, allowedRoots: readonly string[]): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new ValidationError(`${field} is required and must be a non-empty string`);
   }

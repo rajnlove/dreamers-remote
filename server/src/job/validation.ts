@@ -1,6 +1,7 @@
 import { ValidationError } from "../workstation/errors.js";
 import type { JobInput } from "./types.js";
 import { validateFfmpegInput } from "./ffmpegValidation.js";
+import { validateTopazInput } from "./topazValidation.js";
 
 // P3-1: no whitelist of known job types yet — Phase 3 only ships a
 // trivial built-in "test" type (P3-4); Phase 4/5 add real ones later.
@@ -48,6 +49,17 @@ export function validateCreateInput(body: unknown): JobInput {
       throw new ValidationError("input must be valid JSON for an ffmpeg job");
     }
     input = JSON.stringify(validateFfmpegInput(parsed));
+  }
+
+  // P4-4: same stricter-shape-check pattern as "ffmpeg" above.
+  if (b.type === "topaz" && input !== null) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(input);
+    } catch {
+      throw new ValidationError("input must be valid JSON for a topaz job");
+    }
+    input = JSON.stringify(validateTopazInput(parsed));
   }
 
   // P3-6: format only (positive integer) — whether the referenced job

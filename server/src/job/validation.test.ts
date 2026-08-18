@@ -71,3 +71,24 @@ test("validateCreateInput rejects an ffmpeg job whose input fails the ffmpeg-spe
     }),
   );
 });
+
+test("validateCreateInput rejects a malformed-JSON input for a topaz job", () => {
+  assert.throws(() => validateCreateInput({ type: "topaz", input: "{not json" }));
+});
+
+test("validateCreateInput rejects a topaz job whose input fails the topaz-specific shape check", () => {
+  // Same dispatch confirmation as the ffmpeg test above, for "topaz".
+  assert.throws(() =>
+    validateCreateInput({
+      type: "topaz",
+      input: JSON.stringify({
+        sourcePath: "C:\\x.mov",
+        outputPath: "C:\\y.mp4",
+        model: "iris-2",
+        scale: 2,
+        codec: "h264_nvenc",
+        qualityMode: "cq",
+      }),
+    }),
+  );
+});

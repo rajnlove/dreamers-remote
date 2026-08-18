@@ -97,6 +97,38 @@ export default function JobsPage() {
     }
   }
 
+  // Phase 4 (P4-4) demo: a real Topaz Video AI upscale ("tvai_up") job
+  // against the same real source clip as the FFmpeg demo above, so the
+  // job engine shows a real GPU upscale running, not just a synthetic
+  // job. Requires Topaz Video AI installed + configured
+  // (topaz_config.json) on at least one worker — see
+  // docs/PROJECT_STATUS.md's Phase 4 section.
+  async function handleCreateTopazDemoJob() {
+    setCreating(true);
+    setActionError(null);
+    try {
+      const outputPath = `\\\\192.29.11.92\\web_data\\www\\Projects\\SOURCE\\dreamers_topaz_demo_${Date.now()}.mp4`;
+      await createJob({
+        type: "topaz",
+        input: JSON.stringify({
+          sourcePath: DEMO_SOURCE,
+          outputPath,
+          model: "iris-2",
+          scale: 2,
+          codec: "h264_nvenc",
+          qualityMode: "cq",
+          quality: 20,
+          preset: "p4",
+          audioCodec: "aac",
+        }),
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   async function handleCancel(id: number) {
     setActionError(null);
     try {
@@ -132,6 +164,9 @@ export default function JobsPage() {
           </button>
           <button className="btn btn-primary" onClick={handleCreateFfmpegDemoJob} disabled={creating}>
             {creating ? "ĐANG TẠO..." : "+ FFMPEG DEMO (GPU encode thật)"}
+          </button>
+          <button className="btn btn-primary" onClick={handleCreateTopazDemoJob} disabled={creating}>
+            {creating ? "ĐANG TẠO..." : "+ TOPAZ DEMO (Upscale thật)"}
           </button>
         </div>
       </header>

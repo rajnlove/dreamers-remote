@@ -7,6 +7,7 @@ using Dreamers.Agent.Core.Jobs;
 using Dreamers.Agent.Core.Logging;
 using Dreamers.Agent.Core.Metrics;
 using Dreamers.Agent.Core.Server;
+using Dreamers.Agent.Core.Topaz;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.WindowsServices;
@@ -39,6 +40,12 @@ if (args.Length > 0 && string.Equals(args[0], "nas-credential", StringComparison
 if (args.Length > 0 && string.Equals(args[0], "test-nas", StringComparison.OrdinalIgnoreCase))
 {
     HandleTestNas();
+    return;
+}
+
+if (args.Length > 0 && string.Equals(args[0], "test-topaz", StringComparison.OrdinalIgnoreCase))
+{
+    HandleTestTopaz();
     return;
 }
 
@@ -86,18 +93,21 @@ builder.Services.AddSingleton(processesConfig);
 builder.Services.AddSingleton(new AgentCredentialStore(dataDirectory));
 var allowedPathsStore = new AllowedPathsConfigStore(dataDirectory);
 var nasCredentialStore = new NasCredentialStore(dataDirectory);
+var topazConfigStore = new TopazConfigStore(dataDirectory);
 builder.Services.AddSingleton(allowedPathsStore);
 builder.Services.AddSingleton(nasCredentialStore);
-// P4-3: the "ffmpeg" capability (WorkerCapabilities.Current) depends on
-// a NAS read/write health check that needs these two stores — wired
-// once here, before the host (and its first heartbeat) starts, rather
-// than threading them through the static class's constructor (it's
-// read from a static context in HeartbeatPayload.FromSnapshot).
-Dreamers.Agent.Core.Worker.WorkerCapabilities.Initialize(nasCredentialStore, allowedPathsStore);
+builder.Services.AddSingleton(topazConfigStore);
+// P4-3/P4-4: the "ffmpeg"/"topaz" capabilities (WorkerCapabilities.Current)
+// depend on health checks that need these stores — wired once here,
+// before the host (and its first heartbeat) starts, rather than
+// threading them through the static class's constructor (it's read
+// from a static context in HeartbeatPayload.FromSnapshot).
+Dreamers.Agent.Core.Worker.WorkerCapabilities.Initialize(nasCredentialStore, allowedPathsStore, topazConfigStore);
 builder.Services.AddSingleton<MetricsCollector>();
 builder.Services.AddSingleton<CommandExecutor>();
 builder.Services.AddSingleton<TestJobRunner>();
 builder.Services.AddSingleton<FfmpegJobRunner>();
+builder.Services.AddSingleton<TopazJobRunner>();
 builder.Services.AddHttpClient<ServerClient>();
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
@@ -256,6 +266,24 @@ void HandleTestNas()
     Console.WriteLine($"Category: {result.Category}");
     Console.WriteLine($"Ok: {result.Ok}");
     Console.WriteLine($"Message: {result.Message}");
+}
+
+// --- Diagnostic: DreamersAgent.exe test-topaz. Runs the exact same
+// TopazDetector.Detect the Windows Service runs at startup (via
+// WorkerCapabilities), so an admin can confirm Topaz's proprietary
+// ffmpeg.exe is found at the configured path (topaz_config.json) and
+// its "tvai_up" filter is really present, without digging through the
+// log or restarting the service.
+void HandleTestTopaz()
+{
+    var dir = AgentConfigStore.DefaultDataDirectory;
+    var config = new TopazConfigStore(dir).LoadOrCreate();
+    var result = Dreamers.Agent.Core.Topaz.TopazDetector.Detect(config);
+
+    Console.WriteLine($"FfmpegPath: {config.FfmpegPath}");
+    Console.WriteLine($"ModelDir: {config.ModelDir}");
+    Console.WriteLine($"Available: {result.Available}");
+    Console.WriteLine($"Version: {result.Version}");
 }
 
 string ReadPasswordMasked()

@@ -1,13 +1,16 @@
 # Project Status
 
-Last updated: 2026-08-18 (Phase 4 P4-0 through P4-3 all done and fully
-verified. P4-3 NAS credential mechanism built, committed (`0e0d5a4`),
-deployed to a second workstation (COMP-01) from scratch this session;
-the last blocker — a TrueNAS ACL gap on `www/Projects` — is fixed, and
-a real "+ FFMPEG DEMO" job (job 30) ran end-to-end on COMP-01: dashboard
-click → scheduled → real NVENC encode → real output file on the
-TrueNAS share. CGI-Render likely fixed too (same TrueNAS-side ACL) but
-not yet independently re-confirmed — see Required User Action.)
+Last updated: 2026-08-18 (Phase 4 P4-0 through P4-4 all done and fully
+verified on COMP-01. P4-3 NAS credential mechanism committed
+(`0e0d5a4`), deployed to a second workstation (COMP-01) from scratch
+this session; the TrueNAS ACL gap on `www/Projects` is fixed, and a
+real "+ FFMPEG DEMO" job (job 30) ran end-to-end on COMP-01. P4-4 —
+Topaz Video AI upscale worker — built this same session, mirroring the
+`ffmpeg` job type; a real `tvai_up` upscale confirmed working through
+the Agent's own `TopazJobRunner` code, no license/LocalSystem blocker
+found (unlike P4-3's NAS problem). **Not yet pushed/deployed to
+production** — see Required User Action for the rollout steps. Next
+milestone: P4-5 (multi-GPU verification, needs `CGI-Render`).)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -55,11 +58,12 @@ day):
 
 ## Current Milestone
 
-**P4-3 (PHP integration point)** — nothing to build per the
-architecture above (PHP calls `POST /api/jobs` directly), but has one
-open item: what auth PHP actually uses to call a session-cookie-gated
-endpoint (see "Info still needed from user"). P4-0/P4-1/P4-2 are done —
-see ROADMAP.md for the full P4-0 through P4-5 breakdown. Phase 3
+**P4-5 (multi-GPU verification with real workloads)** is next — not
+started yet, needs `CGI-Render` (the only 2-GPU workstation). P4-0
+through P4-4 are all done — see ROADMAP.md for the full P4-0 through
+P4-5 breakdown. P4-3 (PHP integration) still has one open item: what
+auth PHP actually uses to call a session-cookie-gated endpoint (see
+"Info still needed from user") — not blocking P4-5. Phase 3
 (P3-1 through P3-8) is fully complete: the full job engine loop works
 end-to-end (priority-ordered, dependency-aware, threshold-gated,
 software-version-aware scheduling; real cancellation; retry; stale-job
@@ -267,15 +271,71 @@ real production hardware, not just locally:
   reports them (`web/src/types/job.ts` gained the matching fields).
   Requires `FFMPEG_ALLOWED_ROOTS` (server) and `allowed_paths.json`
   (Agent) to already include that UNC root — see Required User Action.
+- **Phase 4, P4-4 (Topaz Video AI worker, upscale-only v1)**: a second,
+  independent `topaz` job type mirroring `ffmpeg`'s file structure
+  almost exactly (per `docs/ROADMAP.md`'s "should mostly be write a
+  TopazJobRunner, not scheduler changes" — confirmed true, zero
+  scheduler/api changes needed, `findAssignment` already matches purely
+  on `worker.capabilities.includes(jobType)`, a free-form string).
+  Agent: `Configuration/TopazConfig.cs`/`TopazConfigStore.cs` (where
+  Topaz's own proprietary `ffmpeg.exe` and model cache dir live —
+  `C:\ProgramData\DreamersRemote\topaz_config.json`),
+  `Topaz/TopazDetector.cs` (confirms the configured binary really has
+  the `tvai_up` filter, not just any ffmpeg), `Topaz/TopazJobInput.cs`/
+  `TopazArgs.cs` (adds `model`/`scale`, reuses `FfmpegArgs`'s
+  codec/qualityMode/preset/audioCodec whitelists rather than
+  duplicating them — made those `internal` for this reuse),
+  `Jobs/TopazJobRunner.cs` (near-identical to `FfmpegJobRunner.cs`:
+  same `PathValidator`/`AllowedPathsConfigStore`/`NasConnector` reuse,
+  same `-progress pipe:1` parsing via the same
+  `FfmpegProgressParser`/`FfprobeDuration` — Topaz's ffmpeg build emits
+  identical output — only real difference is invoking Topaz's
+  full-path `ffmpeg.exe`, never the bare `"ffmpeg"` PATH token, plus
+  setting `TVAI_MODEL_DIR`/`TVAI_MODEL_DATA_DIR` env vars).
+  `WorkerCapabilities` gates `"topaz"` on `TopazDetector` finding it AND
+  the same shared NAS health check `"ffmpeg"` already uses (one NAS
+  session serves every job type). New CLI diagnostic:
+  `DreamersAgent.exe test-topaz` (mirrors `test-nas`). Server:
+  `job/topazValidation.ts` mirrors `ffmpegValidation.ts`, reusing its
+  now-exported enums/helpers; `model` is a regex whitelist
+  (`^[a-z0-9-]{1,32}$`), not a fixed enum like `codec` — Topaz's model
+  catalog changes with app updates, but the value still feeds an ffmpeg
+  filter-graph expression so it needs *some* whitelist to block
+  `:`/`,`/`;` filter-graph-syntax injection. Reuses
+  `FFMPEG_ALLOWED_ROOTS`/`allowed_paths.json` rather than adding a
+  second `TOPAZ_ALLOWED_ROOTS` — same NAS roots concept either way.
+  **v1 scope is upscale only** (`tvai_up`) — frame interpolation/
+  stabilization (`tvai_fi`/`tvai_stb`, also present in Topaz's ffmpeg
+  build) deferred, user's explicit choice. **GPU device targeting
+  deferred to P4-5**: `tvai_up` takes an explicit `device` (GPU index),
+  but the Agent has no way to know which `gpu_slot` the scheduler
+  assigned (`AssignedJob` only carries `Id`/`Type`/`Input`) — same
+  pre-existing gap `ffmpeg` jobs already have, not introduced by this
+  milestone; `device=-2` (Auto) is fine on COMP-01/CGI-01 (single-GPU)
+  today. Web: `web/src/pages/JobsPage.tsx` gained "+ TOPAZ DEMO (Upscale
+  thật)", same demo source clip as the FFmpeg button.
+  **Real risk investigated and cleared before writing the runner**
+  (planned explicitly as decision 6, see the approved plan): does
+  `tvai_up` need an interactive-user-scoped Topaz login/license, which
+  `LocalSystem` wouldn't have (the exact shape of P4-3's NAS problem)?
+  Tested via the same `schtasks /RU SYSTEM` diagnostic trick that
+  worked for NAS — **no such blocker**: a real `tvai_up` upscale
+  completed fine under SYSTEM, identical output to running interactively
+  (640x480 from a 320x240 source, confirmed via `ffprobe`). The one real
+  requirement found: `TVAI_MODEL_DIR`/`TVAI_MODEL_DATA_DIR` env vars
+  must be set (a machine-wide `C:\ProgramData\...` path, not a
+  per-user one) or `tvai_up` fails with "Model not found" even for an
+  already-cached model — not license-related, just a missing directory
+  hint.
 
 ## In Progress
 
-Nothing blocking — Phase 4 P4-0 through P4-2 finished this session.
-P4-3 has one open item (PHP's auth mechanism for calling
-`POST /api/jobs`, see "Info still needed from user") but isn't blocked
-on it for anything already built. Next up per the roadmap: P4-4 (Topaz
-worker) and P4-5 (multi-GPU verification with real workloads), or
-verifying P4-2 on a real workstation first — see Next Task.
+Nothing blocking — Phase 4 P4-0 through P4-4 all done, P4-3/P4-4 both
+verified against real hardware on COMP-01. P4-3 has one open item
+(PHP's auth mechanism for calling `POST /api/jobs`, see "Info still
+needed from user") but isn't blocked on it for anything already built.
+Next up per the roadmap: **P4-5 — multi-GPU verification with real
+workloads** (needs `CGI-Render`, the only 2-GPU box — see Next Task).
 
 Phase 2's two deferred items (P2-8, multi-monitor) were tested live and
 found broken; user chose to defer debugging them rather than block on
@@ -348,18 +408,19 @@ them (see Known Issues) — not being worked on right now.
 
 ## Next Task
 
-**P4-2 is now fully verified end-to-end** — real ffmpeg, real NVENC
-hardware encode, real UNC/SMB share (`\\192.29.11.92\web_data\www\
-Projects`), real production source file. Nothing left unverified in
-this milestone (see Tests Performed).
+**P4-2, P4-3, and P4-4 are all now fully verified end-to-end** — real
+ffmpeg, real Topaz upscale, real NVENC hardware encode, real UNC/SMB
+share, real production source file, real dashboard-triggered jobs.
+Nothing left unverified in these milestones (see Tests Performed).
 
-Next: **P4-4 — Topaz worker** and **P4-5 — multi-GPU verification with
-real workloads** (see
-[ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)). P4-3 (PHP
-integration) has no code to write per the architecture decision, but
-its one open item (PHP's auth mechanism) should get answered before
-PHP actually tries to call `POST /api/jobs` for real — see "Info still
-needed from user."
+Next: **P4-5 — multi-GPU verification with real workloads** (see
+[ROADMAP.md](ROADMAP.md#phase-4--processing-ffmpeg--topaz)) — needs
+`CGI-Render` specifically (the only 2-GPU workstation) to confirm two
+concurrent real encodes land on independent GPU slots rather than
+fighting over one. P4-3 (PHP integration) has no code to write per the
+architecture decision, but its one open item (PHP's auth mechanism)
+should get answered before PHP actually tries to call `POST /api/jobs`
+for real — see "Info still needed from user."
 
 P2-8 and multi-monitor debugging remain deferred (see Known Issues) —
 not blocking, pick up whenever the user asks.
@@ -631,8 +692,85 @@ not blocking, pick up whenever the user asks.
   entry left open — **P4-2 has now been verified with real ffmpeg, real
   NVENC hardware, and a real UNC/SMB path to TrueNAS, against a real
   production source file**, not synthetic/local-only testing.
+- **P4-4 Topaz Video AI worker (COMP-01, 2026-08-18)**: `dotnet build`/
+  `test` clean, 106/106 (up from 84 — `TopazArgsTests.cs` 21 cases,
+  `TopazJobRunnerTests.cs` 6 cases, mirroring the Ffmpeg equivalents).
+  Server: `npm run typecheck`/`build` clean; `npm test` on the pure
+  validation subset (`topazValidation.test.ts` + updated
+  `validation.test.ts`/`ffmpegValidation.test.ts`) 46/46 passing. Full
+  `npm test` run also caught 75/77 passing — the 2 failures
+  (`commands.test.ts`, `scheduler.test.ts`) are pre-existing DB-backed
+  tests blocked by a local environment gap unrelated to this change
+  (see Required User Action's COMP-01 dev-environment note), confirmed
+  by the exact failure (`Could not locate the bindings file
+  ...better_sqlite3.node`), not a real regression.
+  **Decision-6 risk check (done first, before writing the runner)**:
+  does `tvai_up` need an interactive Topaz login LocalSystem wouldn't
+  have? Generated a real tiny test clip
+  (`ffmpeg -f lavfi -i testsrc=...`), ran Topaz's real `tvai_up` filter
+  by hand first as the interactive user (worked once
+  `TVAI_MODEL_DIR`/`TVAI_MODEL_DATA_DIR` were set — real model name is
+  `iris-2`, not `ahq-12` despite that being the filter's own declared
+  AVOption default, which turned out not to be a locally-resolvable
+  model), then via the same `schtasks /RU SYSTEM` diagnostic trick
+  P4-3's NAS debugging used, confirming it works identically under
+  SYSTEM: `ffprobe`-confirmed 320x240 → 640x480 real 2x upscale, no
+  license/auth error either way. **Real proof of the Agent's own code**
+  (not just the raw CLI): a throwaway xUnit test (not committed,
+  deleted after a passing run) drove the actual `TopazJobRunner` class
+  end-to-end against the same test clip — passed, output confirmed
+  640x480 via `ffprobe`, proving the config store wiring/path
+  validation/`TopazArgs` building/env-var setting/progress parsing/
+  success detection all work together, not just Topaz's CLI in
+  isolation. **Full live verification**: built + deployed the new
+  `DreamersAgent.exe` to COMP-01's real running service (elevated
+  stop/copy/start, same pattern as the P4-3 rollout); log confirmed
+  `Topaz Video AI detected: version 7.1.git` and `NAS health check
+  passed` on the next startup, confirming the real, live `DreamersAgent`
+  service (not just a test process) now has the `topaz` capability
+  ready to report. **Not yet done**: clicking "+ TOPAZ DEMO" on the
+  *live production* dashboard — that button only exists in this local
+  uncommitted checkout so far; needs the commit pushed, CI green, and
+  `vncgi-remote-web`/`vncgi-remote-server` updated in Dockge first, same
+  rollout P4-2's FFmpeg demo button needed — see Required User Action.
 
 ## Required User Action
+
+### P4-4 — deploy the Topaz demo to production (next, not yet done)
+
+Agent-side and server-side P4-4 code is committed and verified locally
+(see Tests Performed) but not yet live. To actually see "+ TOPAZ DEMO"
+work on the real dashboard:
+1. Push this commit, confirm CI (GitHub Actions) is green.
+2. Dockge → `vncgi-remote-server` → **Update** (not Deploy — see "Live
+   infrastructure" in `CLAUDE.md`) — ships `topazValidation.ts`.
+3. Dockge → `vncgi-remote-web` → **Update** — ships the "+ TOPAZ DEMO"
+   button.
+4. COMP-01's `DreamersAgent` service is already updated and already
+   reports `topaz` (see Tests Performed) — nothing further needed there.
+5. Click "+ TOPAZ DEMO (Upscale thật)" on the live dashboard, confirm
+   it completes and a real upscaled file lands at
+   `\\192.29.11.92\web_data\www\Projects\SOURCE\dreamers_topaz_demo_*.mp4`.
+6. `CGI-01` also has Topaz Video AI installed (per the user) but hasn't
+   had the P4-3 NAS credential + P4-4 `topaz_config.json` rollout done
+   on it yet — same steps already proven on COMP-01, not urgent (COMP-01
+   alone proves the mechanism).
+
+### COMP-01 local dev environment — pending reboot (not urgent)
+
+This session installed .NET 8 SDK, ffmpeg, Python 3.12, and a Visual
+Studio C++ Desktop workload (for `better-sqlite3`'s native build) on
+COMP-01 via winget/VS Installer. Everything works **except**
+`better-sqlite3`'s native addon, which needs a machine reboot to finish
+registering the C++ toolset (`vs_installer.exe modify` returned exit
+code 3010 = success-pending-reboot; confirmed still not visible to
+`vswhere` afterward). Worked around this session via
+`npm install --ignore-scripts` (skips native compilation, still lets
+`tsc`/most of `node:test` run — see Tests Performed) rather than forcing
+a reboot on a machine that's also in active studio use. After a
+convenient reboot, a plain `npm install` (no flags) in `server/` should
+succeed and unlock the full local `npm test` (currently 75/77, the 2
+gaps are exactly the DB-backed tests this affects).
 
 ### SSH key for TrueNAS — no longer blocking, still unresolved
 

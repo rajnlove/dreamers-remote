@@ -184,11 +184,21 @@ configured allow-list before touching it.
   mechanism this repo doesn't have yet — not blocking P4-1/P4-2 (which
   don't care who the caller is), but needs an answer before PHP can
   actually call it for real.
-- **P4-4 — Topaz as a second, independent worker type.** Per
+- **P4-4 — Topaz as a second, independent worker type.** DONE. Per
   MASTER_PROJECT_SPEC.md §20: its own capability/job type, not
-  hardcoded into the scheduler alongside FFmpeg — the scheduler already
-  treats job `type` generically (P3-1 onward), so this should mostly be
-  "write a TopazJobRunner," not scheduler changes.
+  hardcoded into the scheduler alongside FFmpeg — confirmed true, zero
+  scheduler/API changes needed (`findAssignment` already matches
+  generically on `worker.capabilities.includes(jobType)`). `topaz` job
+  type mirrors `ffmpeg`'s file structure closely (`TopazJobRunner`,
+  `TopazArgs`, `topazValidation.ts`, ...), reusing `ffmpeg`'s
+  codec/quality enums and NAS/allowed-roots config rather than
+  duplicating them. v1 scope is upscale only (`tvai_up`) — frame
+  interpolation/stabilization deferred. Verified end-to-end on a real
+  workstation (COMP-01): real Topaz Video AI, real `tvai_up` upscale,
+  confirmed working under both an interactive session and a
+  LocalSystem-equivalent context (no license/login blocker, unlike
+  P4-3's NAS problem). See `docs/PROJECT_STATUS.md`'s Current Milestone
+  and Tests Performed for full detail.
 - **P4-5 — Multi-GPU verification with real workloads.** P3's scheduler
   already assigns independent GPU slots (`workstationId` + `gpuIndex`)
   rather than treating a multi-GPU machine as one unit; this milestone

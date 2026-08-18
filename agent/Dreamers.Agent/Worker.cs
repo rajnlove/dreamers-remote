@@ -4,6 +4,7 @@ using Dreamers.Agent.Core.Credentials;
 using Dreamers.Agent.Core.Jobs;
 using Dreamers.Agent.Core.Metrics;
 using Dreamers.Agent.Core.Server;
+using Dreamers.Agent.Core.Topaz;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -35,7 +36,8 @@ public sealed class Worker : BackgroundService
         ServerClient serverClient,
         CommandExecutor commandExecutor,
         TestJobRunner testJobRunner,
-        FfmpegJobRunner ffmpegJobRunner)
+        FfmpegJobRunner ffmpegJobRunner,
+        TopazJobRunner topazJobRunner)
     {
         _logger = logger;
         _config = config;
@@ -51,6 +53,7 @@ public sealed class Worker : BackgroundService
         {
             ["test"] = testJobRunner,
             ["ffmpeg"] = ffmpegJobRunner,
+            ["topaz"] = topazJobRunner,
         };
     }
 
@@ -87,8 +90,20 @@ public sealed class Worker : BackgroundService
         else
         {
             _logger.LogWarning(
-                "NAS health check failed ({Category}): {Message} — the \"ffmpeg\" capability will not be reported until this is fixed.",
+                "NAS health check failed ({Category}): {Message} — the \"ffmpeg\"/\"topaz\" capabilities will not be reported until this is fixed.",
                 nasHealth.Category, nasHealth.Message);
+        }
+
+        // P4-4: same "log the specific reason" treatment as the NAS check
+        // above, for the other half of the "topaz" capability gate.
+        var topazInfo = Core.Worker.WorkerCapabilities.TopazInfo;
+        if (topazInfo.Available)
+        {
+            _logger.LogInformation("Topaz Video AI detected: version {Version}", topazInfo.Version);
+        }
+        else
+        {
+            _logger.LogInformation("Topaz Video AI not detected on this machine — the \"topaz\" capability will not be reported.");
         }
 
         var interval = TimeSpan.FromSeconds(Math.Max(1, _config.UpdateIntervalSeconds));
