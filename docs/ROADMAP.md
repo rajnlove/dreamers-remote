@@ -175,7 +175,12 @@ configured allow-list before touching it.
   real workstation** with ffmpeg installed and a real SMB mount before
   calling this fully proven, the same way P3-7's job loop needed a real
   Agent redeploy to go from "unit-tested" to "actually proven."
-- **P4-3H — Processing Infrastructure Hardening.** IN PROGRESS. Inserted
+- **P4-3H — Processing Infrastructure Hardening.** DONE 2026-09-02,
+  verified live on real hardware (see `docs/PROJECT_STATUS.md`'s Current
+  Milestone/Tests Performed for the full evidence — both COMP-01 and
+  CGI-Render redeployed, job #35 auto-resolved to `STALE_EXECUTION`, two
+  real jobs confirmed `RUNNING` simultaneously on CGI-Render's two
+  GPUs). Inserted
   2026-09-02 ahead of the old P4-3/P4-5 (renumbered P4-5/P4-6 below) after
   live testing on the real production system surfaced three real gaps in
   the job engine's execution model itself — not new features, fixes to
@@ -246,7 +251,9 @@ configured allow-list before touching it.
   mechanism this repo doesn't have yet — not blocking P4-1/P4-2 (which
   don't care who the caller is), but needs an answer before PHP can
   actually call it for real.
-- **P4-6 — End-to-End Processing Test.** IN PROGRESS. Renumbered from the
+- **P4-6 — End-to-End Processing Test.** DONE 2026-09-02 — see P4-3H
+  above for the evidence (this milestone's pass bar and P4-3H's
+  verification are the same test). Renumbered from the
   old P4-5 ("Multi-GPU verification with real workloads") 2026-09-02 —
   same goal, now correctly sequenced *after* P4-3H instead of before it,
   since live testing 2026-09-02 proved the old Agent literally could not
@@ -258,9 +265,8 @@ configured allow-list before touching it.
   now that P4-3H makes concurrent execution possible at all. `gpu_slot`
   is threaded end-to-end (heartbeat response → `AssignedJob` →
   `IJobRunner.Start` → `-gpu N`/`device=N`), unit-tested and confirmed
-  against real (single-GPU) hardware. **Not yet done**: the actual
-  concurrent-multi-GPU verification — see P4-3H above and
-  `docs/PROJECT_STATUS.md`'s Required User Action.
+  against real (single-GPU) hardware. **Concurrent-multi-GPU
+  verification: DONE** — see P4-3H above for the evidence.
 - **P4-7 — Phase 4 close/hardening.** NOT STARTED. Final pass once P4-5/
   P4-6 are both done: re-read every Phase 4 milestone's "Not yet done"/
   "Open item" notes above, resolve or explicitly defer each one, update

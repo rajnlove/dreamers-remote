@@ -990,14 +990,35 @@ needs things this session genuinely cannot do on its own:
    `RUNNING` simultaneously**, not one sitting `ASSIGNED` while the
    other runs — that's the concrete pass/fail bar for P4-3H's
    concurrent-execution fix and for closing P4-6.
-4. **Job #35 (CGI-Render, stuck RUNNING since 2026-09-02 09:19 UTC)**:
-   left as-is, not deleted — real evidence for this milestone (see
-   Current Milestone and Tests Performed). Once the redeployed server's
-   `failStaleRunningJobs()` runs against it, it should auto-transition to
-   `FAILED` with a `STALE_EXECUTION` error on its own (that's the fix
-   being verified, not something to do by hand) — confirm via `GET
-   /api/jobs/35` after the server update lands, rather than marking it
-   failed manually.
+4. ~~Job #35 stuck RUNNING~~ **DONE 2026-09-02.** Confirmed
+   auto-transitioned to `FAILED` the moment the redeployed server's
+   `failStaleRunningJobs()` ran against it — no manual intervention:
+   `error: "STALE_EXECUTION: no progress reported for this job in over
+   30s even though the worker is still online — its Agent-side execution
+   was lost (e.g. Agent process restarted mid-job)"`,
+   `finished_at: "2026-09-02T06:25:36.039Z"`. Exactly the fix working as
+   designed, on the real job that motivated it.
+
+**P4-3H is DONE as of 2026-09-02.** All four items above completed live
+in production: CGI-Render redeployed by the user (`git pull` + `dotnet
+publish` + self-update, `D:\AICODEX` on that machine — its own repo
+root, no `dreamers-remote` subfolder, unlike COMP-01), `capabilities`
+recovered to `["test","ffmpeg"]` (no `topaz` there — never installed on
+that machine, unrelated), `vncgi-remote-server` updated in Dockge, job
+#35 auto-resolved. **P4-6 (End-to-End Processing Test) is therefore also
+DONE** — the real concurrency check: jobs #38 (CGI-Render GPU0) and #39
+(GPU1) created via `POST /api/jobs` within 6ms of each other, polled
+every 2.5s via `GET /api/jobs`:
+
+```
+#39 gpu1 RUNNING 33% | #38 gpu0 RUNNING 33%
+#39 gpu1 RUNNING 66% | #38 gpu0 RUNNING 66%
+#39 gpu1 COMPLETED 100% | #38 gpu0 COMPLETED 100%
+```
+
+Both jobs RUNNING simultaneously, progressing in lockstep, completing
+together — the exact pass bar P4-3H/P4-6 needed, confirmed on real
+2-GPU hardware, not a unit test or a reasoning-from-code claim.
 
 ### P4-5 prep — DONE, live in production 2026-08-18 (superseded by P4-3H above for the concurrency question — kept for its still-accurate GPU device-targeting detail)
 
