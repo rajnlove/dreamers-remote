@@ -149,7 +149,10 @@ configured allow-list before touching it.
   (h264/hevc/av1) detected but not yet surfaced beyond internal
   `FfmpegInfo` (nothing consumes it yet — added when a concrete need
   shows up, e.g. rejecting an av1_nvenc job on a build that doesn't
-  support it).
+  support it). **P4-7 review**: still no concrete need for it — every
+  real job run so far (P4-2's h264_nvenc, P4-4's Topaz upscale) has
+  worked on every Agent's actual NVENC support without needing to reject
+  anything upfront. Explicitly deferred, not a gap.
 - **P4-2 — FFmpeg job runner, end to end.** DONE. Job schema
   (`type: "ffmpeg"`, structured `input`: sourcePath/outputPath/codec/
   qualityMode/quality/bitrate/preset/resolution/audioCodec/projectId)
@@ -166,15 +169,11 @@ configured allow-list before touching it.
   the exit code is 0 **and** the output file actually exists. Worker.cs
   now dispatches to one of several `IJobRunner`s by job `type`
   (`test`/`ffmpeg`) instead of hardcoding `TestJobRunner` — the seam
-  P4-4's Topaz runner plugs into. **Not yet tested against a real
-  encode** — this dev machine has no `ffmpeg`/`ffprobe` on PATH; tested
-  as far as the environment allows (unit tests for path validation,
-  arg-whitelisting, progress parsing, and the full server-side
-  create→validate→schedule→assign loop against a real temp SQLite DB —
-  see PROJECT_STATUS.md's Tests Performed). **Needs verification on a
-  real workstation** with ffmpeg installed and a real SMB mount before
-  calling this fully proven, the same way P3-7's job loop needed a real
-  Agent redeploy to go from "unit-tested" to "actually proven."
+  P4-4's Topaz runner plugs into. **Verified against a real encode**
+  2026-08-17/18 (real ffmpeg, real NVENC hardware, real UNC/SMB path to
+  TrueNAS, a real production source file — see PROJECT_STATUS.md's Tests
+  Performed) — the one gap this note used to flag is closed; P4-7 found
+  no remaining open item here.
 - **P4-3H — Processing Infrastructure Hardening.** DONE 2026-09-02,
   verified live on real hardware (see `docs/PROJECT_STATUS.md`'s Current
   Milestone/Tests Performed for the full evidence — both COMP-01 and
@@ -219,13 +218,14 @@ configured allow-list before touching it.
     double-booking a GPU. Both Agent and server keep backward-compatible
     legacy singular fields (`runningJob`/`job`/`cancelJobId`) alongside
     the new plural ones, so a mixed fleet (some workstations redeployed,
-    some not) keeps working exactly as before on the old side. **Not yet
-    done**: deploying the rebuilt Agent to COMP-01/CGI-Render and
-    re-running the real concurrent-jobs check that originally surfaced
-    this (two real jobs on CGI-Render's GPU0+GPU1 at once, this time
-    both actually RUNNING simultaneously, not one ASSIGNED-and-waiting) —
-    blocked on remote execution access to those workstations from this
-    session, see `docs/PROJECT_STATUS.md`'s Required User Action.
+    some not) keeps working exactly as before on the old side. **Deployed
+    and re-verified 2026-09-02**: both COMP-01 and CGI-Render redeployed
+    (the latter by the user, relaying this session's exact
+    `git pull`/`dotnet publish`/self-update steps — no remote-exec tool
+    was ever found for this session to use itself, RDP stayed the only
+    reachable path and needed a human), two real jobs confirmed `RUNNING`
+    simultaneously on CGI-Render's GPU0+GPU1 — P4-7 found no remaining
+    open item here.
 - **P4-4 — Topaz as a second, independent worker type.** DONE. Per
   MASTER_PROJECT_SPEC.md §20: its own capability/job type, not
   hardcoded into the scheduler alongside FFmpeg — confirmed true, zero
@@ -259,7 +259,13 @@ configured allow-list before touching it.
   /api/login` once, keep the session cookie, reuse it for every `POST
   /api/jobs`, re-`login` on a 401 (session expired) — and someone needs
   to set `PHP_SERVICE_PASSWORD` in the server's Dockge environment. Not
-  blocking anything else in Phase 4.
+  blocking anything else in Phase 4. **P4-7 review**: explicitly deferred
+  — genuinely outside this repo's scope, not an oversight. User's stated
+  plan (2026-09-02): before wiring the real PHP Projects site, build a
+  simple test upload form (this repo or a throwaway one, not decided
+  yet) to exercise `POST /api/jobs` end-to-end without needing the real
+  PHP codebase ready first. Not started — revisit when the user asks for
+  it specifically, don't build it speculatively.
 - **P4-6 — End-to-End Processing Test.** DONE 2026-09-02 — see P4-3H
   above for the evidence (this milestone's pass bar and P4-3H's
   verification are the same test). Renumbered from the
@@ -276,11 +282,19 @@ configured allow-list before touching it.
   `IJobRunner.Start` → `-gpu N`/`device=N`), unit-tested and confirmed
   against real (single-GPU) hardware. **Concurrent-multi-GPU
   verification: DONE** — see P4-3H above for the evidence.
-- **P4-7 — Phase 4 close/hardening.** NOT STARTED. Final pass once P4-5/
-  P4-6 are both done: re-read every Phase 4 milestone's "Not yet done"/
-  "Open item" notes above, resolve or explicitly defer each one, update
-  CONTAINERS.md/PROJECT_STATUS.md to a clean "Phase 4 complete" state
-  before starting Phase 5.
+- **P4-7 — Phase 4 close/hardening.** DONE 2026-09-02. Re-read every
+  Phase 4 milestone's "Not yet done"/"Open item" note; each is now either
+  resolved (P4-2's real-encode verification and P4-3H's
+  deploy-and-reverify note were both stale text describing already-closed
+  gaps, corrected in place) or explicitly deferred with a stated reason
+  (P4-1's NVENC-surfacing, P4-5's PHP-repo-side work). `CONTAINERS.md`
+  updated: `vncgi-remote-server`'s Environment list was missing
+  `FFMPEG_ALLOWED_ROOTS` (P4-2) and now also lists
+  `PHP_SERVICE_USERNAME`/`PHP_SERVICE_PASSWORD` (P4-5). **Phase 4 is
+  complete** — P4-0 through P4-7 all DONE, nothing left unresolved or
+  silently dropped. Next: Phase 5 (Render Farm) is not started and
+  should not begin without an explicit user request, per this repo's
+  standing rule (see CLAUDE.md).
 
 **Explicitly out of scope for Phase 4**: Houdini/After Effects/Cinema
 4D render (Phase 5), Performance Remote (Phase 6), any UI beyond

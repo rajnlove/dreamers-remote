@@ -43,7 +43,11 @@ ask the user for it if a future check needs to go beyond what's below.
   broadcast to reach the physical LAN (a bridge network can't; see
   `docker-compose.yml` comment).
 - **Environment**: `APP_PORT`, `DATABASE_FILE`, `DATA_ROOT`,
-  `SESSION_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` (see
+  `SESSION_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`,
+  `FFMPEG_ALLOWED_ROOTS` (Phase 4, P4-2 — comma-separated UNC allow-list
+  for ffmpeg/topaz sourcePath/outputPath), `PHP_SERVICE_USERNAME`/
+  `PHP_SERVICE_PASSWORD` (Phase 4, P4-5 — optional non-admin service
+  account for the PHP Projects site; unset password = feature off) (see
   `.env.example`).
 - **Restart policy**: `unless-stopped`.
 - **Dependencies**: none at the container level (SQLite is embedded, not
