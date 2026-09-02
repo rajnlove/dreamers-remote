@@ -9,7 +9,7 @@ import { isAgentCommand, recordCommandResult, takePendingCommand } from "../agen
 import { runScheduler } from "../job/scheduler.js";
 import {
   completeJob,
-  getAssignedJobForWorker,
+  getAssignedJobsForWorker,
   isJobStillRunning,
   startJob,
   updateJobProgress,
@@ -63,24 +63,24 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   recordHeartbeat(workstationId, body.agentVersion, body.os);
   setMetrics(workstationId, body);
 
-  // P3-4/P3-5: the Agent reports progress of whatever job it's currently
-  // running as part of every heartbeat, not a separate endpoint. If that
-  // job is no longer RUNNING server-side (an admin cancelled it via
-  // POST /api/jobs/:id/cancel while the Agent was mid-run), tell it to
-  // stop rather than silently swallowing progress updates for a job the
-  // Agent doesn't know was pulled out from under it.
-  let cancelJobId: number | undefined;
-  if (body.runningJob) {
-    if (isJobStillRunning(body.runningJob.id, workstationId)) {
-      updateJobProgress(
-        body.runningJob.id,
-        workstationId,
-        body.runningJob.progress,
-        body.runningJob.fps ?? null,
-        body.runningJob.etaSeconds ?? null,
-      );
+  // P3-4/P3-5/P4-3H: the Agent reports progress of every job it's
+  // currently running as part of every heartbeat, not a separate
+  // endpoint. runningJobs (plural) is the concurrent-execution shape; an
+  // Agent binary not yet redeployed with that support still sends the
+  // old single runningJob field — normalize both into one list here so
+  // the rest of this handler doesn't care which era of Agent it's
+  // talking to. For any job no longer RUNNING server-side (an admin
+  // cancelled it via POST /api/jobs/:id/cancel while the Agent was
+  // mid-run), tell it to stop rather than silently swallowing progress
+  // updates for a job the Agent doesn't know was pulled out from under
+  // it.
+  const runningJobs = body.runningJobs ?? (body.runningJob ? [body.runningJob] : []);
+  const cancelJobIds: number[] = [];
+  for (const rj of runningJobs) {
+    if (isJobStillRunning(rj.id, workstationId)) {
+      updateJobProgress(rj.id, workstationId, rj.progress, rj.fps ?? null, rj.etaSeconds ?? null);
     } else {
-      cancelJobId = body.runningJob.id;
+      cancelJobIds.push(rj.id);
     }
   }
 
@@ -89,24 +89,30 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   // take it before now, and free up any job whose worker went stale.
   runScheduler();
 
-  // P3-4: only hand out a new job if the Agent isn't already reporting
-  // one in flight — it only runs one at a time for now (see
-  // job/repository.ts's getAssignedJobForWorker comment). If there IS
-  // capacity, this rides the same "no inbound listener" pattern P2-8's
-  // commands already use: deliver in the heartbeat response, not pushed.
-  let job: { id: number; type: string; input: string | null; gpuSlot: number | null } | undefined;
-  if (!body.runningJob) {
-    const assigned = getAssignedJobForWorker(workstationId);
-    if (assigned) {
-      startJob(assigned.id);
-      // P4-5 prep: gpuSlot lets the Agent explicitly pin GPU work to the
-      // slot the scheduler actually reserved (job/scheduler.ts) instead
-      // of leaving device selection to the encoder/model's own default,
-      // which could otherwise let two concurrent jobs land on the same
-      // physical GPU on a multi-GPU workstation.
-      job = { id: assigned.id, type: assigned.type, input: assigned.input, gpuSlot: assigned.gpu_slot };
-    }
-  }
+  // P4-3H: hand out every ASSIGNED job this worker has, not just one —
+  // true concurrent per-GPU-slot execution is now implemented on the
+  // Agent side (see Worker.cs), so a worker with N free GPU slots can be
+  // running N jobs at once. Skip any job already reported as running
+  // this same tick (belt-and-suspenders; shouldn't overlap in practice
+  // since the scheduler never double-assigns a slot). An Agent that
+  // hasn't been redeployed yet only reads the legacy singular `job`
+  // field below (jobs[0]) and, thanks to its own client-side "one job at
+  // a time" gate, simply leaves any extra ASSIGNED job sitting until a
+  // later heartbeat — same as before, no regression.
+  const alreadyRunning = new Set(runningJobs.map((rj) => rj.id));
+  const newlyAssigned = getAssignedJobsForWorker(workstationId).filter((j) => !alreadyRunning.has(j.id));
+  for (const assigned of newlyAssigned) startJob(assigned.id);
+  // P4-5 prep: gpuSlot lets the Agent explicitly pin GPU work to the slot
+  // the scheduler actually reserved (job/scheduler.ts) instead of
+  // leaving device selection to the encoder/model's own default, which
+  // could otherwise let two concurrent jobs land on the same physical
+  // GPU on a multi-GPU workstation.
+  const jobs = newlyAssigned.map((assigned) => ({
+    id: assigned.id,
+    type: assigned.type,
+    input: assigned.input,
+    gpuSlot: assigned.gpu_slot,
+  }));
 
   // P2-8: no inbound listener on the Agent — a pending restart/shutdown
   // rides the next heartbeat response instead of being pushed. See
@@ -116,8 +122,12 @@ agentRouter.post("/heartbeat", requireAgentAuth, (req, res) => {
   res.json({
     ok: true,
     ...(command ? { command } : {}),
-    ...(job ? { job } : {}),
-    ...(cancelJobId !== undefined ? { cancelJobId } : {}),
+    // Legacy singular fields, for an Agent binary not yet redeployed.
+    ...(jobs[0] ? { job: jobs[0] } : {}),
+    ...(cancelJobIds[0] !== undefined ? { cancelJobId: cancelJobIds[0] } : {}),
+    // P4-3H: plural fields, for an Agent with concurrent-execution support.
+    jobs,
+    cancelJobIds,
   });
 });
 

@@ -33,8 +33,8 @@ public sealed class TopazJobRunner : IJobRunner
     private readonly NasCredentialStore _nasCredentialStore;
     private readonly TopazConfigStore _topazConfigStore;
     private readonly object _lock = new();
-    private JobSnapshot? _current;
-    private Process? _process;
+    private readonly Dictionary<int, JobSnapshot> _jobs = new();
+    private readonly Dictionary<int, Process> _processes = new();
 
     public TopazJobRunner(AllowedPathsConfigStore allowedPathsStore, NasCredentialStore nasCredentialStore, TopazConfigStore topazConfigStore)
     {
@@ -43,19 +43,18 @@ public sealed class TopazJobRunner : IJobRunner
         _topazConfigStore = topazConfigStore;
     }
 
-    public bool IsBusy
+    public IReadOnlyList<JobSnapshot> GetSnapshots()
     {
-        get { lock (_lock) return _current is not null && !_current.Finished; }
+        lock (_lock) return _jobs.Values.ToList();
     }
 
-    public JobSnapshot? GetSnapshot()
+    public void Reset(int jobId)
     {
-        lock (_lock) return _current;
-    }
-
-    public void Reset()
-    {
-        lock (_lock) _current = null;
+        lock (_lock)
+        {
+            _jobs.Remove(jobId);
+            _processes.Remove(jobId);
+        }
     }
 
     public void Cancel(int jobId)
@@ -63,9 +62,9 @@ public sealed class TopazJobRunner : IJobRunner
         Process? toKill = null;
         lock (_lock)
         {
-            if (_current is { Finished: false } c && c.JobId == jobId)
+            if (_jobs.TryGetValue(jobId, out var c) && !c.Finished)
             {
-                toKill = _process;
+                _processes.TryGetValue(jobId, out toKill);
             }
         }
         try { toKill?.Kill(entireProcessTree: true); } catch { /* already exited */ }
@@ -75,11 +74,11 @@ public sealed class TopazJobRunner : IJobRunner
     {
         lock (_lock)
         {
-            if (_current is not null && !_current.Finished)
+            if (_jobs.TryGetValue(jobId, out var existing) && !existing.Finished)
             {
-                throw new InvalidOperationException("A job is already running.");
+                throw new InvalidOperationException($"Job {jobId} is already running.");
             }
-            _current = JobSnapshot.Starting(jobId);
+            _jobs[jobId] = JobSnapshot.Starting(jobId);
         }
 
         _ = RunAsync(jobId, inputJson, gpuSlot);
@@ -140,7 +139,7 @@ public sealed class TopazJobRunner : IJobRunner
             psi.EnvironmentVariables["TVAI_MODEL_DATA_DIR"] = topazConfig.ModelDir;
 
             using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-            lock (_lock) { _process = process; }
+            lock (_lock) { _processes[jobId] = process; }
 
             var stderrTail = new List<string>();
             process.ErrorDataReceived += (_, e) =>
@@ -169,15 +168,15 @@ public sealed class TopazJobRunner : IJobRunner
 
             var exitCode = process.ExitCode;
             var outputExists = File.Exists(input.OutputPath);
-            lock (_lock) { _process = null; }
+            lock (_lock) { _processes.Remove(jobId); }
 
             if (exitCode == 0 && outputExists)
             {
                 lock (_lock)
                 {
-                    if (_current is { } c && c.JobId == jobId)
+                    if (_jobs.TryGetValue(jobId, out var c))
                     {
-                        _current = c with { Progress = 100, Finished = true, Success = true };
+                        _jobs[jobId] = c with { Progress = 100, Finished = true, Success = true };
                     }
                 }
             }
@@ -190,21 +189,21 @@ public sealed class TopazJobRunner : IJobRunner
                     : $"topaz ffmpeg exited 0 but output file was not created: \"{input.OutputPath}\"";
                 lock (_lock)
                 {
-                    if (_current is { } c && c.JobId == jobId)
+                    if (_jobs.TryGetValue(jobId, out var c))
                     {
-                        _current = c with { Finished = true, Success = false, Error = Truncate(error) };
+                        _jobs[jobId] = c with { Finished = true, Success = false, Error = Truncate(error) };
                     }
                 }
             }
         }
         catch (Exception ex)
         {
-            lock (_lock) { _process = null; }
             lock (_lock)
             {
-                if (_current is { } c && c.JobId == jobId)
+                _processes.Remove(jobId);
+                if (_jobs.TryGetValue(jobId, out var c))
                 {
-                    _current = c with { Finished = true, Success = false, Error = Truncate(ex.Message) };
+                    _jobs[jobId] = c with { Finished = true, Success = false, Error = Truncate(ex.Message) };
                 }
             }
         }
@@ -228,9 +227,9 @@ public sealed class TopazJobRunner : IJobRunner
 
         lock (_lock)
         {
-            if (_current is { } c && c.JobId == jobId && !c.Finished)
+            if (_jobs.TryGetValue(jobId, out var c) && !c.Finished)
             {
-                _current = c with
+                _jobs[jobId] = c with
                 {
                     Progress = progress ?? c.Progress,
                     Fps = update.Fps ?? c.Fps,

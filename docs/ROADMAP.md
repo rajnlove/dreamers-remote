@@ -175,15 +175,52 @@ configured allow-list before touching it.
   real workstation** with ffmpeg installed and a real SMB mount before
   calling this fully proven, the same way P3-7's job loop needed a real
   Agent redeploy to go from "unit-tested" to "actually proven."
-- **P4-3 — PHP integration point.** Nothing to build here per the
-  user's architecture decision — the PHP Projects site calls
-  `POST /api/jobs` directly with `type: "ffmpeg"` (session-cookie
-  auth, same as every other `/api/jobs` caller today). **Open item**:
-  PHP calling a session-cookie-authenticated endpoint implies either a
-  service account it logs in as, or a separate server-to-server auth
-  mechanism this repo doesn't have yet — not blocking P4-1/P4-2 (which
-  don't care who the caller is), but needs an answer before PHP can
-  actually call it for real.
+- **P4-3H — Processing Infrastructure Hardening.** IN PROGRESS. Inserted
+  2026-09-02 ahead of the old P4-3/P4-5 (renumbered P4-5/P4-6 below) after
+  live testing on the real production system surfaced three real gaps in
+  the job engine's execution model itself — not new features, fixes to
+  make the P4-1/P4-2/P4-4 machinery actually trustworthy under real
+  concurrent/failure conditions:
+  - **Stale/orphan RUNNING job recovery.** `failStaleRunningJobs()` used
+    to only check the *worker's* heartbeat freshness — a job whose
+    specific Agent-side execution died (e.g. the Agent process restarted
+    mid-job) while the worker kept heartbeating fine would sit RUNNING
+    forever, invisible to that check. Real incident: job #35 on
+    CGI-Render, 2026-09-02 (see `docs/PROJECT_STATUS.md`). Fixed with a
+    per-job execution lease (`jobs.last_progress_at`, refreshed by
+    `startJob`/`updateJobProgress`) — a RUNNING job is now failed with
+    `STALE_EXECUTION` if its own lease expires (30s), independent of
+    whether the worker itself is still online.
+  - **Capability re-registration after Agent restart.** `WorkerCapabilities.NasHealth`/`TopazInfo`
+    were `Lazy<T>` — computed once, ever, per process lifetime. A NAS
+    check that failed transiently right at Agent startup (network/SMB not
+    fully up yet) stayed "unhealthy" forever after, silently dropping
+    `ffmpeg`/`topaz` from `capabilities` until a human noticed and
+    restarted the service again. Now re-checked every 2 minutes instead
+    of once.
+  - **True concurrent execution per GPU slot.** DONE, unit-tested (113/113
+    Agent tests green), **verified live against real concurrent hardware**
+    (CGI-Render, two RTX 3090s, 2026-09-02 — see
+    `docs/PROJECT_STATUS.md`'s Tests Performed). This was P3-4/P4-2's
+    original "one job at a time across the whole Agent" simplification —
+    confirmed live to mean a job assigned to a second free GPU slot on a
+    multi-GPU workstation just sat ASSIGNED, never actually running
+    concurrently with the first, even though the scheduler had correctly
+    reserved two independent slots. Each `IJobRunner` (Test/Ffmpeg/Topaz)
+    now tracks every job it's running independently by job id instead of
+    a single shared slot; Worker.cs no longer gates starting a new job on
+    any global "busy" flag — the server's per-(worker, gpu_slot) busy
+    tracking (job/scheduler.ts, unchanged) is the sole authority on not
+    double-booking a GPU. Both Agent and server keep backward-compatible
+    legacy singular fields (`runningJob`/`job`/`cancelJobId`) alongside
+    the new plural ones, so a mixed fleet (some workstations redeployed,
+    some not) keeps working exactly as before on the old side. **Not yet
+    done**: deploying the rebuilt Agent to COMP-01/CGI-Render and
+    re-running the real concurrent-jobs check that originally surfaced
+    this (two real jobs on CGI-Render's GPU0+GPU1 at once, this time
+    both actually RUNNING simultaneously, not one ASSIGNED-and-waiting) —
+    blocked on remote execution access to those workstations from this
+    session, see `docs/PROJECT_STATUS.md`'s Required User Action.
 - **P4-4 — Topaz as a second, independent worker type.** DONE. Per
   MASTER_PROJECT_SPEC.md §20: its own capability/job type, not
   hardcoded into the scheduler alongside FFmpeg — confirmed true, zero
@@ -197,20 +234,38 @@ configured allow-list before touching it.
   workstation (COMP-01): real Topaz Video AI, real `tvai_up` upscale,
   confirmed working under both an interactive session and a
   LocalSystem-equivalent context (no license/login blocker, unlike
-  P4-3's NAS problem). See `docs/PROJECT_STATUS.md`'s Current Milestone
-  and Tests Performed for full detail.
-- **P4-5 — Multi-GPU verification with real workloads.** IN PROGRESS.
-  P3's scheduler already assigns independent GPU slots (`workstationId`
-  + `gpuIndex`) rather than treating a multi-GPU machine as one unit;
-  this milestone is about confirming that holds up for two concurrent
-  real FFmpeg/Topaz jobs on the same 2-GPU box (e.g. `CGI-Render`), not
-  new scheduler work. **Groundwork done**: neither job type actually
-  told the encoder/model which GPU to target until now — `gpu_slot` is
-  threaded end-to-end (heartbeat response → `AssignedJob` →
+  P4-5's NAS problem below). See `docs/PROJECT_STATUS.md`'s Current
+  Milestone and Tests Performed for full detail.
+- **P4-5 — PHP Projects → Job Engine Integration.** Renumbered from the
+  old P4-3 2026-09-02 (no scope change). Nothing to build here per the
+  user's architecture decision — the PHP Projects site calls
+  `POST /api/jobs` directly with `type: "ffmpeg"` (session-cookie
+  auth, same as every other `/api/jobs` caller today). **Open item**:
+  PHP calling a session-cookie-authenticated endpoint implies either a
+  service account it logs in as, or a separate server-to-server auth
+  mechanism this repo doesn't have yet — not blocking P4-1/P4-2 (which
+  don't care who the caller is), but needs an answer before PHP can
+  actually call it for real.
+- **P4-6 — End-to-End Processing Test.** IN PROGRESS. Renumbered from the
+  old P4-5 ("Multi-GPU verification with real workloads") 2026-09-02 —
+  same goal, now correctly sequenced *after* P4-3H instead of before it,
+  since live testing 2026-09-02 proved the old Agent literally could not
+  run two jobs concurrently regardless of GPU-slot assignment (P4-3H's
+  finding). P3's scheduler already assigns independent GPU slots
+  (`workstationId` + `gpuIndex`) rather than treating a multi-GPU machine
+  as one unit; this milestone confirms that holds up end-to-end for two
+  concurrent real FFmpeg/Topaz jobs on the same 2-GPU box (`CGI-Render`),
+  now that P4-3H makes concurrent execution possible at all. `gpu_slot`
+  is threaded end-to-end (heartbeat response → `AssignedJob` →
   `IJobRunner.Start` → `-gpu N`/`device=N`), unit-tested and confirmed
   against real (single-GPU) hardware. **Not yet done**: the actual
-  concurrent-multi-GPU verification, which needs `CGI-Render` — see
+  concurrent-multi-GPU verification — see P4-3H above and
   `docs/PROJECT_STATUS.md`'s Required User Action.
+- **P4-7 — Phase 4 close/hardening.** NOT STARTED. Final pass once P4-5/
+  P4-6 are both done: re-read every Phase 4 milestone's "Not yet done"/
+  "Open item" notes above, resolve or explicitly defer each one, update
+  CONTAINERS.md/PROJECT_STATUS.md to a clean "Phase 4 complete" state
+  before starting Phase 5.
 
 **Explicitly out of scope for Phase 4**: Houdini/After Effects/Cinema
 4D render (Phase 5), Performance Remote (Phase 6), any UI beyond

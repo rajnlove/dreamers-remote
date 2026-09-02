@@ -27,7 +27,8 @@ public class TopazJobRunnerTests
     {
         for (var i = 0; i < 50; i++)
         {
-            if (runner.GetSnapshot() is { Finished: true } s && s.JobId == jobId) return s;
+            var s = runner.GetSnapshots().SingleOrDefault(x => x.JobId == jobId);
+            if (s is { Finished: true }) return s;
             await Task.Delay(50);
         }
         throw new TimeoutException("Runner never reported a finished snapshot");
@@ -85,26 +86,45 @@ public class TopazJobRunnerTests
     }
 
     [Fact]
-    public void StartWhileAlreadyBusyThrows()
+    public void StartWithTheSameJobIdTwiceThrows()
     {
         var runner = NewRunner("\\\\nas\\Projects");
+        var input = """{"sourcePath":"\\\\nas\\Projects\\does-not-exist.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
+
+        runner.Start(1, input, null);
+        Assert.Throws<InvalidOperationException>(() => runner.Start(1, input, null));
+    }
+
+    // P4-3H: two different job ids on the same runner instance must be
+    // tracked independently -- see FfmpegJobRunnerTests' identical case
+    // for the full rationale (this is what lets one ffmpeg + one topaz,
+    // or two topaz jobs, actually run concurrently on two GPU slots).
+    [Fact]
+    public async Task StartTwoDifferentJobIdsDoesNotThrowAndBothResolveIndependently()
+    {
+        var runner = NewRunner(); // deny-all -- both fail fast, which is fine for this test
         var input = """{"sourcePath":"\\\\nas\\Projects\\in.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
         runner.Start(1, input, null);
-        Assert.Throws<InvalidOperationException>(() => runner.Start(2, input, null));
+        runner.Start(2, input, null); // must not throw -- old design would have
+
+        var f1 = await WaitForFinishedAsync(runner, 1);
+        var f2 = await WaitForFinishedAsync(runner, 2);
+        Assert.False(f1.Success);
+        Assert.False(f2.Success);
     }
 
     [Fact]
-    public async Task ResetAfterFinishingAllowsStartingAnotherJob()
+    public async Task ResetAfterFinishingAllowsStartingAnotherJobWithTheSameId()
     {
         var runner = NewRunner(); // deny-all -- fails fast, which is fine for this test
         var input = """{"sourcePath":"\\\\nas\\Projects\\in.mov","outputPath":"\\\\nas\\Projects\\out.mp4","model":"iris-2","scale":2,"codec":"h264_nvenc","qualityMode":"cq"}""";
 
         runner.Start(1, input, null);
         await WaitForFinishedAsync(runner, 1);
-        runner.Reset();
+        runner.Reset(1);
 
-        runner.Start(2, input, null);
-        Assert.True(runner.IsBusy);
+        runner.Start(1, input, null);
+        Assert.NotNull(runner.GetSnapshots().SingleOrDefault(s => s.JobId == 1));
     }
 }

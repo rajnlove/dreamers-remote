@@ -39,6 +39,10 @@ export interface Job {
   // alongside `progress` -- null if this job type never reports them.
   fps: number | null;
   eta_seconds: number | null;
+  // P4-3H: last time this specific job's execution was confirmed alive
+  // (startJob()/updateJobProgress()) -- see failStaleRunningJobs(). Null
+  // until the job has actually started.
+  last_progress_at: string | null;
 }
 
 export interface JobInput {

@@ -69,7 +69,17 @@ export interface AgentMetricsPayload {
   // endpoint, same "everything rides the heartbeat" pattern as P2-8).
   // P4-2: fps/etaSeconds are optional -- only FFmpeg-style jobs report
   // them (see agent's FfmpegJobRunner), the "test" job type doesn't.
+  // P4-3H: legacy single-job field — still accepted from an
+  // Agent binary that hasn't been redeployed with concurrent-execution
+  // support yet. See runningJobs below and api/agent.ts's heartbeat
+  // handler, which merges both into one list.
   runningJob?: { id: number; progress: number; fps?: number; etaSeconds?: number };
+  // P4-3H: every job this Agent currently has in flight, one per active
+  // GPU slot (or a single entry for a CPU-only worker) — the array
+  // counterpart of runningJob above, sent by an Agent redeployed with
+  // true concurrent per-GPU-slot execution instead of the old "one job
+  // across the whole Agent" limitation. See docs/ROADMAP.md's P4-3H.
+  runningJobs?: Array<{ id: number; progress: number; fps?: number; etaSeconds?: number }>;
 }
 
 export interface CachedMetrics extends AgentMetricsPayload {

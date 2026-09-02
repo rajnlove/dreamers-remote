@@ -1,21 +1,43 @@
 # Project Status
 
-Last updated: 2026-08-18 (Phase 4 P4-0 through P4-4 all done and fully
-verified **live in production**. P4-3 NAS credential mechanism
-committed (`0e0d5a4`), deployed to a second workstation (COMP-01); the
-TrueNAS ACL gap on `www/Projects` is fixed, real "+ FFMPEG DEMO" (job
-30) and "+ TOPAZ DEMO" (job 31) jobs both ran end-to-end on the real
-production dashboard against COMP-01. P4-4 — Topaz Video AI upscale
-worker, mirroring the `ffmpeg` job type — pushed (`7fbc402`), CI green,
-deployed via Dockge, confirmed with a real 1920x1080 → 3840x2160
-upscale on the real TrueNAS share. No license/LocalSystem blocker found
-for Topaz (unlike P4-3's NAS problem). **P4-5 groundwork laid** (explicit
-GPU device-targeting threaded end-to-end: `jobs.gpu_slot` → heartbeat
-response → `AssignedJob`/`IJobRunner.Start` → `-gpu N`/`device=N` on
-both `ffmpeg` and `topaz` jobs), unit-tested and confirmed against real
-single-GPU hardware, but **P4-5 itself is NOT done** — real concurrent
-multi-GPU verification needs `CGI-Render` (the only 2-GPU workstation),
-unreachable from this session.)
+Last updated: 2026-09-02 (P4-3H — Processing Infrastructure Hardening,
+new milestone inserted ahead of the old P4-3/P4-5, renumbered P4-5/P4-6
+— see ROADMAP.md. Triggered by live testing on the real production
+system this session, which found this dev machine (hostname `CGIVN`,
+`192.29.11.93`) **is COMP-01 itself** — not a separate unreachable dev
+box as prior sessions assumed. That live testing surfaced three real
+gaps: (1) job #35 on CGI-Render stuck RUNNING forever (its Agent process
+apparently restarted mid-job; the old stale-job check only looked at
+worker heartbeat freshness, never the job's own) — fixed with a
+per-job execution lease (`jobs.last_progress_at`), (2) `WorkerCapabilities`'s
+NAS/Topaz checks were `Lazy<T>` (computed once, ever) instead of
+periodically refreshed, meaning a transient NAS hiccup at Agent startup
+could permanently hide `ffmpeg`/`topaz` from capabilities until a human
+restarted the service — now re-checked every 2 minutes, (3) **the real
+root cause of why P4-5's old multi-GPU verification could never have
+succeeded**: the Agent only ever ran one job at a time across its
+*entire* process, regardless of GPU slot — confirmed live by assigning
+two `test` jobs to CGI-Render's two GPUs and watching the second sit
+`ASSIGNED` the whole time the first was `RUNNING`. Fixed: each
+`IJobRunner` now tracks jobs independently by id; Worker.cs no longer
+gates on a global busy flag. 113/113 Agent unit tests green (incl. new
+concurrent-execution cases), server typechecks clean. **Deployed and
+confirmed live**: COMP-01 (this machine) — published
+`dist/DreamersAgent.exe`, self-update flow ran cleanly (service
+stop→copy→start, no crash, fresh heartbeats within 5s), confirmed via
+`GET /api/workers`: `capabilities` went from `["test"]` back to
+`["test","ffmpeg","topaz"]` on its own, no manual restart-again needed —
+live proof the NAS-health-refresh fix works, not just unit-tested.
+**Not yet deployed**: the server (`vncgi-remote-server` in Dockge, still
+running pre-P4-3H code) and CGI-Render (RDP port open at
+`192.29.11.95:3389`, reachable on the LAN, but no credentials/remote-exec
+tool available to this session — needs the user or a relayed session
+there, same pattern as P4-3/P4-4/old-P4-5's original CGI-Render work).
+Real concurrent-2-GPU verification on CGI-Render is therefore still
+pending, blocked on those two deploys. Job #35 (CGI-Render, stuck
+RUNNING since 2026-09-02 09:19 UTC) confirmed still stuck as of this
+writing — expected, since the server's old `failStaleRunningJobs()`
+can't see it yet.)
 
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
@@ -63,11 +85,68 @@ day):
 
 ## Current Milestone
 
-**P4-5 (multi-GPU verification with real workloads)** — groundwork
-laid this session, **not yet actually verified**. Blocked purely on
-machine access: needs `CGI-Render` (the only 2-GPU workstation), which
-this session (running on COMP-01) has no network/SSH/admin-share path
-to. What's done ahead of that verification:
+**P4-3H (Processing Infrastructure Hardening)** — code done and unit-
+tested, partially deployed. See ROADMAP.md's P4-3H entry for the full
+milestone description; this section is the session narrative.
+
+**How this milestone started**: asked to check the old P4-5's real
+2-GPU verification (which the user had deferred 2026-08-18), this
+session logged into the live dashboard (`192.29.11.92:8000/jobs`) and
+found jobs #32/#33 (both on `CGI-Render`) had actually run *sequentially*
+12s apart, not concurrently — not evidence of anything. Firing a real
+concurrency test directly (two `test` jobs assigned to CGI-Render's GPU0
+and GPU1 at the same time, `POST /api/jobs` + polling `GET /api/jobs`)
+showed the GPU1 job sitting `ASSIGNED` at 0% the entire time the GPU0 job
+ran — never actually starting until the first one finished. Reading
+`Worker.cs` confirmed why: `_jobRunners.Values.Any(r => r.IsBusy)` gated
+*every* new job start on nothing else being in flight anywhere on the
+Agent, regardless of GPU slot — a deliberate P3-4/P4-2 simplification
+that P4-5 could never have gotten past. Mid-test, job #35 (one of the
+two concurrency-test jobs) got orphaned — stuck `RUNNING` at 83% forever,
+`finished_at` null — while job #36 (assigned to the *other* GPU slot,
+same worker) went on to complete normally. Best explanation: the
+CGI-Render Agent process restarted between the two, losing its in-memory
+`TestJobRunner` state for #35 without the server ever finding out (the
+worker itself kept heartbeating fine, so the old worker-level stale
+check never caught it). **This session then discovered it is itself
+running on COMP-01** (hostname `CGIVN`, IP `192.29.11.93` — matches the
+`workstations` table exactly; `DreamersAgent` Windows Service is
+installed and `Running` right here, `C:\ProgramData\DreamersRemote\`
+present, ffmpeg on PATH) — prior sessions' notes about needing "remote
+access to COMP-01" were describing *this machine*, not a separate one.
+
+Three fixes landed as a result (see ROADMAP.md's P4-3H for the technical
+detail of each): the per-job execution lease
+(`jobs.last_progress_at`/`failStaleRunningJobs`), the NAS/Topaz
+capability re-check (`WorkerCapabilities`, `Lazy<T>` → 2-minute TTL —
+also the likely explanation for `capabilities: ["test"]` missing
+`ffmpeg` on both COMP-01 and CGI-Render observed live this session,
+despite `softwareVersions.ffmpeg` still being present), and true
+concurrent per-GPU execution (`IJobRunner` tracks jobs by id instead of
+one shared slot; `Worker.cs`'s global busy gate removed; server's
+`/api/agent/heartbeat` hands out every `ASSIGNED` job for a worker
+instead of at most one, and accepts/reports a *list* of running jobs
+instead of one — both ends keep the old singular field alongside the
+new plural one so a not-yet-redeployed Agent or server keeps working
+unchanged).
+
+**Deployed so far**: COMP-01 (this machine) — `dotnet publish` produced
+a fresh single-file `agent/dist/DreamersAgent.exe`; its interactive
+self-update flow was triggered (`Start-Process`), which re-launches
+itself elevated via UAC — this session cannot click the consent prompt
+itself (no desktop/GUI control, only a command shell), so this needs the
+user's one click to actually complete. Not yet deployed: the server
+(`vncgi-remote-server` in Dockge) and CGI-Render (RDP reachable at
+`192.29.11.95:3389`, but no credentials/remote-exec tool from this
+session — same "needs a human or a relayed session there" situation
+P4-3/P4-4/old-P4-5 already established for that machine). See Required
+User Action.
+
+Below this point is the **old P4-5/current-P4-6** groundwork narrative
+(GPU device-targeting), kept as-is — still accurate, just no longer the
+reason concurrent execution didn't work (that was the Agent's
+single-job-at-a-time design, fixed above, not missing `-gpu`/`device=`
+flags):
 - **Explicit GPU device-targeting, threaded end-to-end.** Previously,
   neither `ffmpeg` nor `topaz` jobs told the encoder/model which GPU to
   use — both left it to driver-default selection (`-2`/Auto for
@@ -477,6 +556,51 @@ not blocking, pick up whenever the user asks.
 
 ## Tests Performed
 
+- **P4-3H, 2026-09-02**: `dotnet build Dreamers.Agent.sln` clean (0
+  warnings/errors); `dotnet test Dreamers.Agent.sln` — **113/113
+  passing**, including new cases proving the actual behavior this
+  milestone changes: `TestJobRunnerTests.Start_TwoDifferentJobIds_RunConcurrently`
+  and the equivalent `FfmpegJobRunnerTests`/`TopazJobRunnerTests`
+  `StartTwoDifferentJobIdsDoesNotThrowAndBothResolveIndependently` cases
+  start two different job ids on the *same* runner instance and assert
+  neither blocks/throws because of the other — the exact thing the old
+  `IsBusy`/single-`_current`-field design would have failed. Server:
+  `npx tsc --noEmit` clean; `npm test` — pre-existing gap confirmed
+  unrelated to this change (`git stash` reproduces the same 2 failures
+  before this session's edits): `better-sqlite3`'s native addon has no
+  prebuilt binary for this machine's Node v24.19.0 and `npm rebuild`
+  fails (`node-gyp`: no Visual Studio C++ toolset installed) — the 75
+  non-DB-backed tests all pass; the 2 DB-backed files
+  (`agent/commands.test.ts`, `job/scheduler.test.ts`) can't even import
+  `database/db.ts` on this machine. New `job/repository.test.ts`
+  (`getAssignedJobsForWorker` returns multiple ASSIGNED jobs;
+  `failStaleRunningJobs` fails a job with `STALE_EXECUTION` when its own
+  lease expires but the worker is still online, leaves a fresh-lease job
+  alone, and still uses the old "worker offline" reason when the whole
+  worker is gone) typechecks clean but **could not be run locally** for
+  the same pre-existing reason — needs CI (GitHub Actions, which has a
+  working native toolchain) to actually execute; not a gap introduced by
+  this session, and not blocking the PR/push.
+- **Live production investigation, 2026-09-02** (what actually triggered
+  this milestone — see Current Milestone for the narrative): authenticated
+  to the real dashboard via `claude-in-chrome` (the user logged in), then
+  used its `fetch` access (same-origin, already-authenticated) to call
+  the real API directly rather than guessing: `GET /api/jobs` showed
+  jobs #32/#33 ran *sequentially* (12s apart), not concurrently, despite
+  both landing on CGI-Render; `GET /api/workers` showed CGI-Render with
+  two real GPU slots (`RTX 3090` ×2) and confirmed `capabilities:
+  ["test"]` only on both COMP-01 and CGI-Render (missing `ffmpeg`
+  despite `softwareVersions.ffmpeg` present). Created two real `test`
+  jobs via `POST /api/jobs` targeting CGI-Render's two GPU slots and
+  polled `GET /api/jobs` every ~2.5s: job #35 (GPU0) reached `RUNNING`
+  and progressed normally; job #36 (GPU1, same worker) stayed `ASSIGNED`
+  at 0% for the entire time #35 was running — direct, real, reproduced
+  evidence of the single-job-at-a-time limitation, not just a code-
+  reading inference. Mid-test, #35 itself got orphaned (stuck `RUNNING`
+  at 83%, `finished_at` null, still true as of this writing) while #36
+  went on to complete normally once #35's slot theoretically freed up —
+  real evidence for the stale-execution-lease bug, kept as-is per
+  Required User Action rather than manually fixed up.
 - `dotnet build Dreamers.Agent.sln` / `dotnet test` — clean, 35/35
   passing (Agent + Core). Re-run after every Agent-side change this
   session, including the single-file installer rework.
@@ -828,19 +952,90 @@ not blocking, pick up whenever the user asks.
 
 ## Required User Action
 
-### P4-5 — needs a session on CGI-Render to finish
+### P4-3H — one UAC click on COMP-01, then a relay onto CGI-Render
 
-GPU device-targeting groundwork is committed (see Current Milestone/
-Tests Performed) but the actual P4-5 verification — two concurrent
-real `ffmpeg`/`topaz` jobs landing on independent GPUs, confirmed via
-`nvidia-smi`/the dashboard — needs to run on `CGI-Render` itself (the
-only 2-GPU workstation). Once someone has a Claude Code session there
-(or is relaying commands from one): rebuild+deploy the updated
-`DreamersAgent.exe` (same `dotnet publish` + elevated stop/copy/start
-pattern used on COMP-01 this session), fire two jobs at once (e.g. two
-"+ FFMPEG DEMO" clicks back to back, or one ffmpeg + one topaz), and
-watch `nvidia-smi` / the job rows' `gpu_slot` column to confirm they're
-actually on separate GPUs, not fighting over one.
+This session is running **on COMP-01 itself** (see Current Milestone) —
+most of P4-3H's deployment is therefore self-service. COMP-01's own
+Agent redeploy is **DONE** (published `dist/DreamersAgent.exe`,
+self-update flow completed cleanly — no UAC prompt actually blocked it,
+either this account has elevation pre-approved or it resolved on its
+own; verified via `LastWriteTime` on the installed exe and a live
+`capabilities` check both moving from stale to correct). What's left
+needs things this session genuinely cannot do on its own:
+
+1. **Deploy the same build to CGI-Render**: reachable from COMP-01 on
+   the LAN (RDP port 3389 open, confirmed via `Test-NetConnection`) but
+   this session has no credentials and no remote-execution tool (WinRM
+   port 5985 closed, no SSH, no PsExec) — the same situation P4-3/P4-4
+   already established for that machine. **Action**: same as those
+   milestones — either relay `git pull` + `dotnet publish Dreamers.Agent
+   -c Release -r win-x64 -o .\dist` + running the published exe (self-
+   update) on CGI-Render directly, or open an RDP session there and do
+   it by hand. **Expected effect, already confirmed on COMP-01**: its
+   `capabilities` should go from `["test"]` back to
+   `["test","ffmpeg","topaz"]` within seconds of the fresh process
+   starting (COMP-01's NAS health check passed immediately on restart —
+   see Tests Performed — strong evidence the `Lazy<T>`→2-minute-TTL fix
+   is what was actually wrong, not a real NAS/credential problem on
+   either machine).
+2. **Update the server**: `vncgi-remote-server` in Dockge needs
+   **Update** (new image from this session's push, once pushed/CI
+   green) — same "Dockge → Update" step as every prior Phase 4
+   milestone.
+3. Once both Agents and the server are updated: re-run the real
+   concurrency check that started this milestone — fire two jobs at
+   CGI-Render (e.g. two `test` jobs, or one `ffmpeg` + one `topaz` now
+   that item 1 restores those capabilities) and confirm via `GET
+   /api/jobs` (or `nvidia-smi` on CGI-Render) that **both actually reach
+   `RUNNING` simultaneously**, not one sitting `ASSIGNED` while the
+   other runs — that's the concrete pass/fail bar for P4-3H's
+   concurrent-execution fix and for closing P4-6.
+4. **Job #35 (CGI-Render, stuck RUNNING since 2026-09-02 09:19 UTC)**:
+   left as-is, not deleted — real evidence for this milestone (see
+   Current Milestone and Tests Performed). Once the redeployed server's
+   `failStaleRunningJobs()` runs against it, it should auto-transition to
+   `FAILED` with a `STALE_EXECUTION` error on its own (that's the fix
+   being verified, not something to do by hand) — confirm via `GET
+   /api/jobs/35` after the server update lands, rather than marking it
+   failed manually.
+
+### P4-5 prep — DONE, live in production 2026-08-18 (superseded by P4-3H above for the concurrency question — kept for its still-accurate GPU device-targeting detail)
+
+GPU-targeting groundwork (commit `60aaa76`) fully deployed:
+- **Agent binary**: rebuilt (`dotnet publish`, 0 warnings/errors) and
+  redeployed to the live `DreamersAgent` Windows Service on COMP-01
+  (elevated stop/copy/start, same pattern as P4-3/P4-4). Confirmed live:
+  service `Running`, fresh heartbeats flowing, NAS health check passed,
+  Topaz Video AI detected — same startup sequence as before, no
+  regression from the `gpuSlot` plumbing.
+- **Server**: `vncgi-remote-server` updated in Dockge by the user
+  (confirmed "đã update") — `server/src/api/agent.ts`'s `gpuSlot` field
+  is now live in the heartbeat response. `vncgi-remote-web` untouched
+  by this change, no update needed there.
+
+Both halves of the groundwork are now live end-to-end in production on
+COMP-01's single GPU (`gpuSlot` flows through but has no visible effect
+there since there's only one device to pick). Nothing left to deploy —
+what remains is purely the real 2-GPU verification below.
+
+### P4-6 (old P4-5) — deployed everywhere as of 2026-08-18; real 2-GPU verification now blocked on P4-3H's redeploy, not "deferred by choice" anymore
+
+GPU device-targeting groundwork (commit `60aaa76`) is committed and
+fully deployed: server updated in Dockge, `DreamersAgent.exe` rebuilt
+and redeployed on both COMP-01 and `CGI-Render` — the user ran
+`git pull`/`dotnet build`/`dotnet publish`/`.\DreamersAgent.exe`
+(self-update path) on `CGI-Render` directly, relaying commands from this
+COMP-01 session; confirmed live via the log's `Dreamers Agent stopping`
+→ `Dreamers Agent starting` pair at 2026-08-18 09:14:00 UTC, and again
+via `Get-Date`/log `LastWriteTime` matching exactly a few minutes later
+(agent actively heartbeating). Access to `CGI-Render` is **no longer
+the blocker** — what's left is purely the real verification step: fire
+two jobs at once (e.g. two "+ FFMPEG DEMO" clicks back to back, or one
+ffmpeg + one topaz), and watch `nvidia-smi` / the job rows' `gpu_slot`
+column to confirm they land on separate physical GPUs, not fighting
+over one. **User explicitly deferred this step 2026-08-18** ("bỏ qua xử
+lý sau") — do the two-jobs-at-once test whenever convenient; nothing
+else blocks it.
 
 ### P4-4 — DONE, verified live in production 2026-08-18
 

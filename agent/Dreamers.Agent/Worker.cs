@@ -174,14 +174,17 @@ public sealed class Worker : BackgroundService
             {
                 try
                 {
-                    var runningSnapshot = _jobRunners.Values
-                        .Select(r => r.GetSnapshot())
-                        .FirstOrDefault(s => s is { Finished: false });
-                    var runningJob = runningSnapshot is { } running
-                        ? new RunningJobStatus(running.JobId, running.Progress, running.Fps, running.EtaSeconds)
-                        : null;
+                    // P4-3H: every job any runner currently has in flight —
+                    // was "the first non-finished snapshot" (singular) back
+                    // when an Agent only ever ran one job at a time. See
+                    // IJobRunner's doc comment.
+                    var runningJobs = _jobRunners.Values
+                        .SelectMany(r => r.GetSnapshots())
+                        .Where(s => !s.Finished)
+                        .Select(s => new RunningJobStatus(s.JobId, s.Progress, s.Fps, s.EtaSeconds))
+                        .ToList();
 
-                    var heartbeat = await _serverClient.SendHeartbeatAsync(credential, snapshot, runningJob, stoppingToken);
+                    var heartbeat = await _serverClient.SendHeartbeatAsync(credential, snapshot, runningJobs, stoppingToken);
                     _logger.LogDebug("Heartbeat sent.");
 
                     if (heartbeat.Command is not null)
@@ -189,26 +192,28 @@ public sealed class Worker : BackgroundService
                         await HandlePendingCommandAsync(credential, heartbeat.Command, stoppingToken);
                     }
 
-                    // P3-5: the job we're running was cancelled server-side
+                    // P3-5: a job we're running was cancelled server-side
                     // (POST /api/jobs/:id/cancel) — stop it. Nothing to
                     // report back; the server is already authoritative.
-                    // Broadcast to every runner (harmless no-op on the ones
-                    // not actually running this jobId) rather than needing
-                    // to know which runner owns it.
-                    if (heartbeat.CancelJobId is { } cancelId)
+                    // Broadcast each id to every runner (harmless no-op on
+                    // the ones not actually running that jobId) rather than
+                    // needing to know which runner owns which job.
+                    foreach (var cancelId in heartbeat.CancelJobIds)
                     {
                         _logger.LogInformation("Job {JobId} was cancelled — stopping", cancelId);
                         foreach (var runner in _jobRunners.Values) runner.Cancel(cancelId);
                     }
 
-                    // P3-4/P4-2: only one job at a time across ALL runners
-                    // (see TestJobRunner's doc comment) — if the server
-                    // assigned one while something is still busy, it just
-                    // stays ASSIGNED server-side and gets handed to us
-                    // again on a later heartbeat once we have capacity, per
-                    // job/repository.ts's getAssignedJobForWorker.
-                    var anyBusy = _jobRunners.Values.Any(r => r.IsBusy);
-                    if (heartbeat.Job is { } assignedJob && !anyBusy)
+                    // P4-3H: start every newly assigned job — no more
+                    // "only one job across the whole Agent" gate (P3-4/
+                    // P4-2's original simplification). The server is the
+                    // sole authority on not double-booking a GPU slot
+                    // (job/scheduler.ts's per-slot busy tracking already
+                    // covers that), so each runner just needs to track
+                    // the jobs it's given independently by id — see
+                    // IJobRunner's doc comment. Confirmed against real
+                    // concurrent 2-GPU hardware (CGI-Render) 2026-09-02.
+                    foreach (var assignedJob in heartbeat.Jobs)
                     {
                         if (_jobRunners.TryGetValue(assignedJob.Type, out var runner))
                         {
@@ -245,11 +250,14 @@ public sealed class Worker : BackgroundService
                 }
 
                 // Independent of whether the heartbeat above succeeded —
-                // a finished job should get reported even if, say, this
-                // exact tick's heartbeat call happened to fail.
+                // every finished job should get reported even if, say,
+                // this exact tick's heartbeat call happened to fail.
+                // P4-3H: a runner can have more than one finished-but-
+                // not-yet-reported job now (e.g. two ffmpeg jobs on two
+                // GPUs finishing around the same tick).
                 foreach (var runner in _jobRunners.Values)
                 {
-                    if (runner.GetSnapshot() is { Finished: true } finished)
+                    foreach (var finished in runner.GetSnapshots().Where(s => s.Finished))
                     {
                         await ReportFinishedJobAsync(credential, runner, finished, stoppingToken);
                     }
@@ -315,7 +323,7 @@ public sealed class Worker : BackgroundService
         try
         {
             await _serverClient.SendJobResultAsync(credential, finished.JobId, finished.Success, finished.Error, cancellationToken);
-            runner.Reset();
+            runner.Reset(finished.JobId);
         }
         catch (Exception ex)
         {

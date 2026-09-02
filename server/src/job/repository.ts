@@ -55,22 +55,33 @@ export function cancelJob(id: number): Job | undefined {
   return getJob(id);
 }
 
-// P3-4: the oldest ASSIGNED-but-not-yet-delivered job for this worker.
-// One at a time, even if the worker has multiple GPU slots and could in
-// principle have several ASSIGNED jobs simultaneously — the Agent only
-// runs one job at a time for now (see agent's TestJobRunner). A worker
-// with 2 free GPU slots will have its 2nd assigned job just sit ASSIGNED
-// until the 1st completes and this is called again next heartbeat. True
-// concurrent multi-slot execution is a later polish item, not P3-4's
-// "prove the loop works" scope.
-export function getAssignedJobForWorker(workerId: number): Job | undefined {
+// P4-3H: every ASSIGNED-but-not-yet-delivered job for this worker, oldest
+// first — one per free GPU slot the scheduler already reserved
+// independently (job/scheduler.ts's workerUnits/findAssignment). Used to
+// be single/LIMIT 1 (P3-4: "the Agent only runs one job at a time") —
+// true concurrent multi-slot execution is now implemented on the Agent
+// side (one IJobRunner-tracked execution per job id, not a single global
+// slot), so the server hands out everything it has for this worker and
+// lets the Agent start as many as it has capacity for. An Agent that
+// hasn't been redeployed yet just starts the first and leaves the rest
+// ASSIGNED until a later heartbeat, same as before — see Worker.cs.
+export function getAssignedJobsForWorker(workerId: number): Job[] {
   return db
-    .prepare(`SELECT * FROM jobs WHERE worker_id = ? AND status = 'ASSIGNED' ORDER BY id ASC LIMIT 1`)
-    .get(workerId) as Job | undefined;
+    .prepare(`SELECT * FROM jobs WHERE worker_id = ? AND status = 'ASSIGNED' ORDER BY id ASC`)
+    .all(workerId) as Job[];
 }
 
 export function startJob(id: number): void {
-  db.prepare(`UPDATE jobs SET status = 'RUNNING', started_at = ? WHERE id = ?`).run(new Date().toISOString(), id);
+  const now = new Date().toISOString();
+  // last_progress_at seeded to "now" here too, not just on the first real
+  // progress update — a job that's just about to start shouldn't already
+  // read as stale on the very next scheduler tick before its first
+  // heartbeat comes in.
+  db.prepare(`UPDATE jobs SET status = 'RUNNING', started_at = ?, last_progress_at = ? WHERE id = ?`).run(
+    now,
+    now,
+    id,
+  );
 }
 
 // Scoped by workerId — same reasoning as completeJob below. Only while
@@ -90,9 +101,9 @@ export function updateJobProgress(
   etaSeconds: number | null = null,
 ): void {
   db.prepare(
-    `UPDATE jobs SET progress = ?, fps = COALESCE(?, fps), eta_seconds = COALESCE(?, eta_seconds)
+    `UPDATE jobs SET progress = ?, fps = COALESCE(?, fps), eta_seconds = COALESCE(?, eta_seconds), last_progress_at = ?
        WHERE id = ? AND worker_id = ? AND status = 'RUNNING'`,
-  ).run(progress, fps, etaSeconds, id, workerId);
+  ).run(progress, fps, etaSeconds, new Date().toISOString(), id, workerId);
 }
 
 // Scoped by workerId (the authenticated agent's own workstation, from
@@ -155,28 +166,50 @@ export function retryJob(id: number): Job | undefined {
   return getJob(id);
 }
 
-// P3-5: a job whose worker went offline (Agent crashed, machine lost
-// power, network dropped) mid-run would otherwise sit RUNNING forever —
-// nothing would ever mark it done, and the scheduler would think that
-// GPU slot / CPU unit is still busy indefinitely. Called from
-// runScheduler() on every tick: any RUNNING job whose worker isn't
-// agentOnline gets marked FAILED with an explanatory error, freeing its
-// slot for the next assignment.
+// P4-3H: a RUNNING job's own execution lease, independent of the
+// worker's heartbeat freshness (AGENT_OFFLINE_THRESHOLD_MS in
+// onlineStatus.ts, 20s). 30s is 6x the default 5s heartbeat interval —
+// generous slack for one or two missed/slow ticks before treating the
+// job as orphaned. This is what actually catches the bug this milestone
+// was written for: an Agent process that restarts mid-job keeps
+// heartbeating normally (worker stays "online") but has no memory of the
+// job it was running, so that job's last_progress_at simply stops moving
+// forever — the old worker-offline-only check could never see that.
+const JOB_LEASE_THRESHOLD_MS = 30_000;
+
+// P3-5/P4-3H: a RUNNING job stops being trustworthy in two independent
+// ways — (a) its *worker* goes offline entirely (Agent crashed, machine
+// lost power, network dropped), or (b) the worker is still online and
+// heartbeating, but this *specific job's* execution lease expired
+// because the Agent-side runner tracking it is gone (most commonly: the
+// Agent process itself restarted mid-job — see job #35's 2026-09-02
+// incident in docs/PROJECT_STATUS.md). Either way the job would
+// otherwise sit RUNNING forever, and the scheduler would think that GPU
+// slot / CPU unit is still busy indefinitely. Called from runScheduler()
+// on every tick.
 export function failStaleRunningJobs(): void {
   const running = db
     .prepare(
-      `SELECT jobs.id as job_id, workstations.last_seen as last_seen
+      `SELECT jobs.id as job_id, jobs.last_progress_at as last_progress_at, workstations.last_seen as last_seen
          FROM jobs JOIN workstations ON workstations.id = jobs.worker_id
          WHERE jobs.status = 'RUNNING'`,
     )
-    .all() as Array<{ job_id: number; last_seen: string | null }>;
+    .all() as Array<{ job_id: number; last_progress_at: string | null; last_seen: string | null }>;
 
+  const now = Date.now();
   for (const row of running) {
-    if (!isAgentOnline(row.last_seen)) {
-      db.prepare(
-        `UPDATE jobs SET status = 'FAILED', finished_at = ?, error = 'Worker went offline while job was running'
-           WHERE id = ?`,
-      ).run(new Date().toISOString(), row.job_id);
-    }
+    const workerOffline = !isAgentOnline(row.last_seen);
+    const leaseExpired =
+      !row.last_progress_at || now - new Date(row.last_progress_at).getTime() > JOB_LEASE_THRESHOLD_MS;
+    if (!workerOffline && !leaseExpired) continue;
+
+    const error = workerOffline
+      ? "Worker went offline while job was running"
+      : `STALE_EXECUTION: no progress reported for this job in over ${JOB_LEASE_THRESHOLD_MS / 1000}s even though the worker is still online — its Agent-side execution was lost (e.g. Agent process restarted mid-job)`;
+    db.prepare(`UPDATE jobs SET status = 'FAILED', finished_at = ?, error = ? WHERE id = ?`).run(
+      new Date().toISOString(),
+      error,
+      row.job_id,
+    );
   }
 }

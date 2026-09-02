@@ -59,24 +59,28 @@ public sealed class ServerClient
 
     /// <summary>
     /// Returns whatever the server had for this workstation on this
-    /// heartbeat: a pending command (P2-8) and/or a newly assigned job
-    /// (P3-4) — either can be null. Both ride this same response rather
-    /// than being pushed; the Agent has no inbound listener.
+    /// heartbeat: a pending command (P2-8) and/or newly assigned jobs
+    /// (P3-4/P4-3H) — either can be empty. Both ride this same response
+    /// rather than being pushed; the Agent has no inbound listener.
     /// </summary>
     public async Task<HeartbeatResult> SendHeartbeatAsync(
         string credential,
         SystemMetricsSnapshot snapshot,
-        RunningJobStatus? runningJob,
+        IReadOnlyList<RunningJobStatus> runningJobs,
         CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/heartbeat");
         request.Headers.Add("X-Agent-Id", _config.AgentId);
         request.Headers.Add("X-Agent-Credential", credential);
+        var runningPayloads = runningJobs
+            .Select(rj => new HeartbeatPayload.RunningJobPayload { Id = rj.Id, Progress = rj.Progress, Fps = rj.Fps, EtaSeconds = rj.EtaSeconds })
+            .ToList();
         var payload = HeartbeatPayload.FromSnapshot(snapshot) with
         {
-            RunningJob = runningJob is { } rj
-                ? new HeartbeatPayload.RunningJobPayload { Id = rj.Id, Progress = rj.Progress, Fps = rj.Fps, EtaSeconds = rj.EtaSeconds }
-                : null,
+            RunningJobs = runningPayloads,
+            // Legacy singular field for a server that hasn't been
+            // redeployed with P4-3H's multi-job support yet.
+            RunningJob = runningPayloads.Count > 0 ? runningPayloads[0] : null,
         };
         request.Content = JsonContent.Create(payload, options: JsonOptions);
 
@@ -88,8 +92,23 @@ public sealed class ServerClient
         }
 
         var result = JsonSerializer.Deserialize<HeartbeatResponse>(body, JsonOptions);
-        var job = result?.Job is { } j ? new AssignedJob(j.Id, j.Type, j.Input, j.GpuSlot) : null;
-        return new HeartbeatResult(result?.Command, job, result?.CancelJobId);
+
+        // P4-3H: prefer the plural fields; fall back to the legacy
+        // singular ones for a server that hasn't been redeployed yet, so
+        // this Agent binary still works against either era of server.
+        IReadOnlyList<AssignedJob> jobs = result?.Jobs is { Count: > 0 } js
+            ? js.Select(j => new AssignedJob(j.Id, j.Type, j.Input, j.GpuSlot)).ToList()
+            : result?.Job is { } single
+                ? new[] { new AssignedJob(single.Id, single.Type, single.Input, single.GpuSlot) }
+                : Array.Empty<AssignedJob>();
+
+        IReadOnlyList<int> cancelJobIds = result?.CancelJobIds is { Count: > 0 } cids
+            ? cids
+            : result?.CancelJobId is { } singleCancel
+                ? new[] { singleCancel }
+                : Array.Empty<int>();
+
+        return new HeartbeatResult(result?.Command, jobs, cancelJobIds);
     }
 
     public async Task SendCommandResultAsync(
@@ -143,10 +162,15 @@ public sealed class ServerClient
     {
         public bool Ok { get; init; }
         public string? Command { get; init; }
+        // Legacy singular fields -- still populated by the server
+        // (jobs[0]/cancelJobIds[0]) for an Agent binary that hasn't been
+        // redeployed with P4-3H's multi-job support yet.
         public AssignedJobPayload? Job { get; init; }
-        // P3-5: set when the job we reported as RunningJob was cancelled
-        // server-side (POST /api/jobs/:id/cancel) while we were mid-run.
         public int? CancelJobId { get; init; }
+        // P4-3H: every newly assigned job / every job the server wants
+        // stopped, one entry per GPU slot instead of at most one overall.
+        public IReadOnlyList<AssignedJobPayload>? Jobs { get; init; }
+        public IReadOnlyList<int>? CancelJobIds { get; init; }
     }
 
     private sealed class AssignedJobPayload
@@ -179,4 +203,7 @@ public sealed record RunningJobStatus(int Id, int Progress, double? Fps = null, 
 
 public sealed record AssignedJob(int Id, string Type, string? Input, int? GpuSlot = null);
 
-public sealed record HeartbeatResult(string? Command, AssignedJob? Job, int? CancelJobId);
+// P4-3H: Jobs/CancelJobIds are lists now -- a worker with N free GPU
+// slots can have up to N newly-assigned jobs (or N jobs to cancel) in a
+// single heartbeat response, not just one. See IJobRunner's doc comment.
+public sealed record HeartbeatResult(string? Command, IReadOnlyList<AssignedJob> Jobs, IReadOnlyList<int> CancelJobIds);

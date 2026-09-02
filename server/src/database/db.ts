@@ -147,6 +147,15 @@ ensureColumn("jobs", "depends_on", "INTEGER REFERENCES jobs(id)");
 // workflow needs to distinguish those cases from plain disabled.
 ensureColumn("workstations", "jobs_enabled", "INTEGER NOT NULL DEFAULT 1");
 
+// P4-3H: per-job execution lease, independent of the worker's own
+// last_seen -- set on startJob() and refreshed on every updateJobProgress()
+// call. Lets failStaleRunningJobs() catch a job whose specific Agent-side
+// runner died/forgot about it (e.g. the Agent process restarted mid-job)
+// even though the *worker* is still online and heartbeating happily —
+// the gap the old worker-last_seen-only check couldn't see. See
+// docs/ROADMAP.md's P4-3H.
+ensureColumn("jobs", "last_progress_at", "TEXT");
+
 // Phase 3 (P3-8): software version compatibility, mechanism only — no
 // real software checks exist yet (nothing to check until Phase 4/5
 // installs real tools like Houdini/FFmpeg/Octane). A job can optionally
