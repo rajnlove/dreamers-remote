@@ -38,9 +38,24 @@ completing together — not sequential, not one waiting on the other.
 service account (`auth/users.ts`'s `seedServiceUser`, gated behind
 `PHP_SERVICE_PASSWORD`) lets the PHP Projects site authenticate to
 `POST /api/jobs` the same way any dashboard user does, with zero new
-auth surface. The PHP side itself is out of this repo's scope by
-design — user's stated plan is a throwaway test upload form before
-wiring the real PHP codebase, not started yet, see ROADMAP.md.
+auth surface. `PHP_SERVICE_USERNAME=php-service`/`PHP_SERVICE_PASSWORD=testup`
+now live in `vncgi-remote-server`'s Dockge compose.
+
+**Test upload tool — built and confirmed working 2026-09-02**, live at
+`http://192.29.11.92:8088/dev/dreamers-job-test/` (served from
+`\\192.29.11.92\web_data\www\dev\dreamers-job-test\` — **not** in this
+git repo, throwaway PHP, per the user's stated plan). Upload a video →
+PHP moves it under the already-allowed `Projects\SOURCE\dev-test\` →
+logs in as the service account → `POST /api/jobs` → auto-refreshing
+status page. Confirmed end-to-end: `jobs.php` lists real jobs pulled
+live from the API. **Operational gotcha hit while wiring this up,
+worth remembering**: after a server code change (not just an env var),
+Dockge's **Update** (pulls the new GHCR image) is required — **Restart**
+alone re-launches the *same already-running image*, env var included,
+and silently looks like nothing happened (still 401'd here) because the
+image genuinely didn't have `seedServiceUser` yet. Cost one extra
+round-trip diagnosing a 401 that had nothing to do with the credential
+itself.
 
 **P4-7 (close/hardening)** reviewed every open item across Phase 4:
 each is now resolved or explicitly deferred with a reason (see
