@@ -9,7 +9,7 @@ import { workersRouter } from "./api/workers.js";
 import { setupVncProxy } from "./remote/wsProxy.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { requireAuth } from "./auth/middleware.js";
-import { seedAdminUser } from "./auth/users.js";
+import { seedAdminUser, seedServiceUser } from "./auth/users.js";
 import { ConflictError, NotFoundError, ValidationError } from "./workstation/errors.js";
 
 const app = express();
@@ -81,6 +81,16 @@ if (env.adminPassword) {
     "ADMIN_PASSWORD not set — no admin user will be created. " +
       "Login will not work until it's provided and the server restarted.",
   );
+}
+
+// P4-5: PHP Projects site's service account, non-admin -- see
+// auth/users.ts's seedServiceUser doc comment. Off by default (no
+// PHP_SERVICE_PASSWORD set); nothing warns when it's unset, unlike the
+// admin account above, since not every deployment needs PHP integration.
+if (env.phpServicePassword) {
+  seedServiceUser(env.phpServiceUsername, env.phpServicePassword).catch((err: unknown) => {
+    console.error("Failed to seed PHP service account:", err);
+  });
 }
 
 server.listen(env.port, () => {

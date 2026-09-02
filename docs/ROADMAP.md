@@ -242,15 +242,24 @@ configured allow-list before touching it.
   P4-5's NAS problem below). See `docs/PROJECT_STATUS.md`'s Current
   Milestone and Tests Performed for full detail.
 - **P4-5 — PHP Projects → Job Engine Integration.** Renumbered from the
-  old P4-3 2026-09-02 (no scope change). Nothing to build here per the
-  user's architecture decision — the PHP Projects site calls
-  `POST /api/jobs` directly with `type: "ffmpeg"` (session-cookie
-  auth, same as every other `/api/jobs` caller today). **Open item**:
-  PHP calling a session-cookie-authenticated endpoint implies either a
-  service account it logs in as, or a separate server-to-server auth
-  mechanism this repo doesn't have yet — not blocking P4-1/P4-2 (which
-  don't care who the caller is), but needs an answer before PHP can
-  actually call it for real.
+  old P4-3 2026-09-02 (no scope change). Server-side auth: DONE
+  2026-09-02 — the PHP Projects site calls `POST /api/jobs` directly
+  with `type: "ffmpeg"`, authenticated the same way any dashboard user
+  is (session-cookie via `POST /api/login`), as a dedicated **non-admin
+  service account** (`auth/users.ts`'s `seedServiceUser`, seeded from
+  `PHP_SERVICE_USERNAME`/`PHP_SERVICE_PASSWORD` env vars on boot,
+  idempotent — off entirely if the password isn't set). User chose this
+  over adding a separate API-key/token auth path specifically because it
+  needs zero new server code beyond seeding the account — `POST
+  /api/jobs` already only requires `requireAuth`, not `requireAdmin`,
+  and `is_admin = 0` keeps this account unable to hit any admin-gated
+  route even if its credential leaked. **Still open**: the PHP Projects
+  site itself (separate codebase, not this repo, per the "no new PHP app
+  in this repo" rule) needs to actually implement the flow — `POST
+  /api/login` once, keep the session cookie, reuse it for every `POST
+  /api/jobs`, re-`login` on a 401 (session expired) — and someone needs
+  to set `PHP_SERVICE_PASSWORD` in the server's Dockge environment. Not
+  blocking anything else in Phase 4.
 - **P4-6 — End-to-End Processing Test.** DONE 2026-09-02 — see P4-3H
   above for the evidence (this milestone's pass bar and P4-3H's
   verification are the same test). Renumbered from the

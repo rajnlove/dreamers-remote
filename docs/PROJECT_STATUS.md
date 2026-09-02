@@ -183,10 +183,11 @@ flags):
   one — that needs a real 2-GPU box (`CGI-Render`) running two jobs at
   once, which is P4-5's actual remaining scope.
 
-P4-0 through P4-4 are all done — see ROADMAP.md for the full P4-0
-through P4-5 breakdown. P4-3 (PHP integration) still has one open item:
-what auth PHP actually uses to call a session-cookie-gated endpoint
-(see "Info still needed from user") — not blocking P4-5. Phase 3
+P4-0 through P4-4, P4-3H, P4-5 (server side), and P4-6 are all done —
+see ROADMAP.md for the full P4-0 through P4-7 breakdown (renumbered
+2026-09-02). P4-5's remaining piece (the PHP Projects site itself
+actually calling the API) lives outside this repo — see "Info still
+needed from user". Phase 3
 (P3-1 through P3-8) is fully complete: the full job engine loop works
 end-to-end (priority-ordered, dependency-aware, threshold-gated,
 software-version-aware scheduling; real cancellation; retry; stale-job
@@ -1510,15 +1511,18 @@ dotnet publish Dreamers.Agent -c Release -r win-x64 -o .\dist
   file access, job schema) directly rather than leaving them open —
   see Current Phase for the full decision. Kept here as a pointer, not
   duplicated.
-- **Phase 4 — PHP's auth mechanism, still open.** The decided
-  architecture has the PHP Projects site call `POST /api/jobs`
-  directly, but that endpoint is currently gated by
-  session-cookie auth (`requireAuth` — assumes a logged-in dashboard
-  user, not a server-to-server caller). Options: a service account PHP
-  logs in as and keeps a session for, a separate API-key/token auth
-  path for server-to-server calls, or something else. Not blocking
-  anything built so far (P4-1/P4-2 don't care who the caller is), but
-  needs an answer before PHP can actually call it for real.
+- **Phase 4 — PHP's auth mechanism — RESOLVED 2026-09-02 (P4-5).** User
+  chose the service-account option over a separate API-key path (no new
+  auth surface, no server code needed beyond seeding the account) — see
+  ROADMAP.md's P4-5 entry for the implementation. **Still needed from
+  the user**: nothing server-side (that part is done); the PHP Projects
+  site itself (a separate codebase, not this repo) needs to actually
+  implement the login-once/reuse-cookie/re-login-on-401 flow described
+  there, and someone needs to set `PHP_SERVICE_PASSWORD` (+ optionally
+  `PHP_SERVICE_USERNAME`) in the server's Dockge environment and restart
+  it once PHP is ready to use it — until that env var is set, no service
+  account exists and PHP integration stays inert (safe to merge/deploy
+  ahead of the PHP side being ready).
 - **Real UNC/SMB path to TrueNAS — RESOLVED 2026-08-16.** The user
   pointed at `\\192.29.11.92\web_data\www\Projects` — confirmed
   reachable and read/write-able from `CGI-Render`, and P4-2 is now
