@@ -94,9 +94,37 @@ public static class FfmpegArgs
             args.AddRange(new[] { "-rc", "vbr", "-b:v", input.Bitrate ?? DefaultVbrBitrate });
         }
 
+        // Scale-to-fit, not force-to-exact-size: force_original_aspect_ratio
+        // keeps AR (a plain "scale=W:H" would stretch/distort any source
+        // whose AR doesn't match exactly). min(W,iw)/min(H,ih) is the
+        // standard ffmpeg idiom for "never upscale" -- if the source is
+        // already smaller than the requested box in a dimension, that
+        // dimension's target becomes the source's own size (a 1:1 no-op
+        // scale in that direction) instead of stretching up to fill the
+        // box; confirmed for real -- without min(), force_original_
+        // aspect_ratio=decrease alone still upscales a smaller source up
+        // to fill the box (verified: a 640x360 source through a plain
+        // "scale=1920:1080:force_original_aspect_ratio=decrease" came out
+        // 1920x1080, not left at 640x360). force_divisible_by=2 rounds
+        // the computed output to even width/height, which NVENC requires
+        // anyway. The comma inside min(...) MUST be backslash-escaped,
+        // not wrapped in quotes -- ffmpeg's own filtergraph parser (not a
+        // shell; this is a single ArgumentList element either way)
+        // rejects "scale='min(1920,iw)':..." outright with "Invalid
+        // argument", confirmed by actually running it against real
+        // ffmpeg (n7.1.5) before this shipped, not just reasoning from
+        // ffmpeg docs. Empty/absent resolution (resolutionMatch stays
+        // null) skips this whole block -- native size, unchanged from
+        // before.
         if (resolutionMatch is { Success: true })
         {
-            args.AddRange(new[] { "-vf", $"scale={resolutionMatch.Groups[1].Value}:{resolutionMatch.Groups[2].Value}" });
+            var targetWidth = resolutionMatch.Groups[1].Value;
+            var targetHeight = resolutionMatch.Groups[2].Value;
+            args.AddRange(new[]
+            {
+                "-vf",
+                $"scale=min({targetWidth}\\,iw):min({targetHeight}\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2",
+            });
         }
 
         // h264_nvenc on real hardware rejects 10-bit input outright
@@ -120,6 +148,20 @@ public static class FfmpegArgs
         else
         {
             args.AddRange(new[] { "-c:a", input.AudioCodec });
+        }
+
+        // Moves the mp4/mov "moov" atom to the front of the file so a
+        // player/browser can start playback before the whole file has
+        // downloaded, instead of needing to seek to the end first (the
+        // default mp4 muxer layout). Guarded on extension -- this is a
+        // private option of the mov/mp4 muxer specifically; every real
+        // output in this system is .mp4 today, but an unrecognized
+        // muxer option can be a hard error on some containers, so this
+        // stays a no-op rather than risk breaking a future non-mp4 output.
+        var outputExtension = Path.GetExtension(input.OutputPath).ToLowerInvariant();
+        if (outputExtension is ".mp4" or ".mov" or ".m4v")
+        {
+            args.AddRange(new[] { "-movflags", "+faststart" });
         }
 
         // Machine-readable key=value progress on stdout instead of the

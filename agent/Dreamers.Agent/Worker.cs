@@ -322,7 +322,7 @@ public sealed class Worker : BackgroundService
 
         try
         {
-            await _serverClient.SendJobResultAsync(credential, finished.JobId, finished.Success, finished.Error, cancellationToken);
+            await _serverClient.SendJobResultAsync(credential, finished.JobId, finished.Success, finished.Output, finished.Error, cancellationToken);
             runner.Reset(finished.JobId);
         }
         catch (Exception ex)
@@ -340,7 +340,7 @@ public sealed class Worker : BackgroundService
         try
         {
             await _serverClient.SendJobResultAsync(
-                credential, jobId, ok: false, error: $"This Agent has no runner registered for job type \"{jobType}\"", cancellationToken);
+                credential, jobId, ok: false, output: null, error: $"This Agent has no runner registered for job type \"{jobType}\"", cancellationToken);
         }
         catch (Exception ex)
         {

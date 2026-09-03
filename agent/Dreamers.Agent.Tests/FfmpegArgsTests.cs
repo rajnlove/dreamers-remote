@@ -56,11 +56,42 @@ public class FfmpegArgsTests
     }
 
     [Fact]
-    public void AddsScaleFilterForAValidResolution()
+    public void AddsAScaleToFitFilterForAValidResolution()
     {
+        // Scale-to-fit (min(W,iw)/min(H,ih) + force_original_aspect_ratio=
+        // decrease), not a plain "scale=W:H" that would stretch/distort
+        // any source whose AR doesn't match exactly, and not something
+        // that would upscale a smaller source up to fill the box.
         var args = FfmpegArgs.Build(Input(resolution: "1920x1080"));
         Assert.Contains("-vf", args);
-        Assert.Equal("scale=1920:1080", args[args.IndexOf("-vf") + 1]);
+        Assert.Equal(
+            "scale=min(1920\\,iw):min(1080\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2",
+            args[args.IndexOf("-vf") + 1]);
+    }
+
+    [Fact]
+    public void OmitsScaleFilterWhenResolutionIsNotProvided()
+    {
+        // Empty/absent resolution = native size, unchanged from before --
+        // no -vf at all, not "-vf scale=<source size>".
+        var args = FfmpegArgs.Build(Input(resolution: null));
+        Assert.DoesNotContain("-vf", args);
+    }
+
+    [Fact]
+    public void AddsFaststartMovflagForAnMp4Output()
+    {
+        var args = FfmpegArgs.Build(Input());
+        Assert.Contains("-movflags", args);
+        Assert.Equal("+faststart", args[args.IndexOf("-movflags") + 1]);
+    }
+
+    [Fact]
+    public void OmitsFaststartMovflagForANonMp4MovOutput()
+    {
+        var input = Input() with { OutputPath = "\\\\nas\\Projects\\out.mkv" };
+        var args = FfmpegArgs.Build(input);
+        Assert.DoesNotContain("-movflags", args);
     }
 
     [Fact]

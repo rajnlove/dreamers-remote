@@ -183,11 +183,24 @@ public sealed class FfmpegJobRunner : IJobRunner
 
             if (exitCode == 0 && outputExists)
             {
+                // Best-effort extras on top of an already-successful job --
+                // source dimensions (probed from the original source, not
+                // the possibly-scaled output) and a thumbnail of the
+                // actual delivered output, saved next to it. Neither
+                // failure mode here should touch Success/Progress; both
+                // helpers already degrade to null on their own.
+                var dimensions = FfprobeVideoInfo.TryGetDimensions(input.SourcePath);
+                var thumbnailPath = Path.ChangeExtension(input.OutputPath, null) + ".thumb.jpg";
+                var savedThumbnailPath = FfmpegThumbnail.TryGenerate(input.OutputPath, thumbnailPath);
+                var output = JsonSerializer.Serialize(
+                    new { sourceWidth = dimensions?.Width, sourceHeight = dimensions?.Height, thumbnailPath = savedThumbnailPath },
+                    JsonOptions);
+
                 lock (_lock)
                 {
                     if (_jobs.TryGetValue(jobId, out var c))
                     {
-                        _jobs[jobId] = c with { Progress = 100, Finished = true, Success = true };
+                        _jobs[jobId] = c with { Progress = 100, Finished = true, Success = true, Output = output };
                     }
                 }
             }

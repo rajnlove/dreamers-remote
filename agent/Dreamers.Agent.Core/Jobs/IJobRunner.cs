@@ -5,7 +5,14 @@ namespace Dreamers.Agent.Core.Jobs;
 /// FfmpegJobRunner, ...). Fps/EtaSeconds are null for job types that
 /// don't have a meaningful encode/render rate (e.g. "test").
 /// </summary>
-public sealed record JobSnapshot(int JobId, int Progress, double? Fps, int? EtaSeconds, bool Finished, bool Success, string? Error)
+// Output: free-form JSON string a runner can attach to a successfully
+// finished job -- e.g. FfmpegJobRunner reports {sourceWidth,
+// sourceHeight, thumbnailPath} once the encode succeeds (see its doc
+// comment). Null for job types/outcomes that don't have anything to
+// report, which is most of them -- optional/trailing so every existing
+// `with { ... }` call site that doesn't mention it keeps defaulting to
+// null unchanged.
+public sealed record JobSnapshot(int JobId, int Progress, double? Fps, int? EtaSeconds, bool Finished, bool Success, string? Error, string? Output = null)
 {
     public static JobSnapshot Starting(int jobId) => new(jobId, 0, null, null, Finished: false, Success: false, Error: null);
 }

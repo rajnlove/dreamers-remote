@@ -128,12 +128,12 @@ public sealed class ServerClient
     }
 
     public async Task SendJobResultAsync(
-        string credential, int jobId, bool ok, string? error, CancellationToken cancellationToken = default)
+        string credential, int jobId, bool ok, string? output, string? error, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/job-result");
         request.Headers.Add("X-Agent-Id", _config.AgentId);
         request.Headers.Add("X-Agent-Credential", credential);
-        request.Content = JsonContent.Create(new JobResultRequest { JobId = jobId, Ok = ok, Error = error }, options: JsonOptions);
+        request.Content = JsonContent.Create(new JobResultRequest { JobId = jobId, Ok = ok, Output = output, Error = error }, options: JsonOptions);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -195,6 +195,11 @@ public sealed class ServerClient
     {
         public int JobId { get; init; }
         public bool Ok { get; init; }
+        // Free-form JSON string a runner attached to a successful result
+        // (see JobSnapshot.Output's doc comment) -- e.g. FfmpegJobRunner's
+        // {sourceWidth, sourceHeight, thumbnailPath}. Server stores this
+        // as-is in jobs.output, no server-side interpretation needed.
+        public string? Output { get; init; }
         public string? Error { get; init; }
     }
 }

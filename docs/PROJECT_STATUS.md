@@ -61,6 +61,62 @@ itself.
 each is now resolved or explicitly deferred with a reason (see
 ROADMAP.md's P4-7 entry) — nothing silently dropped.
 
+## Post-Phase-4 enhancement: ffmpeg resolution/faststart/thumbnail (2026-09-03)
+
+User request, exercised live through the dev/test upload form above.
+`FfmpegArgs.Build` (`Dreamers.Agent.Core/Ffmpeg/FfmpegArgs.cs`) — ffmpeg
+jobs only, not Topaz (out of scope per the request):
+
+- **`input.resolution` ("WxH") now scale-to-fit, never upscales, forces
+  even dimensions.** Was a plain `scale=W:H` (distorts AR if the source's
+  AR doesn't match exactly, and would upscale a smaller source up to
+  fill the box). Now `scale=min(W\,iw):min(H\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2`.
+  Empty/absent `resolution` still means native size (no `-vf` at all),
+  unchanged.
+- **Real bug caught before shipping, not just unit tests**: the first
+  version used single-quoted `min()` args (`scale='min(1920,iw)':...`,
+  the syntax most ffmpeg community examples show) — this dev machine has
+  real ffmpeg (`n7.1.5`) and a real GPU, so before deploying this was run
+  against a synthetic test source (`ffmpeg -f lavfi -i testsrc`) rather
+  than trusted from documentation: **it failed outright** (`Invalid
+  argument`, exit -22). The correct syntax needs the comma inside
+  `min(...)` backslash-escaped (`min(1920\,iw)`), not quoted — ffmpeg's
+  filtergraph parser, not a shell (this is one `ArgumentList` element
+  either way), rejects the quoted form. Also verified the "no min()"
+  simplification doesn't work either: `scale=1920:1080:force_original_aspect_ratio=decrease`
+  alone still upscaled a 640x360 source to 1920x1080 — `min()` is load-
+  bearing, not decorative. Confirmed correct behavior for three real
+  cases: smaller source stays native (640x360 vs. a 1920x1080 target),
+  bigger 16:9 source scales down exactly (1920x1080 → 1280x720 against a
+  1280x720 target), and an odd 3:1 AR source (1200x400) fit into an
+  800x800 box lands on 800x266 (AR preserved, even height forced).
+- **`-movflags +faststart`** added unconditionally for `.mp4`/`.mov`/
+  `.m4v` outputs (every real output in this system today) — moves the
+  MP4 `moov` atom to the front so playback can start before the full
+  file downloads. Verified for real: byte-searched a real output file,
+  `moov` at offset 36, `mdat` at offset 1471 (moov before mdat = correct).
+- **Job result now optionally carries `{sourceWidth, sourceHeight,
+  thumbnailPath}`** as a JSON string in the existing `jobs.output`
+  column (that column and the wire field already existed end-to-end —
+  server's `POST /api/agent/job-result` already accepted an `output`
+  field; the Agent simply never sent one before now). `FfprobeVideoInfo`
+  (new, probes the *source*, mirrors `FfprobeDuration`'s "never fail the
+  job over a probe hiccup" pattern, deliberately not merged into that
+  shared-with-Topaz class) and `FfmpegThumbnail` (new, single JPEG frame
+  from the *output* at 1s in, falls back to frame 0 for very short
+  clips) are both best-effort — a failure in either still lets the job
+  report `COMPLETED`, just without that detail. `JobSnapshot` gained an
+  optional trailing `Output` field (default `null`) to carry this;
+  Test/TopazJobRunner are unaffected (still always `null`). Verified
+  the full real pipeline together end-to-end (real NVENC h264 encode +
+  scale-to-fit + faststart + thumbnail extraction), not just each piece
+  in isolation.
+- 116/116 Agent unit tests green (3 new: scale-to-fit filter string,
+  no-`-vf`-when-resolution-absent, faststart present/absent by
+  extension). No server-side code changes needed at all — `resolution`
+  validation and the `output` column/API field already existed from
+  P4-2's original schema.
+
 > Handoff snapshot, not a changelog. Detailed history (what changed,
 > why, what broke and how it got fixed) lives in `git log` — each
 > milestone has one commit with a full message. Read recent commits for
