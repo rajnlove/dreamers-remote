@@ -4,6 +4,7 @@ import { cancelJob, createJob, listJobs, retryJob } from "../api/jobs";
 import { getWorkstationsStatus, listWorkstations } from "../api/workstations";
 import type { Job, JobStatus } from "../types/job";
 import type { WorkstationStatus } from "../types/workstation";
+import StudioSidebar from "../components/StudioSidebar";
 import LanguageToggle from "../components/LanguageToggle";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
@@ -230,7 +231,6 @@ export default function JobsPage({ username }: { username: string }) {
   const pages = Math.max(1, Math.ceil(filtered.length / 10));
   const currentPage = Math.min(page, pages);
   const visible = filtered.slice((currentPage - 1) * 10, currentPage * 10);
-  const online = machines?.filter((m) => m.agentOnline).length ?? 0;
   const canCancel = new Set<JobStatus>(["QUEUED", "ASSIGNED", "RUNNING"]);
 
   const statIcons: Record<Tab, string> = { All: "▤", Running: "↗", Completed: "✓", Pending: "◷", Failed: "×", Paused: "◷", Cancelled: "×" };
@@ -238,16 +238,14 @@ export default function JobsPage({ username }: { username: string }) {
 
   return (
     <div className="queue-app">
+      <StudioSidebar ready={machines !== null} error={machineError} total={machines?.length ?? 0} online={machines?.filter(machine => machine.agentOnline).length ?? 0} jobs={jobs} jobsError={!!error} />
+      <div className="queue-workspace">
       <header className="queue-topbar">
-        <Link to="/" className="queue-brand">
-          <span className="queue-mark" aria-hidden="true">
-            ◈
-          </span>{" "}
-          {t("queueBrand")} <span>{t("queueBrandSub")}</span>
-        </Link>
+
         <div className="queue-breadcrumb">
           {t("queueBreadcrumbWorkspace")} <span>/</span> <strong>{t("queueBreadcrumbCurrent")}</strong>
         </div>
+        <div className="queue-topbar-actions">
         <LanguageToggle />
         <div className="queue-user">
           <span className="queue-avatar">{username.slice(0, 2).toUpperCase()}</span>
@@ -256,53 +254,12 @@ export default function JobsPage({ username }: { username: string }) {
             <small>{t("queueStudioWorkspace")}</small>
           </span>
         </div>
-      </header>
-      <aside className="queue-sidebar">
-        <div className="queue-nav-label">{t("navLabelWorkspace")}</div>
-        <Link to="/" className="queue-nav">
-          <span aria-hidden="true">▦</span> {t("overview")}
-        </Link>
-        <div className="queue-nav-label">{t("navLabelRender")}</div>
-        <Link to="/jobs" className="queue-nav active" aria-current="page">
-          <span aria-hidden="true">▤</span> {t("navRenderQueue")} <span className="queue-nav-count">{jobs === null ? "—" : all.length}</span>
-        </Link>
-        <Link to="/" className="queue-nav">
-          <span aria-hidden="true">▣</span> {t("machines")}
-        </Link>
-        <div className="queue-sidebar-bottom">
-          <div className="queue-system">
-            <strong>
-              <span className={`queue-dot ${error || machineError ? "warning" : ""}`} /> {t("systemStatusLabel")}
-            </strong>
-            <p>{error || machineError ? t("connectionNeedsAttention") : jobs === null || machines === null ? t("systemStatusConnecting") : t("connectedToStudio")}</p>
-            <dl>
-              <div>
-                <dt>{t("onlineMachines")}</dt>
-                <dd>{machines === null || machineError ? "—" : `${online} / ${machines.length}`}</dd>
-              </div>
-              <div>
-                <dt>{t("runningJobs")}</dt>
-                <dd>{jobs === null ? "—" : count("Running")}</dd>
-              </div>
-              <div>
-                <dt>{t("pendingJobs")}</dt>
-                <dd>{jobs === null ? "—" : count("Pending")}</dd>
-              </div>
-              <div>
-                <dt>{t("failedJobs")}</dt>
-                <dd className="queue-red">{jobs === null ? "—" : count("Failed")}</dd>
-              </div>
-            </dl>
-          </div>
-          <p className="queue-version">
-            {t("dreamersStudioOs")} <span>{t("renderWorkspace")}</span>
-          </p>
         </div>
-      </aside>
+      </header>
+
       <main className="queue-main">
         <div className="queue-heading">
           <div>
-            <div className="queue-eyebrow">{t("queueEyebrow")}</div>
             <h1>{t("queueTitle")}</h1>
             <p>{t("queueSubtitle")}</p>
           </div>
@@ -557,6 +514,7 @@ export default function JobsPage({ username }: { username: string }) {
           {t("queueFooterTag")} <span>{t("queueFooterNote")}</span>
         </div>
       </main>
+      </div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import StudioSidebar from "../components/StudioSidebar";
 import WorkstationCard from "../components/WorkstationCard";
 import StudioIcon, { type StudioIconName } from "../components/StudioIcon";
 import AddWorkstationDialog from "../components/AddWorkstationDialog";
@@ -61,7 +62,6 @@ export default function Dashboard({ user, onLogout }: { user: CurrentUser; onLog
   const [loggingOut, setLoggingOut] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState("dashboard");
   const active = useRef(false);
   const inFlight = useRef(false);
 
@@ -164,72 +164,14 @@ export default function Dashboard({ user, onLogout }: { user: CurrentUser; onLog
   ];
   const serviceHost = new URL(API_BASE_URL, window.location.origin).hostname;
   const recent = [...(jobs ?? [])].sort((a, b) => eventTime(b) - eventTime(a) || b.id - a.id).slice(0, 4);
-  const navItems: { id: string; name: string; icon: StudioIconName }[] = [
-    { id: "dashboard", name: t("navDashboard"), icon: "dashboard" },
-    { id: "workstations", name: t("navWorkstations"), icon: "monitor" },
-    { id: "monitoring", name: t("navMonitoring"), icon: "pulse" },
-    { id: "activity", name: t("navJobActivity"), icon: "clock" },
-  ];
+
 
   return (
     <div className="studio-dashboard" id="dashboard">
       <a href="#studio-content" className="studio-skip">
         {t("skipToDashboard")}
       </a>
-      <aside className="studio-sidebar" aria-label="Main navigation">
-        <Link to="/" className="studio-brand">
-          <svg width="36" height="38" viewBox="0 0 36 38" fill="none" aria-hidden="true">
-            <path d="m18 2 14 8v18l-14 8-14-8V10L18 2Z" fill="#2678ed" />
-            <path d="m18 11 6 3.5v9L18 27l-8-4.5v-7L18 11Z" fill="#0d1520" />
-            <path d="m4 10 9 5v8l-9 5V10Z" fill="#609eff" />
-          </svg>
-          <span>
-            DREAMERS<small>REMOTE</small>
-          </span>
-        </Link>
-        <nav>
-          {navItems.map((item) => (
-            <a
-              key={item.id}
-              href={`#${item.id}`}
-              className={`studio-nav ${activeSection === item.id ? "active" : ""}`}
-              aria-current={activeSection === item.id ? "location" : undefined}
-              onClick={() => setActiveSection(item.id)}
-            >
-              <StudioIcon name={item.icon} />
-              {item.name}
-            </a>
-          ))}
-          <Link to="/jobs" className="studio-nav">
-            <StudioIcon name="queue" />
-            {t("navRenderQueue")}
-            <StudioIcon name="arrow" />
-          </Link>
-        </nav>
-        <div className="studio-sidebar-bottom">
-          <div className="studio-system">
-            <strong>
-              <span className={`studio-dot ${statusesReady && healthy === enabled.length && enabled.length ? "online" : "unknown"}`} />
-              {t("systemStatusLabel")}
-            </strong>
-            <p>
-              {!statusesReady
-                ? errors.status || errors.machines
-                  ? t("systemStatusInterrupted")
-                  : t("systemStatusConnecting")
-                : !enabled.length
-                  ? t("systemStatusNoMachines")
-                  : healthy === enabled.length
-                    ? t("systemStatusAllOk")
-                    : t("systemStatusNeedAttention", { count: enabled.length - healthy })}
-            </p>
-          </div>
-          <div className="studio-version">
-            {t("productName")}
-            <span>{t("productTagline")}</span>
-          </div>
-        </div>
-      </aside>
+      <StudioSidebar ready={!!statusesReady} error={!!errors.status || !!errors.machines} total={machines.length} online={machines.filter(machine => statusById.get(machine.id)?.agentOnline).length} jobs={jobs} jobsError={!!errors.jobs} />
       <div className="studio-workspace">
         <header className="studio-topbar">
           <span className="studio-topbar-label">{t("topbarLabel")}</span>
