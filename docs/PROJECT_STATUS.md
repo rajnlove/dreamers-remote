@@ -1624,5 +1624,13 @@ dotnet publish Dreamers.Agent -c Release -r win-x64 -o .\dist
   Recent Activity is labeled Job Updates and uses actual job timestamps.
 - Validation: TypeScript + Vite production build; browser inspection of
   desktop/mobile layouts, two-GPU display, unavailable metrics, and the
-  create-workstation form. Dashboard production rollout is not claimed by
-  these local checks.
+  create-workstation form.
+- Dashboard release `f36b253` deployed on 2026-09-03 through Dockge Update
+  of `vncgi-remote-web`, after GitHub Actions run 33771024995 succeeded.
+  Production homepage verified with four online machines, live CPU/RAM,
+  per-GPU utilization and VRAM (including both CGI-Render GPUs), uptime,
+  and recent real job updates. Backend and Agent services were not restarted.
+- Both UI releases are now recorded in the original project checkout's
+  history as well as the deployment checkout. The local push helper was
+  switched to the bundled Git with HTTP/1.1 after a `git-remote-https.exe`
+  crash; a remote-ref check confirmed the dashboard commit reached GitHub.
