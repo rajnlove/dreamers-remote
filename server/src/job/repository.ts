@@ -55,6 +55,32 @@ export function cancelJob(id: number): Job | undefined {
   return getJob(id);
 }
 
+export type DeleteJobResult = "deleted" | "not_found" | "still_active";
+
+// Permanent removal (unlike cancelJob, which just changes status) --
+// only allowed once a job is terminal (COMPLETED/FAILED/CANCELLED), same
+// set cancelJob already uses. Refusing to delete a QUEUED/ASSIGNED/
+// RUNNING job isn't just tidiness: the scheduler's busy-tracking
+// (job/scheduler.ts) and an Agent's in-flight IJobRunner both key off
+// jobs.id, and a job that vanishes out from under either mid-run would
+// surface as a confusing "job not found" on the next progress/result
+// report rather than a clean state transition -- cancel it first, then
+// delete. `jobs.depends_on` has a real foreign key
+// (`REFERENCES jobs(id)`, enforced -- db.ts turns PRAGMA foreign_keys
+// on) with no ON DELETE clause, so deleting a job another job still
+// depends on throws SqliteError (FOREIGN KEY constraint failed) rather
+// than silently orphaning the reference -- left uncaught here
+// deliberately so that failure reaches the API route as a real error,
+// not a silent no-op.
+export function deleteJob(id: number): DeleteJobResult {
+  const job = getJob(id);
+  if (!job) return "not_found";
+  if (!TERMINAL_STATUSES.has(job.status)) return "still_active";
+
+  db.prepare(`DELETE FROM jobs WHERE id = ?`).run(id);
+  return "deleted";
+}
+
 // P4-3H: every ASSIGNED-but-not-yet-delivered job for this worker, oldest
 // first — one per free GPU slot the scheduler already reserved
 // independently (job/scheduler.ts's workerUnits/findAssignment). Used to

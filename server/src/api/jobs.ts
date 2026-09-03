@@ -1,8 +1,9 @@
 import { Router } from "express";
-import { cancelJob, createJob, getJob, listJobs, retryJob } from "../job/repository.js";
+import { cancelJob, createJob, deleteJob, getJob, listJobs, retryJob } from "../job/repository.js";
 import { runScheduler } from "../job/scheduler.js";
 import { validateCreateInput } from "../job/validation.js";
-import { NotFoundError, ValidationError } from "../workstation/errors.js";
+import { requireAdmin } from "../auth/middleware.js";
+import { ConflictError, NotFoundError, ValidationError } from "../workstation/errors.js";
 
 // Mounted behind requireAuth in index.ts, same as workstationsRouter.
 export const jobsRouter = Router();
@@ -69,6 +70,24 @@ jobsRouter.post("/:id/retry", (req, res, next) => {
     }
     runScheduler();
     res.json(getJob(id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Permanent removal, admin-only (same gate as workstation restart/
+// shutdown — destructive enough to warrant it) — see repository.ts's
+// deleteJob for why this only works once a job is terminal. Cancel a
+// still-active job first, then delete it.
+jobsRouter.delete("/:id", requireAdmin, (req, res, next) => {
+  try {
+    const id = parseId(req.params.id);
+    const result = deleteJob(id);
+    if (result === "not_found") throw new NotFoundError("Job not found");
+    if (result === "still_active") {
+      throw new ConflictError("Job is still QUEUED/ASSIGNED/RUNNING — cancel it first, then delete");
+    }
+    res.status(204).end();
   } catch (err) {
     next(err);
   }

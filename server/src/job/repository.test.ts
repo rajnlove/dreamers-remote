@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { db } from "../database/db.js";
 import {
   createJob,
+  deleteJob,
   failStaleRunningJobs,
   getAssignedJobsForWorker,
   getJob,
@@ -106,4 +107,28 @@ test("failStaleRunningJobs still fails a job for the old reason when the whole w
   const failed = getJob(job.id)!;
   assert.equal(failed.status, "FAILED");
   assert.match(failed.error ?? "", /Worker went offline/);
+});
+
+test("deleteJob removes a terminal job for good", () => {
+  const job = createJob({ type: "test", priority: 0, input: null, depends_on: null, required_software: null });
+  db.prepare(`UPDATE jobs SET status = 'COMPLETED', finished_at = ? WHERE id = ?`).run(new Date().toISOString(), job.id);
+
+  const result = deleteJob(job.id);
+
+  assert.equal(result, "deleted");
+  assert.equal(getJob(job.id), undefined);
+});
+
+test("deleteJob refuses a job that is still QUEUED/ASSIGNED/RUNNING", () => {
+  const job = createJob({ type: "test", priority: 0, input: null, depends_on: null, required_software: null });
+  // Freshly created jobs start QUEUED — no status update needed.
+
+  const result = deleteJob(job.id);
+
+  assert.equal(result, "still_active");
+  assert.ok(getJob(job.id), "job must not have been deleted");
+});
+
+test("deleteJob reports not_found for a nonexistent id", () => {
+  assert.equal(deleteJob(999_999_999), "not_found");
 });
