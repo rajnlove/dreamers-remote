@@ -5,8 +5,10 @@ import type { Workstation, WorkstationStatus } from "../types/workstation";
 import StudioIcon from "./StudioIcon";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
+import { useRemotePreview } from "../remotePreview";
 
 interface Props {
+  username: string;
   workstation: Workstation;
   status: WorkstationStatus | undefined;
   stale?: boolean;
@@ -33,8 +35,9 @@ function MetricBar({ label, value }: { label: string; value: number | null | und
   );
 }
 
-export default function WorkstationCard({ workstation, status, stale = false }: Props) {
+export default function WorkstationCard({ username, workstation, status, stale = false }: Props) {
   const { t } = useLanguage();
+  const preview = useRemotePreview(username, workstation.id);
   const [waking, setWaking] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const online = status?.vncOnline && workstation.enabled;
@@ -92,7 +95,11 @@ export default function WorkstationCard({ workstation, status, stale = false }: 
         <span>•</span>
         {t(statusLabel)}
       </p>
-      <div className={`studio-desktop ${online && !stale ? "available" : ""}`} aria-label="Workstation information; desktop preview unavailable">
+      <div className={`studio-desktop ${preview ? "has-preview" : online && !stale ? "available" : ""}`} aria-label={t(preview ? "lastRemotePreview" : "desktopPreviewUnavailable")}>
+        {preview ? <>
+          <img className="studio-desktop-image" src={preview} alt={t("lastRemotePreview")} />
+          <small className="studio-preview-caption">{t("lastRemotePreview")}</small>
+        </> : <>
         <div className="studio-desktop-grid" aria-hidden="true" />
         <div className="studio-screen-symbol">
           <StudioIcon name="monitor" />
@@ -100,6 +107,7 @@ export default function WorkstationCard({ workstation, status, stale = false }: 
         <strong>{metrics?.hostname || workstation.hostname}</strong>
         <span>{metrics?.os || workstation.os || t("studioWorkstation")}</span>
         <small>{t("desktopPreviewUnavailable")}</small>
+        </>}
       </div>
       <div className="studio-card-metrics">
         <MetricBar label={t("cpuLabel")} value={metrics?.cpu?.utilizationPercent} />

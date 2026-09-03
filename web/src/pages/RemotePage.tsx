@@ -6,6 +6,7 @@ import { WS_BASE_URL } from "../api/config";
 import type { Workstation } from "../types/workstation";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
+import { saveRemotePreview } from "../remotePreview";
 
 type ConnState = "connecting" | "connected" | "disconnected";
 // "fit": whole framebuffer (all monitors, if the workstation has more than
@@ -27,7 +28,7 @@ function applyZoomMode(rfb: RFB, mode: ZoomMode): void {
   rfb.scaleViewport = mode === "fit";
 }
 
-export default function RemotePage() {
+export default function RemotePage({ username }: { username: string }) {
   const { id } = useParams<{ id: string }>();
   const { t } = useLanguage();
   const [workstation, setWorkstation] = useState<Workstation | null>(null);
@@ -55,7 +56,8 @@ export default function RemotePage() {
     setConnState("connecting");
     setNeedsPassword(false);
 
-    const rfb = new RFB(screenRef.current, `${WS_BASE_URL}/ws/vnc/${id}`);
+    const screen = screenRef.current;
+    const rfb = new RFB(screen, `${WS_BASE_URL}/ws/vnc/${id}`);
     applyZoomMode(rfb, zoomModeRef.current);
     rfb.resizeSession = false;
     // LAN, not internet: bandwidth is cheap, CPU-bound compression is the
@@ -65,8 +67,28 @@ export default function RemotePage() {
     rfb.compressionLevel = 1;
     rfbRef.current = rfb;
 
-    const onConnect = () => setConnState("connected");
-    const onDisconnect = () => setConnState("disconnected");
+    let connected = false;
+    let framebuffer: HTMLCanvasElement | null = null;
+    const capture = () => {
+      if (!connected) return;
+      framebuffer = screen.querySelector("canvas") ?? framebuffer;
+      if (framebuffer) saveRemotePreview(username, Number(id), framebuffer);
+    };
+    const onConnect = () => {
+      connected = true;
+      framebuffer = screen.querySelector("canvas");
+      setConnState("connected");
+    };
+    const onDisconnect = () => {
+      capture();
+      connected = false;
+      setConnState("disconnected");
+    };
+    // Also retain a recent frame if the browser/tab closes unexpectedly.
+    const timer = window.setInterval(capture, 3000);
+    const onVisibility = () => { if (document.hidden) capture(); };
+    window.addEventListener("pagehide", capture);
+    document.addEventListener("visibilitychange", onVisibility);
     const onCredentialsRequired = () => setNeedsPassword(true);
 
     rfb.addEventListener("connect", onConnect);
@@ -74,13 +96,17 @@ export default function RemotePage() {
     rfb.addEventListener("credentialsrequired", onCredentialsRequired);
 
     return () => {
+      capture();
+      window.clearInterval(timer);
+      window.removeEventListener("pagehide", capture);
+      document.removeEventListener("visibilitychange", onVisibility);
       rfb.removeEventListener("connect", onConnect);
       rfb.removeEventListener("disconnect", onDisconnect);
       rfb.removeEventListener("credentialsrequired", onCredentialsRequired);
       rfb.disconnect();
       rfbRef.current = null;
     };
-  }, [id, reconnectKey]);
+  }, [id, reconnectKey, username]);
 
   function submitPassword(e: FormEvent) {
     e.preventDefault();

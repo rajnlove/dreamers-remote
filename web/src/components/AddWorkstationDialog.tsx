@@ -87,7 +87,7 @@ export default function AddWorkstationDialog({ onClose, onCreated }: { onClose: 
             <small>{t("fieldMacHint")}</small>
           </label>
           <label>
-            {t("fieldLocation")} <span>{t("optional")}</span>
+            <span className="studio-field-label">{t("fieldLocation")} <span>{t("optional")}</span></span>
             <input name="location" placeholder="e.g. Edit suite" maxLength={100} />
           </label>
         </fieldset>

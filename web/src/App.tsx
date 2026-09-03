@@ -42,7 +42,7 @@ export default function App() {
         />
         <Route
           path="/remote/:id"
-          element={user ? <RemotePage /> : <Navigate to="/login" replace />}
+          element={user ? <RemotePage username={user.username} /> : <Navigate to="/login" replace />}
         />
         <Route
           path="/workstations/:id"

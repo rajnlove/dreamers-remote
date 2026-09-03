@@ -82,6 +82,9 @@
 .studio-desktop>strong { font-size: 10px; letter-spacing: 1px; font-weight: 500; color: #a9c5e9; max-width: 95%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .studio-desktop>span { font-size: 9px; color: #8597af; margin-top: 2px; }
 .studio-desktop>small { color: #7d8ca1; font-size: 8px; margin-top: 8px; }
+.studio-desktop.has-preview { background: #080e17; }
+.studio-desktop-image { width: 100%; height: 100%; object-fit: contain; }
+.studio-desktop>small.studio-preview-caption { position: absolute; bottom: 0; left: 0; right: 0; padding: 5px 8px; margin: 0; color: #d9e7f8; background: #08111dcc; font-size: 9px; }
 .studio-card-metrics { display: flex; flex-direction: column; gap: 10px; }
 .studio-metric { display: grid; grid-template-columns: 42px 1fr 34px; gap: 10px; align-items: center; font-size: 11px; }
 .studio-metric>span { color: #a6b1c2; }
@@ -153,7 +156,8 @@
 .studio-dialog .studio-alert { margin: 16px 0 0; font-size: 12px; }
 .studio-dialog fieldset { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 15px; border: 0; padding: 22px 0; margin: 0; min-width: 0; }
 .studio-dialog label { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; font-size: 11px; color: #c7d5e8; min-width: 0; }
-.studio-dialog label>span { color: #8195b0; font-size: 9px; }
+.studio-dialog .studio-field-label { color: inherit; font-size: inherit; }
+.studio-dialog .studio-field-label>span { color: #8195b0; font-size: 9px; }
 .studio-dialog input { width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid #34435b; border-radius: 5px; background: #0c1521; color: #e2eafa; outline-offset: 2px; font-size: 12px; }
 .studio-dialog input::placeholder { color: #687e9b; }
 .studio-dialog label small { font-size: 9px; color: #8499b4; }

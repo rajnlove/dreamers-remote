@@ -237,7 +237,7 @@ export default function Dashboard({ user, onLogout }: { user: CurrentUser; onLog
           </section>
           <section id="workstations" className="studio-workstations" aria-label="Workstations">
             {machines.map((machine) => (
-              <WorkstationCard key={machine.id} workstation={machine} status={statusById.get(machine.id)} stale={!!errors.status || !!errors.machines} />
+              <WorkstationCard key={machine.id} username={user.username} workstation={machine} status={statusById.get(machine.id)} stale={!!errors.status || !!errors.machines} />
             ))}
             {machines.length === 0 && (
               <div className="studio-empty">
