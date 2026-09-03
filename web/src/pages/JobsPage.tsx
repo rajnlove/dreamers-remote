@@ -59,6 +59,20 @@ function sourceName(job: Job): string {
   }
 }
 
+// Target resolution ("WxH", see FfmpegArgs.Build's scale-to-fit) --
+// several jobs against the same source file only differ by this, so
+// it's shown next to the filename to tell otherwise-identical-looking
+// rows apart. Null (not "native") when the job didn't set one, so the
+// row can distinguish "native size" from "no info available" too.
+function jobResolution(job: Job): string | null {
+  try {
+    const input = JSON.parse(job.input ?? "{}");
+    return typeof input.resolution === "string" && input.resolution ? input.resolution : null;
+  } catch {
+    return null;
+  }
+}
+
 function duration(seconds: number | null): string {
   if (seconds === null || !Number.isFinite(seconds)) return "—";
   const value = Math.max(0, Math.round(seconds));
@@ -456,6 +470,11 @@ export default function JobsPage({ username }: { username: string }) {
                           </span>
                           <div className="queue-job-info">
                             <strong title={sourceName(job)}>{sourceName(job)}</strong>
+                            {jobResolution(job) && (
+                              <small className="queue-badge" style={{ display: "inline-block", marginTop: 2 }}>
+                                {jobResolution(job)}
+                              </small>
+                            )}
                             <small>{t("priorityLabel", { id: job.id, type: job.type, priority: job.priority })}</small>
                             {job.depends_on !== null && <small>{t("dependsOn", { id: job.depends_on })}</small>}
                             {job.retry_count > 0 && <small>{t("attemptN", { n: job.retry_count + 1 })}</small>}
