@@ -101,7 +101,7 @@ export default function WorkstationCard({ username, workstation, status, stale =
           : <div className="studio-desktop-grid" aria-hidden="true" />}
         {preview && <div className="studio-desktop-shade" aria-hidden="true" />}
         <div className="studio-desktop-details">
-          {!preview && <div className="studio-screen-symbol"><StudioIcon name="monitor" /></div>}
+          <div className="studio-screen-symbol"><StudioIcon name="monitor" /></div>
           <strong>{metrics?.hostname || workstation.hostname}</strong>
           <span>{metrics?.os || workstation.os || t("studioWorkstation")}</span>
           <small>{t(preview ? "lastRemotePreview" : "desktopPreviewUnavailable")}</small>

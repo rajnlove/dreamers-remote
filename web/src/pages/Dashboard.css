@@ -79,6 +79,7 @@
 .studio-screen-symbol { color: #6c8db7; margin-bottom: 7px; }
 .studio-screen-symbol svg { height: 29px; width: 29px; }
 .studio-desktop.available .studio-screen-symbol { color: #569ef9; }
+.studio-desktop.has-preview .studio-screen-symbol { color: #72b0ff; filter: drop-shadow(0 1px 4px #000); }
 .studio-desktop-details>strong { font-size: 10px; letter-spacing: 1px; font-weight: 600; color: #d9eaff; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 4px #000; }
 .studio-desktop-details>span { font-size: 9px; color: #b8cbe3; margin-top: 3px; text-shadow: 0 1px 4px #000; }
 .studio-desktop-details>small { color: #93a9c4; font-size: 8px; margin-top: 8px; }
