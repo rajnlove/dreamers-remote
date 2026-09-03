@@ -96,18 +96,16 @@ export default function WorkstationCard({ username, workstation, status, stale =
         {t(statusLabel)}
       </p>
       <div className={`studio-desktop ${preview ? "has-preview" : online && !stale ? "available" : ""}`} aria-label={t(preview ? "lastRemotePreview" : "desktopPreviewUnavailable")}>
-        {preview ? <>
-          <img className="studio-desktop-image" src={preview} alt={t("lastRemotePreview")} />
-          <small className="studio-preview-caption">{t("lastRemotePreview")}</small>
-        </> : <>
-        <div className="studio-desktop-grid" aria-hidden="true" />
-        <div className="studio-screen-symbol">
-          <StudioIcon name="monitor" />
+        {preview
+          ? <img className="studio-desktop-image" src={preview} alt="" aria-hidden="true" />
+          : <div className="studio-desktop-grid" aria-hidden="true" />}
+        {preview && <div className="studio-desktop-shade" aria-hidden="true" />}
+        <div className="studio-desktop-details">
+          {!preview && <div className="studio-screen-symbol"><StudioIcon name="monitor" /></div>}
+          <strong>{metrics?.hostname || workstation.hostname}</strong>
+          <span>{metrics?.os || workstation.os || t("studioWorkstation")}</span>
+          <small>{t(preview ? "lastRemotePreview" : "desktopPreviewUnavailable")}</small>
         </div>
-        <strong>{metrics?.hostname || workstation.hostname}</strong>
-        <span>{metrics?.os || workstation.os || t("studioWorkstation")}</span>
-        <small>{t("desktopPreviewUnavailable")}</small>
-        </>}
       </div>
       <div className="studio-card-metrics">
         <MetricBar label={t("cpuLabel")} value={metrics?.cpu?.utilizationPercent} />
