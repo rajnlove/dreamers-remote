@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { login, type CurrentUser } from "../api/auth";
+import { useLanguage } from "../i18n/LanguageContext";
+import LanguageToggle from "../components/LanguageToggle";
 
 interface Props {
   onLogin: (user: CurrentUser) => void;
@@ -10,6 +12,7 @@ export default function Login({ onLogin }: Props) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { t } = useLanguage();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -27,16 +30,17 @@ export default function Login({ onLogin }: Props) {
 
   return (
     <div className="app login-wrap">
+      <LanguageToggle className="login-lang-toggle" />
       <form className="password-form login-form" onSubmit={handleSubmit}>
-        <h1 className="login-title">DREAMERS REMOTE</h1>
-        <label htmlFor="username">USERNAME</label>
+        <h1 className="login-title">{t("loginTitle")}</h1>
+        <label htmlFor="username">{t("loginUsername")}</label>
         <input
           id="username"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           autoFocus
         />
-        <label htmlFor="login-password">PASSWORD</label>
+        <label htmlFor="login-password">{t("loginPassword")}</label>
         <input
           id="login-password"
           type="password"
@@ -45,7 +49,7 @@ export default function Login({ onLogin }: Props) {
         />
         {error && <p className="login-error">{error}</p>}
         <button className="btn btn-primary" type="submit" disabled={submitting}>
-          {submitting ? "..." : "LOG IN"}
+          {submitting ? t("loginSubmitting") : t("loginButton")}
         </button>
       </form>
     </div>

@@ -2,6 +2,8 @@ import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getWorkstation, getWorkstationMetrics, sendAgentCommand, type AgentCommand } from "../api/workstations";
 import type { Workstation, WorkstationStatus } from "../types/workstation";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
 
 const POLL_MS = 5000;
 
@@ -14,22 +16,23 @@ function formatUptime(totalSeconds: number): string {
   return `${minutes}m`;
 }
 
-function formatLastSeen(iso: string | null): string {
-  if (!iso) return "Chưa bao giờ";
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s trước`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m trước`;
-  return `${Math.floor(seconds / 3600)}h trước`;
-}
-
 export default function WorkstationDetail() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useLanguage();
   const [workstation, setWorkstation] = useState<Workstation | null>(null);
   const [status, setStatus] = useState<WorkstationStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmCommand, setConfirmCommand] = useState<AgentCommand | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
+
+  function formatLastSeen(iso: string | null): string {
+    if (!iso) return t("neverSeen");
+    const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+    if (seconds < 60) return t("secondsAgo", { n: seconds });
+    if (seconds < 3600) return t("minutesAgo", { n: Math.floor(seconds / 60) });
+    return t("hoursAgo", { n: Math.floor(seconds / 3600) });
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -72,46 +75,46 @@ export default function WorkstationDetail() {
     setCommandMessage(null);
     try {
       await sendAgentCommand(Number(id), command);
-      setCommandMessage(
-        `Đã gửi lệnh ${command.toUpperCase()} — máy sẽ thực hiện trong lần heartbeat tiếp theo (tối đa ~5s).`,
-      );
+      setCommandMessage(t("commandSent", { command: command.toUpperCase() }));
     } catch (err) {
-      setCommandMessage(`Gửi lệnh thất bại: ${err instanceof Error ? err.message : String(err)}`);
+      setCommandMessage(t("commandFailed", { reason: err instanceof Error ? err.message : String(err) }));
     } finally {
       setCommandBusy(false);
     }
   }
+
+  const commandKey: Record<AgentCommand, TranslationKey> = { restart: "restart", shutdown: "shutdown" };
 
   return (
     <div className="app">
       <header className="header remote-header">
         <div>
           <Link className="back-link" to="/">
-            &larr; WORKSTATIONS
+            &larr; {t("backToWorkstations")}
           </Link>
           <h1>{workstation ? workstation.name : "..."}</h1>
         </div>
         <div className="remote-toolbar">
           {status?.vncOnline && (
             <Link className="btn btn-primary" to={`/remote/${id}`}>
-              REMOTE
+              {t("remoteButton")}
             </Link>
           )}
           <button
             className="btn"
             disabled={!status?.agentOnline || commandBusy}
-            title={status?.agentOnline ? undefined : "Agent chưa online — không gửi được lệnh"}
+            title={status?.agentOnline ? undefined : t("agentOfflineNoCommand")}
             onClick={() => setConfirmCommand("restart")}
           >
-            RESTART
+            {t("restart")}
           </button>
           <button
             className="btn"
             disabled={!status?.agentOnline || commandBusy}
-            title={status?.agentOnline ? undefined : "Agent chưa online — không gửi được lệnh"}
+            title={status?.agentOnline ? undefined : t("agentOfflineNoCommand")}
             onClick={() => setConfirmCommand("shutdown")}
           >
-            SHUTDOWN
+            {t("shutdown")}
           </button>
         </div>
       </header>
@@ -122,38 +125,36 @@ export default function WorkstationDetail() {
       {workstation && (
         <div className="detail-body">
           <section className="detail-section">
-            <h2>OVERVIEW</h2>
+            <h2>{t("overviewHeading")}</h2>
             <div className="detail-grid">
-              <span className="detail-label">Hostname</span>
+              <span className="detail-label">{t("hostname")}</span>
               <span>{metrics?.hostname ?? workstation.hostname}</span>
-              <span className="detail-label">IP</span>
+              <span className="detail-label">{t("ipAddress")}</span>
               <span>{workstation.ip}</span>
-              <span className="detail-label">OS</span>
+              <span className="detail-label">{t("osLabel")}</span>
               <span>{metrics?.os ?? workstation.os ?? "—"}</span>
-              <span className="detail-label">Agent version</span>
+              <span className="detail-label">{t("agentVersion")}</span>
               <span>{metrics?.agentVersion ?? "—"}</span>
-              <span className="detail-label">Uptime</span>
+              <span className="detail-label">{t("uptime")}</span>
               <span>{metrics?.uptimeSeconds !== undefined ? formatUptime(metrics.uptimeSeconds) : "—"}</span>
-              <span className="detail-label">Last seen</span>
+              <span className="detail-label">{t("lastSeen")}</span>
               <span>{formatLastSeen(status?.lastSeen ?? null)}</span>
-              <span className="detail-label">VNC</span>
-              <span>{status?.vncOnline ? "ONLINE" : "OFFLINE"}</span>
-              <span className="detail-label">Agent</span>
-              <span>{status?.agentOnline ? "ONLINE" : "OFFLINE"}</span>
+              <span className="detail-label">{t("vncLabel")}</span>
+              <span>{status?.vncOnline ? t("statusOnline") : t("statusOffline")}</span>
+              <span className="detail-label">{t("agentLabel")}</span>
+              <span>{status?.agentOnline ? t("statusOnline") : t("statusOffline")}</span>
             </div>
           </section>
 
           {metrics?.cpu && (
             <section className="detail-section">
-              <h2>CPU</h2>
+              <h2>{t("cpuHeading")}</h2>
               <div className="detail-grid">
-                <span className="detail-label">Model</span>
+                <span className="detail-label">{t("model")}</span>
                 <span>{metrics.cpu.name}</span>
-                <span className="detail-label">Cores</span>
-                <span>
-                  {metrics.cpu.physicalCoreCount} physical / {metrics.cpu.logicalProcessorCount} logical
-                </span>
-                <span className="detail-label">Usage</span>
+                <span className="detail-label">{t("cores")}</span>
+                <span>{t("coresValue", { physical: metrics.cpu.physicalCoreCount, logical: metrics.cpu.logicalProcessorCount })}</span>
+                <span className="detail-label">{t("usage")}</span>
                 <span>
                   {metrics.cpu.utilizationPercent === null ? "…" : `${Math.round(metrics.cpu.utilizationPercent)}%`}
                 </span>
@@ -163,13 +164,13 @@ export default function WorkstationDetail() {
 
           {metrics?.memory && (
             <section className="detail-section">
-              <h2>RAM</h2>
+              <h2>{t("ramHeading")}</h2>
               <div className="detail-grid">
-                <span className="detail-label">Used</span>
+                <span className="detail-label">{t("used")}</span>
                 <span>{(metrics.memory.usedMb / 1024).toFixed(1)} GB</span>
-                <span className="detail-label">Available</span>
+                <span className="detail-label">{t("available")}</span>
                 <span>{(metrics.memory.availableMb / 1024).toFixed(1)} GB</span>
-                <span className="detail-label">Total</span>
+                <span className="detail-label">{t("total")}</span>
                 <span>{(metrics.memory.totalMb / 1024).toFixed(1)} GB</span>
               </div>
             </section>
@@ -177,18 +178,18 @@ export default function WorkstationDetail() {
 
           {metrics?.gpus && metrics.gpus.length > 0 && (
             <section className="detail-section">
-              <h2>GPU</h2>
+              <h2>{t("gpuHeading")}</h2>
               {metrics.gpus.map((gpu) => (
                 <div className="detail-grid detail-gpu" key={gpu.index}>
-                  <span className="detail-label">GPU {gpu.index}</span>
+                  <span className="detail-label">{t("gpuIndexOnly", { index: gpu.index })}</span>
                   <span>{gpu.name}</span>
-                  <span className="detail-label">Usage</span>
+                  <span className="detail-label">{t("usage")}</span>
                   <span>{Math.round(gpu.utilizationPercent)}%</span>
-                  <span className="detail-label">VRAM</span>
+                  <span className="detail-label">{t("vramLabel")}</span>
                   <span>
                     {(gpu.vramUsedMb / 1024).toFixed(1)} / {(gpu.vramTotalMb / 1024).toFixed(0)} GB
                   </span>
-                  <span className="detail-label">Temp</span>
+                  <span className="detail-label">{t("temp")}</span>
                   <span>{gpu.temperatureCelsius !== null ? `${gpu.temperatureCelsius}°C` : "—"}</span>
                 </div>
               ))}
@@ -197,7 +198,7 @@ export default function WorkstationDetail() {
 
           {metrics?.disks && metrics.disks.length > 0 && (
             <section className="detail-section">
-              <h2>STORAGE</h2>
+              <h2>{t("storageHeading")}</h2>
               <div className="detail-grid">
                 {metrics.disks.map((disk) => (
                   <Fragment key={disk.name}>
@@ -214,7 +215,7 @@ export default function WorkstationDetail() {
 
           {metrics?.processes && metrics.processes.length > 0 && (
             <section className="detail-section">
-              <h2>APPLICATIONS</h2>
+              <h2>{t("applicationsHeading")}</h2>
               <div className="apps">
                 {metrics.processes.map((p) => (
                   <div className="app-row" key={p.name}>
@@ -227,27 +228,20 @@ export default function WorkstationDetail() {
             </section>
           )}
 
-          {!metrics && (
-            <div className="empty">
-              Agent chưa online — không có dữ liệu CPU/RAM/GPU/disk/apps để hiển thị.
-            </div>
-          )}
+          {!metrics && <div className="empty">{t("noAgentDataYet")}</div>}
         </div>
       )}
 
       {confirmCommand && (
         <div className="password-overlay">
           <div className="password-form">
-            <p>
-              Bạn có chắc muốn <strong>{confirmCommand.toUpperCase()}</strong> máy{" "}
-              <strong>{workstation?.name}</strong> không?
-            </p>
+            <p>{t("confirmCommandPrompt", { command: t(commandKey[confirmCommand]), machine: workstation?.name ?? "" })}</p>
             <div className="remote-toolbar">
               <button className="btn" onClick={() => setConfirmCommand(null)}>
-                HỦY
+                {t("cancel")}
               </button>
               <button className="btn btn-primary" onClick={confirmSendCommand}>
-                XÁC NHẬN {confirmCommand.toUpperCase()}
+                {t("confirmButtonPrefix")} {t(commandKey[confirmCommand])}
               </button>
             </div>
           </div>

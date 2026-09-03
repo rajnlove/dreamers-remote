@@ -4,6 +4,8 @@ import RFB from "@novnc/novnc";
 import { getWorkstation } from "../api/workstations";
 import { WS_BASE_URL } from "../api/config";
 import type { Workstation } from "../types/workstation";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
 
 type ConnState = "connecting" | "connected" | "disconnected";
 // "fit": whole framebuffer (all monitors, if the workstation has more than
@@ -27,6 +29,7 @@ function applyZoomMode(rfb: RFB, mode: ZoomMode): void {
 
 export default function RemotePage() {
   const { id } = useParams<{ id: string }>();
+  const { t } = useLanguage();
   const [workstation, setWorkstation] = useState<Workstation | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [connState, setConnState] = useState<ConnState>("connecting");
@@ -111,37 +114,39 @@ export default function RemotePage() {
     });
   }
 
+  const connStateKey: Record<ConnState, TranslationKey> = {
+    connecting: "connStateConnecting",
+    connected: "connStateConnected",
+    disconnected: "connStateDisconnected",
+  };
+
   return (
     <div className="app remote-app">
       <header className="header remote-header">
         <div>
           <Link className="back-link" to="/">
-            &larr; WORKSTATIONS
+            &larr; {t("backToWorkstations")}
           </Link>
-          <h1>{workstation ? workstation.name : "REMOTE"}</h1>
+          <h1>{workstation ? workstation.name : t("remoteHeadingFallback")}</h1>
         </div>
         <div className="remote-toolbar">
-          <span className={`status-pill status-${connState}`}>{connState.toUpperCase()}</span>
+          <span className={`status-pill status-${connState}`}>{t(connStateKey[connState])}</span>
           <button className="btn" onClick={handleCtrlAltDel} disabled={connState !== "connected"}>
-            CTRL+ALT+DEL
+            {t("ctrlAltDel")}
           </button>
           <button className="btn" onClick={handleFullscreen}>
-            FULLSCREEN
+            {t("fullscreen")}
           </button>
-          <button
-            className="btn"
-            onClick={handleToggleZoom}
-            title="Multi-monitor desktops: switch to 100% and scroll (wheel/trackpad/scrollbar) to see the rest"
-          >
-            {zoomMode === "fit" ? "100% (SCROLL TO PAN)" : "FIT TO SCREEN"}
+          <button className="btn" onClick={handleToggleZoom} title={t("zoomActualHint")}>
+            {zoomMode === "fit" ? t("zoomActualLabel") : t("zoomFitLabel")}
           </button>
           {connState === "connected" ? (
             <button className="btn" onClick={handleDisconnect}>
-              DISCONNECT
+              {t("disconnect")}
             </button>
           ) : (
             <button className="btn btn-primary" onClick={handleReconnect}>
-              RECONNECT
+              {t("reconnect")}
             </button>
           )}
         </div>
@@ -154,7 +159,7 @@ export default function RemotePage() {
       {needsPassword && (
         <div className="password-overlay">
           <form className="password-form" onSubmit={submitPassword}>
-            <label htmlFor="vnc-password">VNC PASSWORD</label>
+            <label htmlFor="vnc-password">{t("vncPassword")}</label>
             <input
               id="vnc-password"
               type="password"
@@ -163,7 +168,7 @@ export default function RemotePage() {
               onChange={(e) => setPasswordInput(e.target.value)}
             />
             <button className="btn btn-primary" type="submit">
-              CONNECT
+              {t("connect")}
             </button>
           </form>
         </div>

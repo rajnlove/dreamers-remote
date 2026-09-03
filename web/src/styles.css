@@ -251,6 +251,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.login-lang-toggle {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
 }
 
 .login-form {
@@ -486,6 +493,44 @@ body {
 .job-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* Language toggle (EN/VI) -- deliberately theme-agnostic (uses its own
+   fallback colors, not the page-specific --q-* variables JobsPage.css/
+   Dashboard.css define) so it looks reasonable everywhere it's dropped
+   in: the plain dark theme here, and both redesigned pages. */
+.lang-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border, #2a2e37);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.lang-toggle button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-dim, #8b939f);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.lang-toggle button + button {
+  border-left: 1px solid var(--border, #2a2e37);
+}
+
+.lang-toggle button.active {
+  background: var(--accent, #3b82f6);
+  color: #fff;
+}
+
+.lang-toggle button:hover:not(.active) {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--text, #e6e8eb);
 }
 
 .job-actions .btn {

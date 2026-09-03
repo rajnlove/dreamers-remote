@@ -6,10 +6,12 @@ import WorkstationDetail from "./pages/WorkstationDetail";
 import JobsPage from "./pages/JobsPage";
 import Login from "./pages/Login";
 import { getCurrentUser, type CurrentUser } from "./api/auth";
+import { useLanguage } from "./i18n/LanguageContext";
 
 export default function App() {
   // undefined = still checking; null = not logged in; object = logged in
   const [user, setUser] = useState<CurrentUser | null | undefined>(undefined);
+  const { t } = useLanguage();
 
   useEffect(() => {
     getCurrentUser()
@@ -20,7 +22,7 @@ export default function App() {
   if (user === undefined) {
     return (
       <div className="app">
-        <div className="empty">Đang tải...</div>
+        <div className="empty">{t("appLoading")}</div>
       </div>
     );
   }
