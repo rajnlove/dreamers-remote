@@ -2,125 +2,81 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { wakeWorkstation } from "../api/workstations";
 import type { Workstation, WorkstationStatus } from "../types/workstation";
+import StudioIcon from "./StudioIcon";
 
 interface Props {
   workstation: Workstation;
   status: WorkstationStatus | undefined;
+  stale?: boolean;
 }
 
-function MetricBar({ label, percent, text }: { label: string; percent: number; text: string }) {
-  const clamped = Math.max(0, Math.min(100, percent));
+function MetricBar({ label, value }: { label: string; value: number | null | undefined }) {
+  const available = value != null && Number.isFinite(value);
   return (
-    <div className="metric-row">
-      <span className="metric-label">{label}</span>
-      <div className="metric-bar">
-        <div className="metric-bar-fill" style={{ width: `${clamped}%` }} />
+    <div className="studio-metric">
+      <span>{label}</span>
+      <div className="studio-meter" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={available ? Math.max(0, Math.min(100, value)) : undefined} aria-valuetext={available ? `${Math.round(value)}%` : "Unavailable"}>
+        <span style={{ width: `${available ? Math.max(0, Math.min(100, value)) : 0}%` }} />
       </div>
-      <span className="metric-value">{text}</span>
+      <strong>{available ? `${Math.round(value)}%` : "—"}</strong>
     </div>
   );
 }
 
-export default function WorkstationCard({ workstation, status }: Props) {
+function uptime(seconds: number | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds)) return "Unavailable";
+  const minutes = Math.floor(Math.max(0, seconds) / 60);
+  return `${Math.floor(minutes / 1440)}d ${Math.floor(minutes / 60) % 24}h ${minutes % 60}m`;
+}
+
+export default function WorkstationCard({ workstation, status, stale = false }: Props) {
   const [waking, setWaking] = useState(false);
-
-  const vncOnline = status?.vncOnline;
-  const agentOnline = status?.agentOnline ?? false;
-  const metrics = agentOnline ? status?.metrics : undefined;
-
-  const dotClass = vncOnline === undefined ? "dot-unknown" : vncOnline ? "dot-online" : "dot-offline";
-  const statusLabel = vncOnline === undefined ? "CHECKING..." : vncOnline ? "ONLINE" : "OFFLINE";
+  const [message, setMessage] = useState<string | null>(null);
+  const online = status?.vncOnline && workstation.enabled;
+  const agentOnline = status?.agentOnline && !stale;
+  const metrics = agentOnline ? status?.metrics : null;
+  const statusLabel = !workstation.enabled ? "DISABLED" : stale ? "UNKNOWN" : !status ? "CHECKING" : online ? "ONLINE" : "OFFLINE";
+  const gpus = metrics?.gpus ?? [];
 
   async function handleWake() {
     setWaking(true);
+    setMessage(null);
     try {
       await wakeWorkstation(workstation.id);
-      alert(`Đã gửi Wake-on-LAN packet tới ${workstation.name}. Máy có thể mất một lúc để khởi động.`);
+      setMessage("Wake signal sent. Waiting for the machine to come online.");
     } catch (err) {
-      alert(`Gửi Wake-on-LAN thất bại: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setWaking(false);
-    }
+      setMessage(err instanceof Error ? err.message : String(err));
+    } finally { setWaking(false); }
   }
 
   return (
-    <div className="card">
-      <div className="card-title">
-        <span className={`dot ${dotClass}`} title={`VNC: ${statusLabel}`} />
-        <Link className="card-title-link" to={`/workstations/${workstation.id}`}>
-          {workstation.name}
-        </Link>
-        <span
-          className={`agent-badge ${agentOnline ? "agent-badge-online" : "agent-badge-offline"}`}
-          title={agentOnline ? "Agent: ONLINE" : "Agent: OFFLINE hoặc chưa cài"}
-        >
-          AGENT
-        </span>
+    <article className="studio-workstation" aria-label={workstation.name}>
+      <header className="studio-card-header">
+        <span className={`studio-dot ${statusLabel === "ONLINE" ? "online" : statusLabel === "OFFLINE" || statusLabel === "DISABLED" ? "offline" : "unknown"}`} title={`Remote: ${statusLabel}`} />
+        <Link to={`/workstations/${workstation.id}`} className="studio-card-name">{workstation.name}</Link>
+        <span className={`studio-agent ${agentOnline ? "online" : ""}`} title={stale ? "Agent status unavailable" : status?.agentOnline ? "Agent online" : "Agent offline or not paired"}>{stale ? "UNKNOWN" : agentOnline ? "AGENT" : "NO AGENT"}</span>
+      </header>
+      <p className="studio-card-address">{workstation.ip}<span>•</span>{statusLabel}</p>
+      <div className={`studio-desktop ${online && !stale ? "available" : ""}`} aria-label="Workstation information; desktop preview unavailable">
+        <div className="studio-desktop-grid" aria-hidden="true" />
+        <div className="studio-screen-symbol"><StudioIcon name="monitor" /></div>
+        <strong>{metrics?.hostname || workstation.hostname}</strong>
+        <span>{metrics?.os || workstation.os || "Studio workstation"}</span>
+        <small>Desktop preview unavailable</small>
       </div>
-      <p className="card-ip">
-        {workstation.ip} &middot; {statusLabel}
-      </p>
-
-      {metrics && (
-        <div className="metrics">
-          {metrics.cpu && (
-            <MetricBar
-              label="CPU"
-              percent={metrics.cpu.utilizationPercent ?? 0}
-              text={metrics.cpu.utilizationPercent === null ? "..." : `${Math.round(metrics.cpu.utilizationPercent)}%`}
-            />
-          )}
-          {metrics.memory && (
-            <MetricBar
-              label="RAM"
-              percent={metrics.memory.usagePercent}
-              text={`${Math.round(metrics.memory.usagePercent)}%`}
-            />
-          )}
-          {metrics.gpus?.map((gpu) => (
-            <MetricBar
-              key={gpu.index}
-              label={metrics.gpus!.length > 1 ? `GPU${gpu.index}` : "GPU"}
-              percent={gpu.utilizationPercent}
-              text={`${Math.round(gpu.utilizationPercent)}%`}
-            />
-          ))}
-          {metrics.gpus?.map((gpu) => (
-            <div className="metric-row" key={`vram-${gpu.index}`}>
-              <span className="metric-label">VRAM</span>
-              <span className="metric-value metric-value-wide">
-                {(gpu.vramUsedMb / 1024).toFixed(1)} / {(gpu.vramTotalMb / 1024).toFixed(0)} GB
-                {gpu.temperatureCelsius !== null && ` · ${gpu.temperatureCelsius}°C`}
-              </span>
-            </div>
-          ))}
-
-          {metrics.processes && metrics.processes.some((p) => p.running) && (
-            <div className="apps">
-              {metrics.processes
-                .filter((p) => p.running)
-                .map((p) => (
-                  <div className="app-row" key={p.name}>
-                    <span className="dot dot-online" />
-                    {p.name}
-                  </div>
-                ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="card-actions">
-        {vncOnline ? (
-          <Link className="btn btn-primary" to={`/remote/${workstation.id}`}>
-            REMOTE
-          </Link>
-        ) : (
-          <button className="btn" onClick={handleWake} disabled={waking}>
-            {waking ? "SENDING..." : "WAKE"}
-          </button>
-        )}
+      <div className="studio-card-metrics">
+        <MetricBar label="CPU" value={metrics?.cpu?.utilizationPercent} />
+        <MetricBar label="RAM" value={metrics?.memory?.usagePercent} />
+        {gpus.length ? gpus.map(gpu => <MetricBar key={gpu.index} label={gpus.length > 1 ? `GPU ${gpu.index}` : "GPU"} value={gpu.utilizationPercent} />) : <MetricBar label="GPU" value={undefined} />}
+        {gpus.length ? gpus.map(gpu => <div className="studio-vram" key={`vram-${gpu.index}`} title={gpu.name}><span>{gpus.length > 1 ? `VRAM ${gpu.index}` : "VRAM"}</span><span>{(gpu.vramUsedMb / 1024).toFixed(1)} / {(gpu.vramTotalMb / 1024).toFixed(0)} GB{gpu.temperatureCelsius != null && ` · ${gpu.temperatureCelsius}°C`}</span></div>) : <div className="studio-vram"><span>VRAM</span><span>—</span></div>}
       </div>
-    </div>
+      {metrics?.processes?.some(process => process.running) && <div className="studio-apps" aria-label="Running applications">{metrics.processes.filter(process => process.running).map(process => <span key={process.name} title={process.ramMb != null ? `${process.ramMb} MB RAM` : undefined}><span className="studio-dot online" />{process.name}</span>)}</div>}
+      <div className="studio-card-actions">
+        {online && !stale ? <Link className="studio-button primary" to={`/remote/${workstation.id}`}><StudioIcon name="monitor" />REMOTE</Link> : <button className="studio-button" onClick={handleWake} disabled={waking || stale || !status || !workstation.enabled || workstation.mac_address === "00:00:00:00:00:00"} title={workstation.mac_address === "00:00:00:00:00:00" ? "Set a MAC address before using Wake-on-LAN" : undefined}><StudioIcon name="power" />{waking ? "SENDING…" : "WAKE MACHINE"}</button>}
+        <Link className="studio-button secondary" to={`/workstations/${workstation.id}`}>DETAILS</Link>
+      </div>
+      {message && <p className="studio-card-message" role="status">{message}</p>}
+      <footer className="studio-card-footer"><StudioIcon name="clock" /><span>Uptime: {uptime(metrics?.uptimeSeconds)}</span></footer>
+    </article>
   );
 }

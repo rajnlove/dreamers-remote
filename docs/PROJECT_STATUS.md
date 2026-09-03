@@ -1603,3 +1603,26 @@ dotnet publish Dreamers.Agent -c Release -r win-x64 -o .\dist
   production (that's the user's call, whenever PHP integration
   actually happens), but proves the mechanism works against the real
   share, not just local paths.
+
+## Dashboard and queue UI refresh (2026-09-03)
+
+- Queue redesign (`874cbe3`) deployed through Dockge's web-stack Update and
+  verified against the live API: 77 jobs and four online workstations at the
+  time of verification. Adds status filters, search, sorting, pagination,
+  and live machine metrics. The backend/Agent deployment was unchanged.
+- Remote dashboard redesigned to match the owner's supplied `remote.png`:
+  sidebar, fleet summary, workstation cards, logical network overview, and
+  recent job activity. Metrics, uptime, running processes, and each GPU's
+  utilization/VRAM remain sourced from the existing API. Offline/stale
+  metrics display as unavailable; VNC and Agent availability stay separate.
+- Add Workstation opens a validated form backed by the existing
+  `POST /api/workstations` endpoint. Remote, Details, Wake-on-LAN, Refresh,
+  and Logout remain available. Creation was verified only in an isolated
+  demo, without adding test records to production.
+- Desktop screenshots and remote-session audit history are not exposed by
+  the current API. Cards explicitly show a hardware/hostname placeholder;
+  Recent Activity is labeled Job Updates and uses actual job timestamps.
+- Validation: TypeScript + Vite production build; browser inspection of
+  desktop/mobile layouts, two-GPU display, unavailable metrics, and the
+  create-workstation form. Dashboard production rollout is not claimed by
+  these local checks.

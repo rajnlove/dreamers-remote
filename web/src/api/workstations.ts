@@ -48,3 +48,20 @@ export function sendAgentCommand(id: number, command: AgentCommand): Promise<{ q
     body: JSON.stringify({ command }),
   });
 }
+
+export interface CreateWorkstationInput {
+  name: string;
+  hostname: string;
+  ip: string;
+  mac_address: string;
+  vnc_port: number;
+  location?: string;
+}
+
+export function createWorkstation(input: CreateWorkstationInput): Promise<Workstation> {
+  return request<Workstation>("/api/workstations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
