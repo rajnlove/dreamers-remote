@@ -66,3 +66,10 @@ export function retryJob(id: number): Promise<Job> {
 export function deleteJob(id: number): Promise<void> {
   return requestVoid(`/api/jobs/${id}`, { method: "DELETE" });
 }
+
+// Bulk "clear history" -- admin-only, deletes every terminal job at
+// once; a still-QUEUED/ASSIGNED/RUNNING job is left alone rather than
+// blocking the whole clear.
+export function deleteAllTerminalJobs(): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>("/api/jobs", { method: "DELETE" });
+}

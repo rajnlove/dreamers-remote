@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { cancelJob, createJob, deleteJob, getJob, listJobs, retryJob } from "../job/repository.js";
+import { cancelJob, createJob, deleteJob, deleteTerminalJobs, getJob, listJobs, retryJob } from "../job/repository.js";
 import { runScheduler } from "../job/scheduler.js";
 import { validateCreateInput } from "../job/validation.js";
 import { requireAdmin } from "../auth/middleware.js";
@@ -88,6 +88,20 @@ jobsRouter.delete("/:id", requireAdmin, (req, res, next) => {
       throw new ConflictError("Job is still QUEUED/ASSIGNED/RUNNING — cancel it first, then delete");
     }
     res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Bulk "clear history" — every terminal job at once, admin-only (same
+// gate as the single-job delete above). See repository.ts's
+// deleteTerminalJobs for the atomicity/dependency-ordering detail.
+// QUEUED/ASSIGNED/RUNNING jobs are silently left alone, not an error —
+// this is "clear what can be cleared", not "clear everything or fail".
+jobsRouter.delete("/", requireAdmin, (_req, res, next) => {
+  try {
+    const deleted = deleteTerminalJobs();
+    res.json({ deleted });
   } catch (err) {
     next(err);
   }

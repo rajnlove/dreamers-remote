@@ -81,6 +81,38 @@ export function deleteJob(id: number): DeleteJobResult {
   return "deleted";
 }
 
+// Bulk "clear history" -- every terminal job at once, atomically (one
+// transaction: all deleted or none, never a half-cleared table). Only
+// ever touches terminal jobs, same rule as the single-job deleteJob
+// above -- a QUEUED/ASSIGNED/RUNNING job is simply left alone, not an
+// error. Deletes in descending id order: `jobs.depends_on` can only
+// reference an id that already existed when the dependent job was
+// created (enforced in api/jobs.ts's POST handler), so a dependency
+// always points to a *lower* id -- deleting highest-id-first guarantees
+// a dependent job is always gone before whatever it depended on, so two
+// terminal jobs in a dependency chain never hit the foreign key
+// constraint against each other. The one case this does NOT protect
+// against -- a terminal job that a still-*active* (non-terminal, so not
+// part of this batch) job depends on -- deliberately throws
+// (SqliteError, FOREIGN KEY constraint failed) and rolls back the whole
+// batch rather than silently deleting everything else around it; rare
+// enough in practice (job dependencies are barely used) that surfacing
+// it as a real error for a human to resolve beats a partial, silently
+// inconsistent clear.
+export function deleteTerminalJobs(): number {
+  const terminal = db
+    .prepare(`SELECT id FROM jobs WHERE status IN ('COMPLETED', 'FAILED', 'CANCELLED') ORDER BY id DESC`)
+    .all() as Array<{ id: number }>;
+  if (terminal.length === 0) return 0;
+
+  const del = db.prepare(`DELETE FROM jobs WHERE id = ?`);
+  const deleteAll = db.transaction((ids: number[]) => {
+    for (const id of ids) del.run(id);
+  });
+  deleteAll(terminal.map((row) => row.id));
+  return terminal.length;
+}
+
 // P4-3H: every ASSIGNED-but-not-yet-delivered job for this worker, oldest
 // first — one per free GPU slot the scheduler already reserved
 // independently (job/scheduler.ts's workerUnits/findAssignment). Used to

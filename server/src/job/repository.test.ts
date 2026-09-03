@@ -4,6 +4,7 @@ import { db } from "../database/db.js";
 import {
   createJob,
   deleteJob,
+  deleteTerminalJobs,
   failStaleRunningJobs,
   getAssignedJobsForWorker,
   getJob,
@@ -131,4 +132,41 @@ test("deleteJob refuses a job that is still QUEUED/ASSIGNED/RUNNING", () => {
 
 test("deleteJob reports not_found for a nonexistent id", () => {
   assert.equal(deleteJob(999_999_999), "not_found");
+});
+
+test("deleteTerminalJobs deletes every terminal job at once, leaving active ones alone", () => {
+  // Shared test DB, not isolated per test (same pattern as the rest of
+  // this file) -- assert on the specific fixtures created here rather
+  // than an exact global count, since earlier tests in this file may
+  // have left their own terminal (e.g. FAILED) rows behind.
+  const workerId = makeWorkstation();
+  const completed = createJob({ type: "test", priority: 0, input: null, depends_on: null, required_software: null });
+  db.prepare(`UPDATE jobs SET status = 'COMPLETED', finished_at = ? WHERE id = ?`).run(new Date().toISOString(), completed.id);
+  const failed = createJob({ type: "test", priority: 0, input: null, depends_on: null, required_software: null });
+  db.prepare(`UPDATE jobs SET status = 'FAILED', finished_at = ? WHERE id = ?`).run(new Date().toISOString(), failed.id);
+  const active = createJob({ type: "test", priority: 0, input: null, depends_on: null, required_software: null });
+  db.prepare(`UPDATE jobs SET status = 'RUNNING', worker_id = ?, started_at = ? WHERE id = ?`).run(
+    workerId,
+    new Date().toISOString(),
+    active.id,
+  );
+
+  const deletedCount = deleteTerminalJobs();
+
+  assert.ok(deletedCount >= 2, "should have deleted at least the 2 terminal jobs created here");
+  assert.equal(getJob(completed.id), undefined);
+  assert.equal(getJob(failed.id), undefined);
+  assert.ok(getJob(active.id), "a still-RUNNING job must survive a bulk clear");
+
+  db.prepare(`DELETE FROM jobs WHERE id = ?`).run(active.id); // tidy up manually -- deleteJob would refuse it (not terminal)
+});
+
+test("deleteTerminalJobs returns 0 when there is nothing terminal to delete", () => {
+  // Best-effort: only meaningful if the shared DB happens to have no
+  // terminal jobs left at this exact point, which isn't guaranteed given
+  // other tests in this file -- so this asserts the weaker, always-true
+  // property instead: calling it twice in a row, the second call always
+  // returns 0 (nothing left the first call didn't already take).
+  deleteTerminalJobs();
+  assert.equal(deleteTerminalJobs(), 0);
 });

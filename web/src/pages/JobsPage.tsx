@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { cancelJob, createJob, deleteJob, listJobs, retryJob } from "../api/jobs";
+import { cancelJob, createJob, deleteAllTerminalJobs, deleteJob, listJobs, retryJob } from "../api/jobs";
 import { getWorkstationsStatus, listWorkstations } from "../api/workstations";
+import { login } from "../api/auth";
 import type { Job, JobStatus } from "../types/job";
 import type { WorkstationStatus } from "../types/workstation";
 import StudioSidebar from "../components/StudioSidebar";
@@ -9,6 +10,12 @@ import LanguageToggle from "../components/LanguageToggle";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 import "./JobsPage.css";
+
+// Password re-confirmation before a destructive action -- either
+// deleting one specific job, or clearing all history. Both funnel
+// through the same overlay/handler; PendingConfirm just carries which
+// one to actually perform once the password checks out.
+type PendingConfirm = { type: "delete"; job: Job } | { type: "clear" };
 
 const POLL_MS = 3000;
 const TABS = ["All", "Running", "Pending", "Completed", "Failed", "Paused", "Cancelled"] as const;
@@ -77,6 +84,12 @@ export default function JobsPage({ username }: { username: string }) {
   const [busy, setBusy] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearNotice, setClearNotice] = useState<string | null>(null);
 
   useEffect(() => {
     listWorkstations()
@@ -219,21 +232,68 @@ export default function JobsPage({ username }: { username: string }) {
     }
   }
 
-  // Only reachable for a terminal job (COMPLETED/FAILED/CANCELLED/PAUSED
-  // -- see the actions cell below); the server still enforces this
-  // independently (409 on a still-active job) rather than trusting the
-  // UI's own gating.
-  async function handleDelete(job: Job) {
-    if (!window.confirm(t("confirmDeleteJob", { id: job.id }))) return;
-    setActionError(null);
-    setBusy(job.id);
+  // Both single-job delete and "clear history" are permanent and need a
+  // fresh password before proceeding -- see PendingConfirm's doc comment
+  // and submitPasswordConfirm below, which is what actually performs the
+  // action once the password checks out. This just opens the overlay;
+  // it's reachable for a terminal job (COMPLETED/FAILED/CANCELLED/
+  // PAUSED -- see the actions cell below) since the server still
+  // enforces that independently (409 on a still-active job) rather than
+  // trusting the UI's own gating.
+  function handleDelete(job: Job) {
+    setConfirmError(null);
+    setConfirmPassword("");
+    setPendingConfirm({ type: "delete", job });
+  }
+
+  function handleClearAll() {
+    setConfirmError(null);
+    setConfirmPassword("");
+    setPendingConfirm({ type: "clear" });
+  }
+
+  // The actual destructive action, gated on re-verifying the current
+  // user's own password via the same POST /api/auth/login the login
+  // screen uses -- not a client-side-only check (that would just be
+  // theater), a real server round trip. A correct password also
+  // refreshes the session cookie as a side effect, which is harmless
+  // (same user, same session semantics as a normal login).
+  async function submitPasswordConfirm(event: FormEvent) {
+    event.preventDefault();
+    if (!pendingConfirm) return;
+    setConfirming(true);
+    setConfirmError(null);
     try {
-      await deleteJob(job.id);
+      await login(username, confirmPassword);
+    } catch {
+      setConfirmError(t("passwordConfirmWrong"));
+      setConfirming(false);
+      return;
+    }
+
+    setActionError(null);
+    try {
+      if (pendingConfirm.type === "delete") {
+        setBusy(pendingConfirm.job.id);
+        await deleteJob(pendingConfirm.job.id);
+      } else {
+        setClearing(true);
+        const { deleted } = await deleteAllTerminalJobs();
+        setActionError(null);
+        // Reuses actionError's slot for a transient, non-error status
+        // line -- there's no separate "notice" surface on this page.
+        window.setTimeout(() => setClearNotice(null), 6000);
+        setClearNotice(t("clearHistoryResult", { count: deleted }));
+      }
       setJobs(await listJobs());
+      setPendingConfirm(null);
+      setConfirmPassword("");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
+      setClearing(false);
+      setConfirming(false);
     }
   }
 
@@ -281,9 +341,14 @@ export default function JobsPage({ username }: { username: string }) {
             <h1>{t("queueTitle")}</h1>
             <p>{t("queueSubtitle")}</p>
           </div>
-          <button className="queue-button primary" onClick={() => setShowCreate((v) => !v)} aria-expanded={showCreate} aria-controls="queue-create">
-            {showCreate ? t("close") : t("newJob")}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="queue-button" onClick={handleClearAll} disabled={clearing} title={t("clearHistoryNote")}>
+              {clearing ? t("clearingHistory") : t("clearHistory")}
+            </button>
+            <button className="queue-button primary" onClick={() => setShowCreate((v) => !v)} aria-expanded={showCreate} aria-controls="queue-create">
+              {showCreate ? t("close") : t("newJob")}
+            </button>
+          </div>
         </div>
         {showCreate && (
           <section className="queue-create" id="queue-create" aria-label="Create a job">
@@ -308,6 +373,11 @@ export default function JobsPage({ username }: { username: string }) {
         {(error || actionError) && (
           <div className="queue-alert" role="alert">
             {actionError || t("unableToRefreshJobs", { reason: error ?? "" })}
+          </div>
+        )}
+        {clearNotice && !actionError && (
+          <div className="queue-alert" role="status" style={{ background: "#173b2e", color: "#71dc9f" }}>
+            {clearNotice}
           </div>
         )}
         <section className="queue-stats" aria-label="Queue summary">
@@ -544,6 +614,44 @@ export default function JobsPage({ username }: { username: string }) {
         </div>
       </main>
       </div>
+      {pendingConfirm && (
+        <div className="password-overlay">
+          <form className="password-form" onSubmit={submitPasswordConfirm}>
+            <strong>{t(pendingConfirm.type === "delete" ? "passwordConfirmTitleDelete" : "passwordConfirmTitleClear")}</strong>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-dim)" }}>
+              {pendingConfirm.type === "delete"
+                ? t("passwordConfirmBodyDelete", { id: pendingConfirm.job.id })
+                : t("passwordConfirmBodyClear")}
+            </p>
+            <label htmlFor="confirm-password">{t("passwordConfirmLabel")}</label>
+            <input
+              id="confirm-password"
+              type="password"
+              autoFocus
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+            />
+            {confirmError && <p className="login-error">{confirmError}</p>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="btn"
+                disabled={confirming}
+                onClick={() => {
+                  setPendingConfirm(null);
+                  setConfirmPassword("");
+                  setConfirmError(null);
+                }}
+              >
+                {t("cancel")}
+              </button>
+              <button className="btn btn-primary" type="submit" disabled={confirming || confirmPassword === ""}>
+                {confirming ? "…" : t("passwordConfirmSubmit")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
