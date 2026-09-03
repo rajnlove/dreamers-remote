@@ -46,7 +46,7 @@ export default function App() {
           path="/workstations/:id"
           element={user ? <WorkstationDetail /> : <Navigate to="/login" replace />}
         />
-        <Route path="/jobs" element={user ? <JobsPage /> : <Navigate to="/login" replace />} />
+        <Route path="/jobs" element={user ? <JobsPage username={user.username} /> : <Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );
