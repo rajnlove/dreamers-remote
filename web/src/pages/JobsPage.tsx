@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { cancelJob, createJob, listJobs, retryJob } from "../api/jobs";
+import { cancelJob, createJob, deleteJob, listJobs, retryJob } from "../api/jobs";
 import { getWorkstationsStatus, listWorkstations } from "../api/workstations";
 import type { Job, JobStatus } from "../types/job";
 import type { WorkstationStatus } from "../types/workstation";
@@ -219,6 +219,24 @@ export default function JobsPage({ username }: { username: string }) {
     }
   }
 
+  // Only reachable for a terminal job (COMPLETED/FAILED/CANCELLED/PAUSED
+  // -- see the actions cell below); the server still enforces this
+  // independently (409 on a still-active job) rather than trusting the
+  // UI's own gating.
+  async function handleDelete(job: Job) {
+    if (!window.confirm(t("confirmDeleteJob", { id: job.id }))) return;
+    setActionError(null);
+    setBusy(job.id);
+    try {
+      await deleteJob(job.id);
+      setJobs(await listJobs());
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   const all = jobs ?? [];
   const count = (value: Tab) => (value === "All" ? all.length : all.filter((j) => LABEL[j.status] === value).length);
   const filtered = all
@@ -407,19 +425,30 @@ export default function JobsPage({ username }: { username: string }) {
                         <small>{job.eta_seconds !== null ? t("etaLabel", { value: duration(job.eta_seconds) }) : job.finished_at ? t("finishedLabel") : job.status === "RUNNING" ? t("processingLabel") : "—"}</small>
                       </td>
                       <td className="queue-actions">
-                        {canCancel.has(job.status) || job.status === "FAILED" ? (
-                          <button
-                            className="queue-icon-button"
-                            aria-label={job.status === "FAILED" ? t("retryJobAria", { id: job.id }) : t("cancelJobAria", { id: job.id })}
-                            title={job.status === "FAILED" ? t("retryJob") : t("cancelJob")}
-                            disabled={busy !== null}
-                            onClick={() => handleAction(job)}
-                          >
-                            {busy === job.id ? "…" : job.status === "FAILED" ? "↻" : "■"}
-                          </button>
-                        ) : (
-                          <span className="queue-muted">—</span>
-                        )}
+                        <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                          {(canCancel.has(job.status) || job.status === "FAILED") && (
+                            <button
+                              className="queue-icon-button"
+                              aria-label={job.status === "FAILED" ? t("retryJobAria", { id: job.id }) : t("cancelJobAria", { id: job.id })}
+                              title={job.status === "FAILED" ? t("retryJob") : t("cancelJob")}
+                              disabled={busy !== null}
+                              onClick={() => handleAction(job)}
+                            >
+                              {busy === job.id ? "…" : job.status === "FAILED" ? "↻" : "■"}
+                            </button>
+                          )}
+                          {!canCancel.has(job.status) && (
+                            <button
+                              className="queue-icon-button"
+                              aria-label={t("deleteJobAria", { id: job.id })}
+                              title={t("deleteJob")}
+                              disabled={busy !== null}
+                              onClick={() => handleDelete(job)}
+                            >
+                              {busy === job.id ? "…" : "🗑"}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
