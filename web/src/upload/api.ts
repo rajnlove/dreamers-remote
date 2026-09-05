@@ -31,6 +31,12 @@ export async function identify(file: File, chunkBytes: number, signal: AbortSign
   const fingerprint = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${file.size}:${chunkBytes}:${hashes.join(":")}`)));
   return { hashes, fingerprint };
 }
+export async function transferChecksum(file: File, offset: number, bytes: number, signal: AbortSignal) {
+  signal.throwIfAborted();
+  const digest = hex(await crypto.subtle.digest("SHA-256", await file.slice(offset, offset + bytes).arrayBuffer()));
+  signal.throwIfAborted();
+  return digest;
+}
 export function chunk(upload: Upload, file: File, chunkBytes: number, checksum: string, signal: AbortSignal, progress: (loaded: number) => void) {
   return new Promise<Upload>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

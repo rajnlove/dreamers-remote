@@ -22,9 +22,11 @@ export async function receiveChunk(store: UploadStore, upload: Upload, request: 
   if (upload.state !== "uploading") throw new PortalError(409, "File đã hoàn tất upload.");
   const offsetText = request.get("Upload-Offset") ?? "";
   if (!/^\d+$/.test(offsetText) || Number(offsetText) !== upload.offset) throw new PortalError(409, "Vị trí upload đã thay đổi. Đồng bộ lại để tiếp tục.");
-  const expected = Math.min(upload.chunk_bytes, upload.size - upload.offset);
+  const maximum = Math.min(upload.chunk_bytes, upload.size - upload.offset);
+  const minimum = Math.min(maximum, 4 * 1024 ** 2);
   const length = request.get("Content-Length");
-  if (!expected || !length || !/^\d+$/.test(length) || Number(length) !== expected) throw new PortalError(400, "Kích thước phần upload không đúng.");
+  const expected = Number(length);
+  if (!maximum || !length || !/^\d+$/.test(length) || !Number.isSafeInteger(expected) || expected < minimum || expected > maximum) throw new PortalError(400, "Kích thước phần upload không đúng.");
   if (request.get("Content-Type") !== "application/octet-stream" || request.get("Content-Encoding")) throw new PortalError(415, "Định dạng phần upload không hợp lệ.");
   const digest = request.get("Upload-Checksum");
   if (!digest || !/^[a-f0-9]{64}$/.test(digest)) throw new PortalError(400, "Thiếu checksum phần upload.");

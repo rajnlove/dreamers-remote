@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { api, ApiError, setCsrf, identify, chunk, delay, type User, type Upload, type Job } from "./api";
+import { api, ApiError, setCsrf, identify, transferChecksum, chunk, delay, type User, type Upload, type Job } from "./api";
+import { INITIAL_TRANSFER_BYTES, nextTransferBytes } from "./transferSize";
 import "./upload.css";
 import logoUrl from "./logo.png";
 import { CleanupDialog } from "./CleanupDialog";
@@ -103,12 +104,16 @@ function Portal() {
       let current = existing ?? await api<Upload>("/uploads", "POST", { name: file.name, size: file.size, fingerprint: identity.fingerprint, preset, chunkBytes });
       if (current.fingerprint !== identity.fingerprint || current.chunkBytes !== chunkBytes) throw new Error("File không khớp với phiên upload.");
       setActive(current); let retries = 0;
+      let transferBytes = Math.min(INITIAL_TRANSFER_BYTES, chunkBytes);
       while (current.state === "uploading" && current.offset < file.size) {
         signal.throwIfAborted(); setPhase("uploading"); setLoaded(current.offset);
         try {
           const offset = current.offset;
+          const bytes = Math.min(transferBytes, file.size - offset);
+          const checksum = await transferChecksum(file, offset, bytes, signal);
+          const transferStarted = performance.now();
           let sampledAt = performance.now(), sampledBytes = 0;
-          current = await chunk(current, file, chunkBytes, identity.hashes[Math.floor(offset / chunkBytes)]!, signal, n => {
+          current = await chunk(current, file, bytes, checksum, signal, n => {
             setLoaded(offset + n);
             const now = performance.now(), elapsed = now - sampledAt;
             if (elapsed >= 1000) {
@@ -116,11 +121,13 @@ function Portal() {
               sampledAt = now; sampledBytes = n;
             }
           });
+          transferBytes = nextTransferBytes(bytes, performance.now() - transferStarted, chunkBytes);
           setActive(current); setLoaded(current.offset); retries = 0;
         } catch (e) {
           if (signal.aborted) throw e;
           const status = e instanceof ApiError ? e.status : 0;
           if ([401, 403, 404, 413, 415, 507].includes(status) || ++retries > 6) throw e;
+          transferBytes = Math.min(INITIAL_TRANSFER_BYTES, chunkBytes);
           setPhase("retrying"); setBytesPerSecond(0); await delay(Math.min(30_000, 1000 * 2 ** retries), signal);
           try { current = await api<Upload>(`/uploads/${current.id}`); }
           catch (syncError) { if (syncError instanceof ApiError && [401, 403, 404].includes(syncError.status)) throw syncError; }

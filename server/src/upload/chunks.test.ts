@@ -26,7 +26,7 @@ test("legacy migration, old tabs and 32 MiB streaming retain independent chunk s
     for (const chunkBytes of [0, -1, "33554432", 33 * mib, 4 * mib + 0.5]) {
       assert.throws(() => store.create("owner", { ...metadata, chunkBytes }), /Kích thước/);
     }
-    const upload = store.create("owner", { ...metadata, name: "large.mp4", chunkBytes: 32 * mib });
+    let upload = store.create("owner", { ...metadata, name: "large.mp4", chunkBytes: 32 * mib });
     assert.equal(upload.chunk_bytes, 32 * mib);
     assert.throws(() => store.create("owner", { ...metadata, name: "large.mp4" }), /khớp/);
     const data = Buffer.alloc(metadata.size, 42);
@@ -43,6 +43,18 @@ test("legacy migration, old tabs and 32 MiB streaming retain independent chunk s
     store.db.close(); store = new UploadStore({ ...config, chunkBytes: 4 * mib });
     assert.equal(store.get("owner", upload.id).offset, 32 * mib);
     await send(32 * mib, data.subarray(32 * mib));
+    assert.deepEqual(await readFile(path.join(root, upload.id, "source.part")), data);
+    // Identity stays at 32 MiB while transport pieces adapt to a slow connection.
+    store.db.close(); store = new UploadStore(config);
+    upload = store.create("owner", { ...metadata, name: "adaptive.mp4", chunkBytes: 32 * mib });
+    await assert.rejects(send(0, data.subarray(0, mib)), /Kích thước/);
+    await send(0, data.subarray(0, 4 * mib));
+    await assert.rejects(send(4 * mib, data.subarray(4 * mib, 12 * mib), true), /checksum/);
+    assert.equal(store.get("owner", upload.id).offset, 4 * mib);
+    await send(4 * mib, data.subarray(4 * mib, 12 * mib));
+    store.db.close(); store = new UploadStore({ ...config, chunkBytes: 4 * mib });
+    assert.equal(store.get("owner", upload.id).chunk_bytes, 32 * mib);
+    await send(12 * mib, data.subarray(12 * mib));
     assert.deepEqual(await readFile(path.join(root, upload.id, "source.part")), data);
   } finally { store.db.close(); await rm(root, { recursive: true, force: true }); }
 });
