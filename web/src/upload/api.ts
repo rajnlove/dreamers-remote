@@ -12,7 +12,7 @@ export async function api<T>(path: string, method = "GET", body?: unknown): Prom
   return data as T;
 }
 export interface Upload {
-  id: string; name: string; size: number; offset: number; fingerprint: string;
+  id: string; name: string; size: number; offset: number; fingerprint: string; chunkBytes: number;
   preset: string; state: "uploading" | "ready" | "submitting" | "submitted";
   jobId: number | null; createdAt: number; updatedAt: number;
 }

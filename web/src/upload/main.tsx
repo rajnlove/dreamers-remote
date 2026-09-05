@@ -93,17 +93,19 @@ function Portal() {
     const signal = controller.signal;
     setError(""); setPhase("checking"); setChecked(0);
     try {
-      const identity = await identify(file, user.chunkBytes, signal, setChecked);
+      const existing = active ? await api<Upload>(`/uploads/${active.id}`) : null;
+      const chunkBytes = existing?.chunkBytes ?? (await api<User>("/me")).chunkBytes;
+      const identity = await identify(file, chunkBytes, signal, setChecked);
       signal.throwIfAborted();
       if (resumeTarget.current && identity.fingerprint !== resumeTarget.current.fingerprint) throw new Error("Nội dung file đã thay đổi. Không thể nối vào phiên cũ.");
-      let current = active ? await api<Upload>(`/uploads/${active.id}`) : await api<Upload>("/uploads", "POST", { name: file.name, size: file.size, fingerprint: identity.fingerprint, preset });
-      if (current.fingerprint !== identity.fingerprint) throw new Error("File không khớp với phiên upload.");
+      let current = existing ?? await api<Upload>("/uploads", "POST", { name: file.name, size: file.size, fingerprint: identity.fingerprint, preset, chunkBytes });
+      if (current.fingerprint !== identity.fingerprint || current.chunkBytes !== chunkBytes) throw new Error("File không khớp với phiên upload.");
       setActive(current); let retries = 0;
       while (current.state === "uploading" && current.offset < file.size) {
         signal.throwIfAborted(); setPhase("uploading"); setLoaded(current.offset);
         try {
           const offset = current.offset;
-          current = await chunk(current, file, user.chunkBytes, identity.hashes[Math.floor(offset / user.chunkBytes)]!, signal, n => setLoaded(offset + n));
+          current = await chunk(current, file, chunkBytes, identity.hashes[Math.floor(offset / chunkBytes)]!, signal, n => setLoaded(offset + n));
           setActive(current); setLoaded(current.offset); retries = 0;
         } catch (e) {
           if (signal.aborted) throw e;

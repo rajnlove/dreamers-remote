@@ -19,7 +19,11 @@ FFmpeg, ffprobe, Topaz, thumbnail creation or rendering. The upload image contai
 no media tools. The existing agents perform decoding, scaling, GPU encoding and
 audio processing; this can also use CPU on those workstations.
 
-Each request carries at most **4 MiB**. The server checks SHA-256 for that chunk,
+New uploads default to **32 MiB** per request (`UPLOAD_CHUNK_MB`, range 4–32).
+The size is persisted per upload; legacy database sessions and older open tabs
+retain 4 MiB chunks. Resume hashes and slices using that session's stored size,
+including after a server restart or configuration change.
+The server checks SHA-256 for that chunk,
 writes directly to the committed position in `source.part`, fsyncs, then commits
 the SQLite offset. Completion renames that same file to `source.<extension>`;
 there is no second complete copy or full-file merge/hash on TrueNAS. A restart
@@ -185,7 +189,7 @@ ingress:
 For remotely managed tunnels, configure the equivalent hostname/path/service in
 the dashboard. Bypass caching for `/upload/api/*` and `/upload/`; serve API cookie
 responses without caching. Keep HTTPS at the public edge and the origin restricted
-to the private tunnel. Ensure any zone-specific request-size rule allows 4 MiB.
+to the private tunnel. Ensure any zone-specific request-size rule allows 32 MiB.
 Cloudflare documents chunking as a response to large-request 413 errors:
 [Cloudflare 413 guidance](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/4xx-client-error/error-413/).
 
