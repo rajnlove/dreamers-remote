@@ -38,7 +38,8 @@ export function chunk(upload: Upload, file: File, chunkBytes: number, checksum: 
     const done = () => signal.removeEventListener("abort", abort);
     if (signal.aborted) { reject(new DOMException("Paused", "AbortError")); return; }
     xhr.open("PUT", `${base}/uploads/${upload.id}/chunk`);
-    xhr.timeout = 95_000;
+    // Match the server's bounded ten-minute streaming window, with response headroom.
+    xhr.timeout = 10 * 60_000 + 30_000;
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.setRequestHeader("X-CSRF-Token", csrf);
     xhr.setRequestHeader("Upload-Offset", String(upload.offset));

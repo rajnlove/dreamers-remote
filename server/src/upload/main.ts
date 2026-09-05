@@ -2,13 +2,14 @@ import http from "node:http";
 import { uploadConfig } from "./config.js";
 import { EngineClient } from "./engine.js";
 import { createUploadApp } from "./app.js";
+import { CHUNK_MAX_MS } from "./transferDeadline.js";
 
 // Dataset group/ACL is shared with the Windows worker's SMB identity.
 process.umask(0o007);
 const config = uploadConfig();
 const { app, maintenance } = await createUploadApp(config, new EngineClient(config));
 const server = http.createServer({ maxHeaderSize: 16 * 1024 }, app);
-server.requestTimeout = 120_000;
+server.requestTimeout = CHUNK_MAX_MS + 15_000;
 server.headersTimeout = 15_000;
 server.keepAliveTimeout = 5_000;
 server.maxConnections = 40;

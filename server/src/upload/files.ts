@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import type { Request } from "express";
 import { PortalError, UploadStore, type Upload } from "./store.js";
+import { transferDeadline } from "./transferDeadline.js";
 
 // Storage is a private NAS dataset, never a web-served directory.
 export async function safeFolder(store: UploadStore, upload: Upload) {
@@ -36,12 +37,13 @@ export async function receiveChunk(store: UploadStore, upload: Upload, request: 
   const handle = await open(file, existing ? "r+" : "wx", 0o660);
   let received = 0;
   const hash = createHash("sha256");
-  const timer = setTimeout(() => request.destroy(new Error("Chunk timeout")), 90_000);
+  const deadline = transferDeadline(reason => request.destroy(new Error(reason)));
   try {
     // Recover from a process crash after writing bytes but before committing offset.
     await handle.truncate(upload.offset);
     for await (const raw of request) {
       const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as string);
+      if (buffer.length) deadline.progress();
       if (received + buffer.length > expected) throw new PortalError(413, "Phần upload quá lớn.");
       hash.update(buffer);
       let written = 0;
@@ -58,7 +60,7 @@ export async function receiveChunk(store: UploadStore, upload: Upload, request: 
   } catch (error) {
     await handle.truncate(upload.offset);
     throw error;
-  } finally { clearTimeout(timer); await handle.close(); }
+  } finally { deadline.close(); await handle.close(); }
 }
 export async function completeFile(store: UploadStore, upload: Upload) {
   if (upload.offset !== upload.size) throw new PortalError(409, "File chưa upload đủ.");
