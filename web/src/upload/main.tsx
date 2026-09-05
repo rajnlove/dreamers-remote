@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { api, ApiError, setCsrf, identify, chunk, delay, type User, type Upload, type Job } from "./api";
 import "./upload.css";
+import logoUrl from "./logo.png";
 import { CleanupDialog } from "./CleanupDialog";
 
 function Icon({ name = "upload" }: { name?: "upload" | "file" | "shield" | "cpu" | "check" | "pause" }) {
@@ -132,7 +133,7 @@ function Portal() {
     catch (e) { setError(e instanceof Error ? e.message : "Chưa thể tạo job."); }
     finally { setActionBusy(false); }
   }
-  const brand = <div className="up-brand"><span className="up-logo">D</span><div>DREAMERS<span>UPLOAD & ENCODE</span></div></div>;
+  const brand = <div className="up-brand"><img className="up-logo" src={logoUrl} alt="Dreamers" width="48" height="48"/><div>DREAMERS<span>UPLOAD & ENCODE</span></div></div>;
   if (user === undefined) return <main className="up-login">{brand}<p>Đang kết nối cổng Upload…</p></main>;
   if (!user) return <main className="up-login">{brand}<div className="up-login-card"><span className="up-kicker">KHÔNG GIAN GỬI FILE</span><h1>Đưa video vào<br/>luồng xử lý của studio.</h1><p>Upload an toàn. Theo dõi encode.<br/>Nhận kết quả tại một nơi.</p><form onSubmit={login}><label>Tài khoản<input name="username" autoComplete="username" required maxLength={100}/></label><label>Mật khẩu<input name="password" type="password" autoComplete="current-password" required maxLength={256}/></label>{loginError && <p className="up-error" role="alert">{loginError}</p>}<button className="up-primary" disabled={logging}>{logging ? "Đang đăng nhập…" : "Đăng nhập"}</button></form><small><Icon name="shield"/> Chỉ dành cho tài khoản được studio cấp quyền.</small></div></main>;
   const finished = uploads.filter(u => jobs[u.id]?.status === "COMPLETED").length;
