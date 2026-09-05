@@ -1,4 +1,4 @@
-import type { Job } from "../types/job";
+import type { Job, JobOrigin, JobProvenance } from "../types/job";
 import { API_BASE_URL } from "./config";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -43,6 +43,11 @@ export interface CreateJobInput {
   priority?: number;
   input?: string;
   depends_on?: number;
+  // Audit metadata only -- the server never treats it as a permission
+  // (see server/src/job/provenance.ts). Omitting it is valid and leaves
+  // the job reading as Legacy/Unknown.
+  origin?: JobOrigin;
+  provenance?: Partial<JobProvenance>;
 }
 
 export function createJob(input: CreateJobInput): Promise<Job> {

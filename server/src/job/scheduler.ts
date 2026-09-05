@@ -114,11 +114,9 @@ export function runScheduler(): void {
     const assignment = findAssignment(job.type, workers, busy, requiredSoftware);
     if (!assignment) continue;
 
-    db.prepare(`UPDATE jobs SET status = 'ASSIGNED', worker_id = ?, gpu_slot = ? WHERE id = ?`).run(
-      assignment.workerId,
-      assignment.gpuSlot,
-      job.id,
-    );
+    db.prepare(
+      `UPDATE jobs SET status = 'ASSIGNED', worker_id = ?, gpu_slot = ?, assigned_at = ? WHERE id = ?`,
+    ).run(assignment.workerId, assignment.gpuSlot, new Date().toISOString(), job.id);
     busy.add(slotKeyString(assignment));
   }
 }

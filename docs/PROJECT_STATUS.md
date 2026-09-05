@@ -1,5 +1,49 @@
 # Project Status
 
+## 2026-09-05 — Job provenance and audit metadata
+
+Every job can now say where it came from and what happened to it. Submitters
+declare an `origin` (`website_shot_version`, `website_project_upload`,
+`upload_test`, `admin_manual`, `internal_test`) plus a `provenance` JSON blob
+of website identifiers — project, the website's own job, shot, version,
+uploader and upload time. **None of it is used for authorization**: the
+submitting website's RBAC stays authoritative, and this metadata arrives from a
+caller that already passed that check.
+
+Stored as one `origin` column (what every badge and filter reads) plus a
+`provenance` JSON column, so a website that starts sending a new identifier
+needs no schema change. No index yet — the table is in the low hundreds of rows
+and nothing queries these fields by predicate.
+
+The engine stamps its own timeline, re-stamped per attempt so a retried job
+reports its current run: `engine_queued_at` (create + retry), `assigned_at`
+(scheduler), the existing `started_at`, and `completed_at`/`failed_at` — kept
+distinct from the pre-existing `finished_at`, which is unchanged so nothing
+reading it breaks. `retryJob` clears the previous attempt's stamps but
+deliberately keeps origin/provenance: a retry doesn't change where work came
+from. Auto-failures (`failStaleRunningJobs`) stamp `failed_at` too, so a job
+killed by lease expiry is as auditable as a worker-reported failure.
+
+The Render Queue shows an always-visible origin badge (TEST and MANUAL spelled
+out in the label, not signalled by colour alone, so a demo job can never read as
+a website delivery) and a per-row "Provenance & audit" expander with the full
+record: origin, project, job, shot, version, uploaded by/at, worker/GPU, queue
+time, encode start/complete/duration, final status.
+
+Backward compatible throughout: every column is nullable and added by the
+existing idempotent `ensureColumn` migration; `origin`/`provenance` are optional
+on `POST /api/jobs`; jobs predating this render as **Legacy / Unknown** rather
+than being backfilled with a guess. The public upload portal declares
+`website_project_upload` and sends the uploader/filename/upload time it actually
+knows (it has no project or shot of its own) — built only from stored upload
+fields so an idempotent resubmission reproduces it byte-identically.
+
+Tests: `job/provenance.test.js` (origin enum, provenance shape, ISO
+normalization, backward-compatible create) is now part of the CI gate;
+`job/repository.test.js` covers the timeline stamps and retry semantics but
+still runs only where the native SQLite binding matches (not on this Windows
+workstation — Node 24 vs the module's ABI).
+
 ## 2026-09-05 — Farm acceptance: all four workers passed H.264 encode/download
 
 All four Agents are online, advertise `upload_input_safety: "1"`, and pass the

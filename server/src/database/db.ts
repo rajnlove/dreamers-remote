@@ -170,3 +170,32 @@ ensureColumn("jobs", "required_software", "TEXT");
 // these alongside `progress`. Null until a worker reports them.
 ensureColumn("jobs", "fps", "REAL");
 ensureColumn("jobs", "eta_seconds", "INTEGER");
+
+// Job provenance / audit metadata. `origin` is the submitter-declared
+// source enum (job/provenance.ts) and `provenance` the JSON blob of
+// website identifiers that go with it -- descriptive only, never an
+// authorization input (see provenance.ts). JSON rather than a column
+// per field so a website that starts sending a new identifier doesn't
+// need a schema change; the one field worth its own column is `origin`,
+// since that is what every list/filter/badge reads. Both null on every
+// job created before this existed -- rendered as Legacy/Unknown rather
+// than backfilled with a guess.
+ensureColumn("jobs", "origin", "TEXT");
+ensureColumn("jobs", "provenance", "TEXT");
+
+// Audit timeline. `created_at` (row creation) and `started_at`/
+// `finished_at` already existed; these fill the gaps the audit trail
+// needs and, unlike created_at, are re-stamped per attempt so a retried
+// job reports the timeline of its *current* run:
+//   engine_queued_at -- entered/re-entered QUEUED (create + retry)
+//   assigned_at      -- scheduler reserved a worker/GPU slot
+//   completed_at     -- finished successfully
+//   failed_at        -- finished unsuccessfully (worker-reported or stale)
+// completed_at/failed_at are kept distinct from the existing
+// finished_at, which stays exactly as it was so nothing reading it
+// breaks; an audit trail wants "succeeded at" and "failed at" to be
+// separately answerable without also consulting status.
+ensureColumn("jobs", "engine_queued_at", "TEXT");
+ensureColumn("jobs", "assigned_at", "TEXT");
+ensureColumn("jobs", "completed_at", "TEXT");
+ensureColumn("jobs", "failed_at", "TEXT");

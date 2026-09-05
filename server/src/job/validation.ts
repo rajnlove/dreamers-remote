@@ -2,6 +2,7 @@ import { ValidationError } from "../workstation/errors.js";
 import type { JobInput } from "./types.js";
 import { validateFfmpegInput } from "./ffmpegValidation.js";
 import { validateTopazInput } from "./topazValidation.js";
+import { validateOrigin, validateProvenance } from "./provenance.js";
 
 // P3-1: no whitelist of known job types yet — Phase 3 only ships a
 // trivial built-in "test" type (P3-4); Phase 4/5 add real ones later.
@@ -94,5 +95,21 @@ export function validateCreateInput(body: unknown): JobInput {
     requiredSoftware = Object.fromEntries(entries) as Record<string, string>;
   }
 
-  return { type: b.type.trim(), priority, input, depends_on: dependsOn, required_software: requiredSoftware };
+  // Provenance/audit metadata: shape-checked here, never consulted for
+  // access control (see job/provenance.ts). Absent is always valid --
+  // an older client, an internal script, or any caller that simply
+  // doesn't know its own origin still creates a job, it just reads as
+  // Legacy/Unknown afterwards.
+  const origin = validateOrigin(b.origin);
+  const provenance = validateProvenance(b.provenance);
+
+  return {
+    type: b.type.trim(),
+    priority,
+    input,
+    depends_on: dependsOn,
+    required_software: requiredSoftware,
+    origin,
+    provenance,
+  };
 }

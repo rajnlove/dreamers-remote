@@ -13,18 +13,26 @@ export function getJob(id: number): Job | undefined {
 }
 
 export function createJob(input: JobInput): Job {
+  const now = new Date().toISOString();
   const { lastInsertRowid } = db
     .prepare(
-      `INSERT INTO jobs (type, status, priority, created_at, progress, input, retry_count, depends_on, required_software)
-       VALUES (@type, 'QUEUED', @priority, @created_at, 0, @input, 0, @depends_on, @required_software)`,
+      `INSERT INTO jobs (type, status, priority, created_at, progress, input, retry_count, depends_on, required_software,
+                         origin, provenance, engine_queued_at)
+       VALUES (@type, 'QUEUED', @priority, @created_at, 0, @input, 0, @depends_on, @required_software,
+               @origin, @provenance, @engine_queued_at)`,
     )
     .run({
       ...input,
-      created_at: new Date().toISOString(),
+      created_at: now,
+      // Equal to created_at on a first attempt, but re-stamped by
+      // retryJob -- so "how long did this job wait in the queue" stays
+      // correct for the attempt actually being looked at.
+      engine_queued_at: now,
       // better-sqlite3 only binds string/number/null/buffer — the
       // object form is JobInput's caller-facing shape, not the wire
       // format `jobs.required_software` (see types.ts) actually stores.
       required_software: input.required_software === null ? null : JSON.stringify(input.required_software),
+      provenance: input.provenance === null ? null : JSON.stringify(input.provenance),
     });
   return getJob(Number(lastInsertRowid))!;
 }
@@ -179,16 +187,17 @@ export function completeJob(
   // through keeps whatever progress it had reached (better-sqlite3 also
   // rejects `undefined` as a bound parameter, so this can't be a single
   // statement with a conditional progress value).
+  const now = new Date().toISOString();
   if (ok) {
     db.prepare(
-      `UPDATE jobs SET status = 'COMPLETED', finished_at = ?, progress = 100, output = ?, error = ?
+      `UPDATE jobs SET status = 'COMPLETED', finished_at = ?, completed_at = ?, progress = 100, output = ?, error = ?
          WHERE id = ? AND worker_id = ? AND status = 'RUNNING'`,
-    ).run(new Date().toISOString(), output, error, id, workerId);
+    ).run(now, now, output, error, id, workerId);
   } else {
     db.prepare(
-      `UPDATE jobs SET status = 'FAILED', finished_at = ?, output = ?, error = ?
+      `UPDATE jobs SET status = 'FAILED', finished_at = ?, failed_at = ?, output = ?, error = ?
          WHERE id = ? AND worker_id = ? AND status = 'RUNNING'`,
-    ).run(new Date().toISOString(), output, error, id, workerId);
+    ).run(now, now, output, error, id, workerId);
   }
   return getJob(id);
 }
@@ -215,12 +224,20 @@ export function retryJob(id: number): Job | undefined {
   if (!job) return undefined;
   if (job.status !== "FAILED") return job;
 
+  // The audit timeline is per-attempt: the previous run's assignment/
+  // start/failure stamps are cleared along with the result fields they
+  // describe, and engine_queued_at is re-stamped to now (this is the
+  // moment the job re-entered the queue). `origin`/`provenance` are
+  // deliberately NOT touched -- where a job came from doesn't change
+  // because an admin retried it.
+  const now = new Date().toISOString();
   db.prepare(
     `UPDATE jobs
        SET status = 'QUEUED', retry_count = retry_count + 1, progress = 0, fps = NULL, eta_seconds = NULL,
-           worker_id = NULL, gpu_slot = NULL, started_at = NULL, finished_at = NULL, error = NULL
+           worker_id = NULL, gpu_slot = NULL, started_at = NULL, finished_at = NULL, error = NULL,
+           engine_queued_at = ?, assigned_at = NULL, completed_at = NULL, failed_at = NULL
        WHERE id = ?`,
-  ).run(id);
+  ).run(now, id);
   return getJob(id);
 }
 
@@ -264,8 +281,10 @@ export function failStaleRunningJobs(): void {
     const error = workerOffline
       ? "Worker went offline while job was running"
       : `STALE_EXECUTION: no progress reported for this job in over ${JOB_LEASE_THRESHOLD_MS / 1000}s even though the worker is still online — its Agent-side execution was lost (e.g. Agent process restarted mid-job)`;
-    db.prepare(`UPDATE jobs SET status = 'FAILED', finished_at = ?, error = ? WHERE id = ?`).run(
-      new Date().toISOString(),
+    const failedAt = new Date().toISOString();
+    db.prepare(`UPDATE jobs SET status = 'FAILED', finished_at = ?, failed_at = ?, error = ? WHERE id = ?`).run(
+      failedAt,
+      failedAt,
       error,
       row.job_id,
     );

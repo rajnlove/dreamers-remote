@@ -130,7 +130,16 @@ export async function createUploadApp(config: UploadConfig, engine: Engine) {
     if (upload.job_id) return;
     store.state(upload, "submitting");
     // State persists before the HTTP request. The Job Engine persists the same key atomically.
-    const job = await engine.create(`upload-${upload.id}`, store.input(upload));
+    // Provenance is built only from stored upload fields so a retried
+    // submission reproduces it exactly (see EngineClient.create). The
+    // portal has no project/shot/version of its own, so it sends what it
+    // actually knows -- who uploaded, when, and the upload's own name --
+    // rather than inventing identifiers.
+    const job = await engine.create(`upload-${upload.id}`, store.input(upload), {
+      job_name: upload.name,
+      uploaded_by_name: upload.owner,
+      uploaded_at: new Date(upload.created_at).toISOString(),
+    });
     store.state(upload, "submitted", job.id);
   };
   app.post(`${API}/uploads/:id/complete`, asyncRoute(async (req, res) => {

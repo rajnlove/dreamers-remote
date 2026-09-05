@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { cancelJob, createJob, deleteAllTerminalJobs, deleteJob, listJobs, retryJob } from "../api/jobs";
 import { getWorkstationsStatus, listWorkstations } from "../api/workstations";
 import { login } from "../api/auth";
-import type { Job, JobStatus } from "../types/job";
+import type { Job, JobOrigin, JobProvenance, JobStatus } from "../types/job";
 import type { WorkstationStatus } from "../types/workstation";
 import StudioSidebar from "../components/StudioSidebar";
 import LanguageToggle from "../components/LanguageToggle";
@@ -71,6 +71,65 @@ function jobResolution(job: Job): string | null {
   } catch {
     return null;
   }
+}
+
+// Provenance is stored as a JSON string so the engine never has to
+// migrate a column when a website starts sending a new identifier --
+// which means the UI has to be tolerant of a row whose JSON it can't
+// read, rather than blanking the whole page over one bad record.
+function parseProvenance(job: Job): JobProvenance | null {
+  if (!job.provenance) return null;
+  try {
+    const parsed = JSON.parse(job.provenance) as JobProvenance;
+    return typeof parsed === "object" && parsed !== null ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// How each origin presents itself. `tone` drives the badge colour and
+// exists for one reason: a test or hand-made job must never be able to
+// look like real website production work at a glance.
+const ORIGIN_META: Record<JobOrigin, { labelKey: TranslationKey; tone: "production" | "test" | "manual" }> = {
+  website_shot_version: { labelKey: "originWebsiteShotVersion", tone: "production" },
+  website_project_upload: { labelKey: "originWebsiteProjectUpload", tone: "production" },
+  upload_test: { labelKey: "originUploadTest", tone: "test" },
+  admin_manual: { labelKey: "originAdminManual", tone: "manual" },
+  internal_test: { labelKey: "originInternalTest", tone: "test" },
+};
+
+function originMeta(origin: JobOrigin | null) {
+  // A job from before provenance existed, or from a caller that didn't
+  // declare itself, is Legacy/Unknown -- deliberately not guessed at
+  // from its type or input, since a wrong provenance claim in an audit
+  // trail is worse than an honest "unknown".
+  return origin ? ORIGIN_META[origin] : { labelKey: "originLegacy" as TranslationKey, tone: "legacy" as const };
+}
+
+function timestamp(iso: string | null): string {
+  if (!iso) return "—";
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? "—" : parsed.toLocaleString();
+}
+
+function secondsBetween(from: string | null, to: string | null): number | null {
+  if (!from) return null;
+  const start = new Date(from).getTime();
+  const end = to ? new Date(to).getTime() : Date.now();
+  if (Number.isNaN(start) || Number.isNaN(end)) return null;
+  return Math.max(0, (end - start) / 1000);
+}
+
+// Time spent waiting before execution actually began. engine_queued_at
+// falls back to created_at for jobs predating that column -- for a
+// first attempt the two are the same instant, so legacy rows still get
+// a true queue time instead of a dash.
+function queueSeconds(job: Job): number | null {
+  return secondsBetween(job.engine_queued_at ?? job.created_at, job.started_at);
+}
+
+function encodeSeconds(job: Job): number | null {
+  return secondsBetween(job.started_at, job.completed_at ?? job.failed_at ?? job.finished_at);
 }
 
 function duration(seconds: number | null): string {
@@ -161,7 +220,7 @@ export default function JobsPage({ username }: { username: string }) {
     setCreating(true);
     setActionError(null);
     try {
-      await createJob({ type: "test", input: JSON.stringify({ seconds: 10 }) });
+      await createJob({ type: "test", input: JSON.stringify({ seconds: 10 }), origin: "internal_test" });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -192,6 +251,11 @@ export default function JobsPage({ username }: { username: string }) {
           preset: "p4",
           audioCodec: "aac",
         }),
+        // Hand-triggered from this dashboard, not website work -- the
+        // badge must say so rather than let a demo encode sit in the
+        // audit trail looking like a delivery.
+        origin: "admin_manual",
+        provenance: { uploaded_by_name: username },
       });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -224,6 +288,8 @@ export default function JobsPage({ username }: { username: string }) {
           preset: "p4",
           audioCodec: "aac",
         }),
+        origin: "admin_manual",
+        provenance: { uploaded_by_name: username },
       });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -461,6 +527,31 @@ export default function JobsPage({ username }: { username: string }) {
                 {visible.map((job) => {
                   const progress = Math.max(0, Math.min(100, job.progress || 0));
                   const elapsed = job.started_at ? (new Date(job.finished_at ?? Date.now()).getTime() - new Date(job.started_at).getTime()) / 1000 : null;
+                  const origin = originMeta(job.origin);
+                  const provenance = parseProvenance(job);
+                  // The whole audit record in one place, so "where did
+                  // this come from and what happened to it" is one
+                  // expander rather than a hunt across columns. Every
+                  // value falls back to "—" instead of being hidden, so
+                  // a missing field reads as missing, not as absent
+                  // structure.
+                  const auditRows: [TranslationKey, string][] = [
+                    ["auditOrigin", t(origin.labelKey)],
+                    ["auditProject", provenance?.project_name ?? provenance?.project_id ?? "—"],
+                    ["auditWebsiteJob", provenance?.job_name ?? provenance?.job_id ?? "—"],
+                    ["auditShot", provenance?.shot_code ?? provenance?.shot_id ?? "—"],
+                    ["auditVersion", provenance?.version_no !== null && provenance?.version_no !== undefined ? `v${provenance.version_no}` : provenance?.version_id ?? "—"],
+                    ["auditUploadedBy", provenance?.uploaded_by_name ?? provenance?.uploaded_by_user_id ?? "—"],
+                    ["auditUploadedAt", timestamp(provenance?.uploaded_at ?? null)],
+                    ["auditWorker", job.worker_id === null ? t("unassigned") : `${workerNames.get(job.worker_id) ?? t("machineHash", { id: job.worker_id })} · ${job.gpu_slot !== null ? t("gpuSlotN", { n: job.gpu_slot }) : t("autoAllocation")}`],
+                    ["auditEngineQueued", timestamp(job.engine_queued_at ?? job.created_at)],
+                    ["auditAssigned", timestamp(job.assigned_at)],
+                    ["auditQueueTime", duration(queueSeconds(job))],
+                    ["auditEncodeStart", timestamp(job.started_at)],
+                    ["auditEncodeComplete", timestamp(job.completed_at ?? job.failed_at ?? job.finished_at)],
+                    ["auditEncodeDuration", duration(encodeSeconds(job))],
+                    ["auditFinalStatus", job.status === "ASSIGNED" ? t("statusAssigned") : t(tabLabelKey[LABEL[job.status]])],
+                  ];
                   return (
                     <tr key={job.id}>
                       <td>
@@ -470,14 +561,26 @@ export default function JobsPage({ username }: { username: string }) {
                           </span>
                           <div className="queue-job-info">
                             <strong title={sourceName(job)}>{sourceName(job)}</strong>
-                            {jobResolution(job) && (
-                              <small className="queue-badge" style={{ display: "inline-block", marginTop: 2 }}>
-                                {jobResolution(job)}
-                              </small>
-                            )}
+                            <div className="queue-job-tags">
+                              <span className={`queue-origin ${origin.tone}`} title={t("originTitle")}>
+                                {t(origin.labelKey)}
+                              </span>
+                              {jobResolution(job) && <span className="queue-badge">{jobResolution(job)}</span>}
+                            </div>
                             <small>{t("priorityLabel", { id: job.id, type: job.type, priority: job.priority })}</small>
                             {job.depends_on !== null && <small>{t("dependsOn", { id: job.depends_on })}</small>}
                             {job.retry_count > 0 && <small>{t("attemptN", { n: job.retry_count + 1 })}</small>}
+                            <details className="queue-job-audit">
+                              <summary>{t("auditDetails")}</summary>
+                              <dl className="queue-audit-grid">
+                                {auditRows.map(([labelKey, value]) => (
+                                  <div key={labelKey}>
+                                    <dt>{t(labelKey)}</dt>
+                                    <dd title={value}>{value}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </details>
                             {job.error && (
                               <details className="queue-job-error">
                                 <summary>{t("errorDetails")}</summary>

@@ -1,3 +1,5 @@
+import type { JobOrigin, JobProvenance } from "./provenance.js";
+
 // See docs/MASTER_PROJECT_SPEC.md §14 and docs/ROADMAP.md's Phase 3
 // section for the full state model this is working toward.
 export const JOB_STATUSES = [
@@ -43,6 +45,19 @@ export interface Job {
   // (startJob()/updateJobProgress()) -- see failStaleRunningJobs(). Null
   // until the job has actually started.
   last_progress_at: string | null;
+  // Provenance/audit: submitter-declared source and its website
+  // metadata (JSON string, JobProvenance -- see job/provenance.ts).
+  // Both null for jobs created before provenance existed and for any
+  // caller that doesn't send them; that reads as Legacy/Unknown rather
+  // than as a claim about where the job came from.
+  origin: JobOrigin | null;
+  provenance: string | null;
+  // Audit timeline, re-stamped per attempt (a retry clears the ones
+  // that belong to the previous run) -- see database/db.ts.
+  engine_queued_at: string | null;
+  assigned_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
 }
 
 export interface JobInput {
@@ -51,4 +66,6 @@ export interface JobInput {
   input: string | null;
   depends_on: number | null;
   required_software: Record<string, string> | null;
+  origin: JobOrigin | null;
+  provenance: JobProvenance | null;
 }
