@@ -39,8 +39,11 @@ ask the user for it if a future check needs to go beyond what's below.
 ## `vncgi-upload`
 
 - **Status**: PRODUCTION (2026-09-05). Active at `https://vncgi.online/upload/`;
-  healthy in Dockge. Upload and queue submission are verified. GPU encode and
-  result download acceptance remain pending updated Windows Agents (test job 380).
+  healthy in Dockge. Upload, GPU encode on the updated COMP-01 Agent, and
+  authenticated result/range downloads are verified (job 380). All four Agents
+  now meet the software gate; additional H.264 jobs 382 and 384 passed on CGI-01
+  and CGI-Render. CGI-DUC job 383 exposed a driver/API mismatch requiring NVIDIA
+  driver 610.00 or newer. See PROJECT_STATUS.md for per-worker acceptance.
 - **Purpose**: private authenticated chunk storage and a restricted bridge to the
   existing Job Engine for the public `/upload/` portal. No local media processing.
 - **Image**: `ghcr.io/rajnlove/dreamers-remote-upload:6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52` from
@@ -56,10 +59,13 @@ ask the user for it if a future check needs to go beyond what's below.
   at `/uploads`, UID/GID 3001:3001; private named volume `dreamers-upload-state`
   at `/data` (image initializes mode 0700, owner 3001:3001), outside `www`.
   Retain this volume while jobs or uploads need recovery. 16 MiB ephemeral `/tmp`.
+  POSIX ACLs additionally grant the existing `render_agent` UID 3000 access only
+  to the upload child, with inherited entries for worker 3000 and portal 3001;
+  the `online` parent grants worker traversal only. Direct HTTP denial is retained.
 - **Dependencies**: existing private backend with idempotency patch, upgraded
   Windows agents, matching NAS/UNC permissions, Cloudflare path routing.
 - **Restart**: unless-stopped; 100-second graceful drain.
-- **Lifecycle**: retained for the live portal and pending worker acceptance;
+- **Lifecycle**: retained for the verified live portal and remaining farm rollout;
   no test container is left behind. To retire, remove public path route and stop this service after
   active jobs drain; retain data/state until their owners no longer need them.
 - **Deployment details**: [UPLOAD_PORTAL.md](UPLOAD_PORTAL.md). Existing stacks

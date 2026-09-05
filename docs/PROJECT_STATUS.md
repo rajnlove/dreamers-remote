@@ -1,6 +1,33 @@
 # Project Status
 
-## 2026-09-05 — Upload portal deployed; worker acceptance pending
+## 2026-09-05 — Farm acceptance: three workers passed, CGI-DUC driver blocked
+
+All four Agents are online, advertise `upload_input_safety: "1"`, and pass the
+NAS access gate. CGI-01 and CGI-DUC now report FFmpeg 9.0.1 (Gyan); CGI-Render
+and COMP-01 report the existing BtbN 7.1.5 build. The owner configured missing
+NAS credentials locally; no passwords were embedded in installer packages.
+
+Three fresh 1.1 MiB video uploads were submitted through the public portal while
+the queue was idle. The scheduler assigned one job to each newly added worker:
+
+| Worker | Job | H.264 NVENC result | Public authenticated output |
+|---|---|---|---|
+| CGI-01 / RTX 5090 | 382 | COMPLETED | 1,915,699 bytes, downloaded |
+| CGI-DUC / RTX 5070 Ti | 383 | FAILED: NVENC API mismatch | No valid result |
+| CGI-Render / RTX 3090, GPU 0 | 384 | COMPLETED | 1,868,705 bytes, downloaded |
+| COMP-01 / RTX 5070 Ti | 380, 381 (earlier) | COMPLETED | Download and range checks passed |
+
+CGI-DUC's real FFmpeg error reports **Required NVENC API 13.1, Found 13.0** and
+requires NVIDIA driver **610.00 or newer**. Heartbeat capability detection checks
+FFmpeg availability and NAS access, but does not test driver/NVENC initialization;
+therefore four advertised workers must not be described as four verified workers.
+Update the NVIDIA driver on CGI-DUC, then verify an encode actually executes on
+that worker. Retrying a job may assign it elsewhere because scheduling is automatic.
+No driver installation, workstation reboot, scheduling override, or CPU fallback
+was performed. Topaz processing, HEVC and CGI-Render's second GPU were not part of
+this smoke run. These are bounded H.264 acceptance checks, not a load benchmark.
+
+## 2026-09-05 — Upload portal verified through GPU encode and download
 
 Public portal: **https://vncgi.online/upload/**. Backend and upload container are
 pinned to `6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`; GitHub Actions Linux tests
@@ -13,10 +40,16 @@ the existing root catch-all, whose page remains unchanged and returns 200.
 A real 5.1 MiB video upload through Cloudflare passed checksum rejection/rollback,
 resume after fresh login, and private source/output access checks. Completion
 created job **380** exactly once despite duplicate completion requests. The job
-remains QUEUED: all four live workers still lack `upload_input_safety: "1"`.
-An Administrator-run Agent update kit is prepared outside git. Real GPU encode,
-worker share permissions and result download await an updated worker; this is
-not yet a verified complete encode workflow. Never execute media tools on TrueNAS.
+initially waited for an updated Agent. The owner updated COMP-01; it now advertises
+`upload_input_safety: "1"`. The first run exposed missing NAS ACLs for `render_agent`
+(UID/GID 3000:3000), while the portal uses 3001:3001. A targeted, backed-up ACL
+change grants parent traversal and inherited read/write within the upload child.
+Job 380 then completed on COMP-01's RTX 5070 Ti. The authenticated 1,968,992-byte
+MP4 and byte-range downloads passed; direct public source/output access remains
+denied. Subsequent farm rollout and its remaining driver issue are recorded above.
+Fresh upload/job 381 also completed and downloaded without a further ACL change,
+verifying inherited permissions for subsequent uploads and worker-created results.
+Never execute media tools on TrueNAS.
 
 Docker status: server/web and the now-active upload portal are PRODUCTION.
 No obsolete services were created. Host-wide inventory and measured cgroup usage

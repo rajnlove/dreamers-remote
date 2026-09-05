@@ -1,6 +1,6 @@
 # Upload & Encode portal
 
-Status (2026-09-05): **deployed; upload verified, worker encode pending** at the owner-selected
+Status (2026-09-05): **deployed; H.264 encode/download verified on three workers; CGI-DUC requires a driver update** at the owner-selected
 `https://vncgi.online/upload/`. Existing root site and Remote UI remain
 in their existing services. The new process only serves `/upload/` and `/upload/api/*`.
 
@@ -111,6 +111,16 @@ child. Existing PHP credentials and project roots were preserved.
    the shared group/ACL on both sides; do not grant Everyone write access. State
    should be readable only by the portal identity/operator. Test this mapping with
    a small file before admitting production uploads.
+   Live ACL correction: `render_agent` is UID/GID **3000:3000**, distinct from
+   portal UID/GID 3001:3001. Existing POSIX ACLs did not grant it access to `online`.
+   Added a named UID 3000 traverse-only entry on the `online` parent, without
+   changing that parent's default ACL. Within `dreamers-upload`, named users
+   3000 and 3001 have directory rwx/file rw permissions and directory default
+   entries, allowing both worker and portal to access newly created sources and
+   results. Existing owner, group, mask and other entries were preserved; no
+   Everyone permission or broad recursive change was applied. Original ACLs
+   were backed up outside the web root before mutation. Preserve these defaults
+   when changing dataset permissions; do not rely on matching mode bits alone.
 4. Fill a private copy of `upload.env.example` outside git with a strong portal
    password and a **separate non-admin backend account** seeded with
    `UPLOAD_SERVICE_USERNAME`/`UPLOAD_SERVICE_PASSWORD` on the backend (minimum
@@ -204,11 +214,25 @@ Live checks on 2026-09-05:
   remained zero. After a valid 4 MiB chunk, a fresh login resumed its saved offset.
 - Completion created job **380**; repeating completion returned the same job ID.
   Direct requests for that known source file were denied on both public aliases.
-- Job 380 is **QUEUED**, because none of the four workers yet advertises
-  `upload_input_safety: "1"`. It is retained for the first updated worker test.
+- After the owner installed the Agent update on COMP-01, it advertised
+  `upload_input_safety: "1"`. Job 380 initially failed because the worker could
+  not read the upload directory. After the targeted ACL correction, retrying the
+  same job completed on COMP-01's RTX 5070 Ti. The authenticated result download
+  returned a 1,968,992-byte MP4; a byte-range request returned 206 with matching
+  bytes. Unauthenticated downloads and direct source/output aliases stayed denied.
+- A fresh UUID upload created job **381** and completed without another ACL
+  change. Its authenticated output download also passed, verifying inheritance
+  for new portal-created source folders and worker-created output files.
 
-Remaining acceptance: update Windows Agents and their allowed upload root, then
-verify real GPU encode, worker SMB read/write, and authenticated result download.
+Farm follow-up: all four Agents are updated and pass NAS access checks. Fresh
+public-portal jobs 382 (CGI-01) and 384 (CGI-Render, GPU 0) completed H.264 NVENC
+and downloaded successfully. Job 383 on CGI-DUC failed to initialize NVENC:
+the FFmpeg build requires API 13.1, while its installed driver exposes 13.0.
+Update CGI-DUC's NVIDIA driver to 610.00 or newer and verify execution on that
+specific worker. Capability advertisement alone does not validate GPU driver
+compatibility. NVIDIA confirms the driver requirement in the
+[SDK 13.1 release notes](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/read-me/index.html).
+The existing job scheduler may assign a retry to a different worker.
 Do not remove the software-version gate to make old Agents receive public jobs.
 Container limits are set in the live Compose configuration; measured cgroup usage
 and a host-wide Docker inventory remain unverified because the authenticated
