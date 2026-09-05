@@ -26,6 +26,39 @@ Tests also cover migration of the legacy SQLite schema, persistent per-session
 chunk size across configuration changes/restarts, checksum rollback, and content
 equality after resumed writes.
 
+### Slow browser transfers
+
+The original 90-second receiver / 95-second XHR limits were too short for a
+32 MiB chunk below approximately 350 KiB/s. Live browser observations showed
+roughly 230–250 KiB/s and repeated progress rollback before the first chunk
+committed, despite much faster synthetic transfers from the diagnostic process.
+Those measurements describe different client transfer paths.
+
+The receiver now refreshes a 90-second inactivity timer whenever data arrives,
+with a ten-minute absolute chunk limit. HTTP request and XHR deadlines include
+headroom beyond that limit. The UI shows the current transfer rate. Slots,
+resource limits, checksums and rollback remain enforced; these changes prevent
+premature application timeouts but do not increase the client's underlying network speed.
+A public-path slow 32 MiB probe still returned a non-JSON intermediary error, so
+extended application deadlines alone are not considered a sufficient fix.
+
+The client now starts with 4 MiB transport pieces and measures each acknowledged
+transfer. It selects 4/8/16/32 MiB aiming for requests within 20 seconds, falling
+back to 4 MiB after an error. Each piece is hashed independently before sending.
+The original fingerprint block size remains persisted and unchanged for resume;
+transport piece boundaries may differ from those identity block boundaries.
+The receiver bounds piece length between 4 MiB and the session maximum (or the
+remaining tail), verifies checksum and commits each smaller offset independently.
+
+Deployed Upload image `0a146a71a5f7ddf8e617749f0fcd7033d2350e3b` after
+[CI 33964314357](https://github.com/rajnlove/dreamers-remote/actions/runs/33964314357)
+passed. A deliberately slowed public-path transfer with a 32 MiB identity maximum
+sent two 4 MiB pieces and a 123-byte tail: HTTP 200 at each step, committed offsets
+4,194,304 → 8,388,608 → 8,388,731. Durations were 50.4 s, 16.5 s and 0.1 s,
+including network variability. Re-reading the session confirmed each committed
+offset. The probe was deleted without creating an encode job. Existing user
+sessions/files were preserved. CPU and memory limits remain unchanged.
+
 ```
 Browser → Cloudflare → Upload portal → private NAS dataset
                            ↓ private authenticated Job Engine API
@@ -39,10 +72,11 @@ FFmpeg, ffprobe, Topaz, thumbnail creation or rendering. The upload image contai
 no media tools. The existing agents perform decoding, scaling, GPU encoding and
 audio processing; this can also use CPU on those workstations.
 
-New uploads default to **32 MiB** per request (`UPLOAD_CHUNK_MB`, range 4–32).
-The size is persisted per upload; legacy database sessions and older open tabs
-retain 4 MiB chunks. Resume hashes and slices using that session's stored size,
-including after a server restart or configuration change.
+New uploads use a **32 MiB maximum** (`UPLOAD_CHUNK_MB`, range 4–32), with transport
+pieces starting at 4 MiB and adapting to measured speed. The identity block size
+is persisted per upload; legacy sessions retain their 4 MiB maximum. Resume
+identifies the file using that session's stored block size, including after a
+server restart or configuration change, then sends from the committed byte offset.
 The server checks SHA-256 for that chunk,
 writes directly to the committed position in `source.part`, fsyncs, then commits
 the SQLite offset. Completion renames that same file to `source.<extension>`;
