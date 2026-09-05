@@ -29,6 +29,7 @@ public static class FfprobeDuration
             psi.ArgumentList.Add("format=duration");
             psi.ArgumentList.Add("-of");
             psi.ArgumentList.Add("default=noprint_wrappers=1:nokey=1");
+            foreach (var option in MediaInputSafety.Options(sourcePath)) psi.ArgumentList.Add(option);
             psi.ArgumentList.Add(sourcePath);
 
             using var process = Process.Start(psi);

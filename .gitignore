@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-upload/
 build/
 *.log
 
@@ -8,6 +9,7 @@ bin/
 obj/
 *.user
 agent/publish/
+agent/publish-*/
 agent/dist/
 agent/*.zip
 

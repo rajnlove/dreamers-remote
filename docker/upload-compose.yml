@@ -1,0 +1,57 @@
+# Standalone stack; start with --env-file <private file>. See docs/UPLOAD_PORTAL.md.
+services:
+  upload:
+    image: ghcr.io/rajnlove/dreamers-remote-upload:${UPLOAD_IMAGE_TAG:?Set a tested commit SHA}
+    container_name: vncgi-upload
+    restart: unless-stopped
+    user: "${UPLOAD_UID:?Set dataset UID}:${UPLOAD_GID:?Set shared SMB group GID}"
+    cpus: "0.50"
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+    stop_grace_period: 100s
+    environment:
+      UPLOAD_PUBLIC_ORIGIN: https://vncgi.online
+      UPLOAD_STORAGE_ROOT: /uploads
+      UPLOAD_DATABASE_FILE: /data/upload.sqlite
+      UPLOAD_WORKER_ROOT: ${UPLOAD_WORKER_ROOT:?Set the matching UNC folder}
+      UPLOAD_ENGINE_URL: ${UPLOAD_ENGINE_URL:?Set private backend URL}
+      UPLOAD_ENGINE_USERNAME: ${UPLOAD_ENGINE_USERNAME:?Set service account}
+      UPLOAD_ENGINE_PASSWORD: ${UPLOAD_ENGINE_PASSWORD:?Set service password}
+      UPLOAD_USERNAME: ${UPLOAD_USERNAME:?Set portal username}
+      UPLOAD_PASSWORD: ${UPLOAD_PASSWORD:?Set a strong portal password}
+      UPLOAD_MAX_FILE_GB: ${UPLOAD_MAX_FILE_GB:-20}
+      UPLOAD_QUOTA_GB: ${UPLOAD_QUOTA_GB:-100}
+      UPLOAD_DISK_RESERVE_GB: ${UPLOAD_DISK_RESERVE_GB:-10}
+      UPLOAD_MAX_ACTIVE: 4
+      UPLOAD_MAX_TRANSFERS: 2
+      UPLOAD_INCOMPLETE_TTL_HOURS: 48
+    volumes:
+      - type: bind
+        source: ${UPLOAD_HOST_STORAGE:?Set the TrueNAS dataset path}
+        target: /uploads
+        bind:
+          create_host_path: false
+      - type: volume
+        source: upload-state
+        target: /data
+    # Default to loopback. Set the NAS LAN address for an existing bridged tunnel.
+    # Live TrueNAS: 192.168.1.92:18090; PHP Web already occupies host 8090.
+    ports: ["${UPLOAD_BIND_IP:-127.0.0.1}:${UPLOAD_HOST_PORT:-18090}:8090"]
+    networks: [upload]
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+networks:
+  upload:
+    name: dreamers-upload
+volumes:
+  upload-state:
+    name: dreamers-upload-state

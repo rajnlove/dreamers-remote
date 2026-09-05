@@ -5,7 +5,14 @@ lifecycle rule in [DOCKER_LIFECYCLE.md](DOCKER_LIFECYCLE.md). Update this
 file on every Docker-related change. No container should carry status
 UNKNOWN once it's been possible to determine otherwise.
 
-**Access note**: this agent has no shell/API access to the TrueNAS host
+**2026-09-05 access update**: the user authenticated the TrueNAS UI. PHP Web's
+web-online mount was inspected and its official container shell used to verify
+the upload directory, UID/GID and a temporary access canary. No app settings were
+saved or restarted in PHP Web. The backend was updated and the separate upload
+stack deployed through authenticated Dockge. Host-wide Docker inventory remains
+unaudited: TrueNAS host shell requires a separate sudo password.
+
+**Historical access note**: this agent had no shell/API access to the TrueNAS host
 or Dockge — everything below for `vncgi-remote`/`vncgi-remote-93` comes
 from the user opening each stack in Dockge and sharing its
 compose.yaml + terminal log (2026-08-16); everything for
@@ -23,10 +30,48 @@ ask the user for it if a future check needs to go beyond what's below.
 |---|---|---|---|
 | `vncgi-remote-server` | PRODUCTION | YES | V1 / Phase 2 |
 | `vncgi-remote-web` | PRODUCTION | YES | V1 |
+| `vncgi-upload` | PRODUCTION | YES, live Upload portal | Upload & Encode |
 | `vncgi-remote` | REMOVED (2026-08-16) | NO | M1 (obsolete) |
 | `vncgi-remote-93` | REMOVED (2026-08-16) | NO | M1 (obsolete) |
 
 ---
+
+## `vncgi-upload`
+
+- **Status**: PRODUCTION (2026-09-05). Active at `https://vncgi.online/upload/`;
+  healthy in Dockge. Upload, GPU encode on the updated COMP-01 Agent, and
+  authenticated result/range downloads are verified (job 380). All four Agents
+  now meet the software gate; additional H.264 jobs 382 and 384 passed on CGI-01
+  and CGI-Render. After the owner updated CGI-DUC's NVIDIA driver, fresh job 387
+  completed on that worker and its authenticated MP4 download passed; companion
+  job 386 passed on CGI-01. All four workers are verified for H.264 delivery.
+  See PROJECT_STATUS.md for per-worker acceptance and limits of these checks.
+- **Purpose**: private authenticated chunk storage and a restricted bridge to the
+  existing Job Engine for the public `/upload/` portal. No local media processing.
+- **Image**: `ghcr.io/rajnlove/dreamers-remote-upload:6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52` from
+  `docker/upload.Dockerfile`, added to the existing GitHub Actions image workflow.
+- **Stack/service**: `docker/upload-compose.yml`, service `upload`.
+- **Limits**: 0.5 CPU, 512 MiB RAM, no swap, 128 PIDs; non-root configured UID/GID,
+  read-only container root, no capabilities, no-new-privileges, bounded logs.
+- **Ports/network**: `192.168.1.92:18090:8090` (PHP Web already uses host 8090),
+  `dreamers-upload` bridge. Existing Cloudflare tunnel targets the NAS LAN binding;
+  its upload path precedes the existing root route. Network is only needed while
+  this portal is in use. The template defaults to loopback if bind IP is omitted.
+- **Storage**: verified `/mnt/pool_cgivn_work/web_data/www/online/dreamers-upload`
+  at `/uploads`, UID/GID 3001:3001; private named volume `dreamers-upload-state`
+  at `/data` (image initializes mode 0700, owner 3001:3001), outside `www`.
+  Retain this volume while jobs or uploads need recovery. 16 MiB ephemeral `/tmp`.
+  POSIX ACLs additionally grant the existing `render_agent` UID 3000 access only
+  to the upload child, with inherited entries for worker 3000 and portal 3001;
+  the `online` parent grants worker traversal only. Direct HTTP denial is retained.
+- **Dependencies**: existing private backend with idempotency patch, upgraded
+  Windows agents, matching NAS/UNC permissions, Cloudflare path routing.
+- **Restart**: unless-stopped; 100-second graceful drain.
+- **Lifecycle**: retained for the verified live portal and remaining farm rollout;
+  no test container is left behind. To retire, remove public path route and stop this service after
+  active jobs drain; retain data/state until their owners no longer need them.
+- **Deployment details**: [UPLOAD_PORTAL.md](UPLOAD_PORTAL.md). Existing stacks
+  remain PRODUCTION. Host Docker audit remains pending; none was inferred locally.
 
 ## `vncgi-remote-server`
 
@@ -34,7 +79,7 @@ ask the user for it if a future check needs to go beyond what's below.
 - **Purpose**: Backend API (Express) + WebSocket VNC proxy (`/ws/vnc/:id`,
   `server/src/remote/wsProxy.ts`) + Wake-on-LAN sender + Agent endpoints
   (`/api/agent/*`) + SQLite-backed workstation/user/command_log storage.
-- **Image**: `ghcr.io/rajnlove/dreamers-remote-server:latest`, built from
+- **Image**: `ghcr.io/rajnlove/dreamers-remote-server:6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`, built from
   [server.Dockerfile](../docker/server.Dockerfile).
 - **Ports**: `8080` (API + WS proxy).
 - **Volumes**: `${DATA_ROOT}` bind-mounted to `/data` (SQLite file —
@@ -48,7 +93,9 @@ ask the user for it if a future check needs to go beyond what's below.
   for ffmpeg/topaz sourcePath/outputPath), `PHP_SERVICE_USERNAME`/
   `PHP_SERVICE_PASSWORD` (Phase 4, P4-5 — optional non-admin service
   account for the PHP Projects site; unset password = feature off) (see
-  `.env.example`).
+  `.env.example`). `UPLOAD_SERVICE_USERNAME`/`UPLOAD_SERVICE_PASSWORD` seed a
+  separate non-admin Upload account; the live source allow-list includes the
+  upload child while preserving existing project roots and PHP credentials.
 - **Restart policy**: `unless-stopped`.
 - **Dependencies**: none at the container level (SQLite is embedded, not
   a separate DB container). `vncgi-remote-web` calls this API.

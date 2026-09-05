@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { createJobOnce } from "../job/idempotency.js";
 import { cancelJob, createJob, deleteJob, deleteTerminalJobs, getJob, listJobs, retryJob } from "../job/repository.js";
 import { runScheduler } from "../job/scheduler.js";
 import { validateCreateInput } from "../job/validation.js";
@@ -37,7 +38,8 @@ jobsRouter.post("/", (req, res, next) => {
     if (input.depends_on !== null && !getJob(input.depends_on)) {
       throw new NotFoundError(`depends_on job ${input.depends_on} not found`);
     }
-    const created = createJob(input);
+    const requestKey = req.get("Idempotency-Key");
+    const created = requestKey ? createJobOnce(req.session.userId!, requestKey, input) : createJob(input);
     // P3-3: try to assign immediately (a worker may already be free) —
     // also retried on every Agent heartbeat, so this isn't the only chance.
     runScheduler();

@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev:upload": "vite --config vite.upload.config.ts",
+    "build:upload": "tsc && vite build --config vite.upload.config.ts",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",

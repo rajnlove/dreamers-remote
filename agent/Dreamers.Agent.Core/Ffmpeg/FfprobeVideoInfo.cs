@@ -39,6 +39,7 @@ public static class FfprobeVideoInfo
             // directly -- no JSON/XML parsing needed for two numbers.
             psi.ArgumentList.Add("-of");
             psi.ArgumentList.Add("csv=s=x:p=0");
+            foreach (var option in MediaInputSafety.Options(sourcePath)) psi.ArgumentList.Add(option);
             psi.ArgumentList.Add(sourcePath);
 
             using var process = Process.Start(psi);

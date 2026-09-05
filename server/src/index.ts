@@ -93,6 +93,11 @@ if (env.phpServicePassword) {
   });
 }
 
+if (env.uploadServicePassword) {
+  if (env.uploadServicePassword.length < 32) throw new Error("UPLOAD_SERVICE_PASSWORD must contain at least 32 characters");
+  await seedServiceUser(env.uploadServiceUsername, env.uploadServicePassword);
+}
+
 server.listen(env.port, () => {
   console.log(`dreamers-remote-server listening on :${env.port}`);
 });

@@ -1,0 +1,13 @@
+.git
+**/node_modules
+**/dist
+**/dist-upload
+**/bin
+**/obj
+**/.env
+**/.env.*
+**/*.sqlite*
+**/*.log
+agent/publish
+agent/publish-*
+agent/*.zip

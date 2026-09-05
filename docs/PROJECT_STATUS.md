@@ -1,5 +1,106 @@
 # Project Status
 
+## 2026-09-05 — Farm acceptance: all four workers passed H.264 encode/download
+
+All four Agents are online, advertise `upload_input_safety: "1"`, and pass the
+NAS access gate. CGI-01 and CGI-DUC now report FFmpeg 9.0.1 (Gyan); CGI-Render
+and COMP-01 report the existing BtbN 7.1.5 build. The owner configured missing
+NAS credentials locally; no passwords were embedded in installer packages.
+
+Three fresh 1.1 MiB video uploads were submitted through the public portal while
+the queue was idle. The scheduler assigned one job to each newly added worker:
+
+| Worker | Job | H.264 NVENC result | Public authenticated output |
+|---|---|---|---|
+| CGI-01 / RTX 5090 | 382, 386 | COMPLETED | 1,915,699 bytes, downloaded |
+| CGI-DUC / RTX 5070 Ti | 387 | COMPLETED after driver update | 1,915,699 bytes, downloaded |
+| CGI-Render / RTX 3090, GPU 0 | 384 | COMPLETED | 1,868,705 bytes, downloaded |
+| COMP-01 / RTX 5070 Ti | 380, 381 (earlier) | COMPLETED | Download and range checks passed |
+
+CGI-DUC's original job 383 failed with **Required NVENC API 13.1, Found 13.0**,
+requiring NVIDIA driver **610.00 or newer**. After the owner reported updating
+the driver, two fresh 1.1 MiB uploads produced jobs 386 and 387. The scheduler
+assigned 386 to CGI-01 and **387 to CGI-DUC (worker 4, GPU 0)**. Both completed
+with no error. Authenticated downloads returned valid MP4 headers and 1,915,699
+bytes each, SHA-256 `898fb7a8e619867baba879909944fa5f2d51d83415c9baf6b418c0cefc24e49a`.
+This verifies actual NVENC execution on CGI-DUC; its exact installed driver
+version was not independently read. No scheduling override or CPU fallback was
+used. Heartbeat capability advertisement alone does not validate NVENC startup.
+Topaz processing, HEVC and CGI-Render's second GPU were not part of this smoke
+run. These are bounded H.264 acceptance checks, not a load benchmark.
+
+## 2026-09-05 — Upload portal verified through GPU encode and download
+
+Public portal: **https://vncgi.online/upload/**. Backend and upload container are
+pinned to `6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`; GitHub Actions Linux tests
+and image builds passed. Dockge reports the upload container healthy. Its limits
+are 0.5 CPU and 512 MiB with no swap, UID/GID 3001:3001 and private state volume.
+The live binding is `192.168.1.92:18090:8090`; the portal reaches the backend at
+`http://192.168.1.92:8080`. The Cloudflare tunnel routes `^/upload(/.*)?$` before
+the existing root catch-all, whose page remains unchanged and returns 200.
+
+A real 5.1 MiB video upload through Cloudflare passed checksum rejection/rollback,
+resume after fresh login, and private source/output access checks. Completion
+created job **380** exactly once despite duplicate completion requests. The job
+initially waited for an updated Agent. The owner updated COMP-01; it now advertises
+`upload_input_safety: "1"`. The first run exposed missing NAS ACLs for `render_agent`
+(UID/GID 3000:3000), while the portal uses 3001:3001. A targeted, backed-up ACL
+change grants parent traversal and inherited read/write within the upload child.
+Job 380 then completed on COMP-01's RTX 5070 Ti. The authenticated 1,968,992-byte
+MP4 and byte-range downloads passed; direct public source/output access remains
+denied. Subsequent farm rollout and the resolved driver issue are recorded above.
+Fresh upload/job 381 also completed and downloaded without a further ACL change,
+verifying inherited permissions for subsequent uploads and worker-created results.
+Never execute media tools on TrueNAS.
+
+Docker status: server/web and the now-active upload portal are PRODUCTION.
+No obsolete services were created. Host-wide inventory and measured cgroup usage
+remain pending; TrueNAS `sudo -n` requires a password. Existing root/PHP services
+were not redeployed. See [CONTAINERS.md](CONTAINERS.md).
+
+### Implementation and preparation record
+
+Integration preparation: backend now seeds a separate non-admin Upload service
+account from `UPLOAD_SERVICE_*`. Portal jobs require software marker
+`upload_input_safety: "1"`, advertised by the new agent build, preventing legacy
+workers from receiving public uploads. Private SQLite uses Docker named volume
+`dreamers-upload-state` with UID/GID 3001:3001; it is not stored beneath the web
+root. A fourth HTTP test verifies private authentication and this worker gate.
+
+Storage selection: the owner chose `V:\online` and supplied its UNC location;
+the isolated child is `\\192.29.11.92\web_data\www\online\dreamers-upload`.
+Verified directly after the owner logged in to TrueNAS: web-online mounts
+`/mnt/pool_cgivn_work/web_data/www/online` at `/app` read/write. The upload child
+exists, owned by UID/GID 3001:3001 with mode 0770. Its Apache `.htaccess` contains
+`Require all denied`. A known canary file created as UID/GID 3001:3001 was denied
+at the LAN origin (403) and public `/dreamers-upload/` alias (403); the public
+`/online/dreamers-upload/` alias returned 404. No content was exposed, and the
+canary was removed. Local SMB access remains denied, but the authorized TrueNAS
+container shell now permits these checks. Host path and UID/GID are configured.
+PHP Web already occupies NAS port 8090; upload uses configurable host port 18090,
+leaving its container port at 8090. The template defaults to loopback; the supplied
+deployment env selects the verified NAS LAN address for the existing tunnel.
+
+Built a separate `/upload/` portal for the user-selected `https://vncgi.online`
+origin. It receives resumable 4 MiB chunks, authenticates its own account/session,
+validates checksums and ownership, limits transfers/storage, and submits only fixed
+NVENC presets to the existing private Job Engine. TrueNAS performs storage and
+coordination only. Windows workers handle all media operations. Job creation now
+supports durable, account-scoped idempotency keys; accepted worker formats are
+restricted to file-only input protocols and the expected demuxer.
+
+Server and upload-web builds pass; four HTTP/store/idempotency tests and 29
+targeted worker tests pass. Browser login/layout verified against the local portal.
+The full worker test run passed 122/123; the existing hardware memory metric test
+fails in this sandbox. Linux builds and live Cloudflare upload checks subsequently
+passed as described above. The local preview does not submit jobs to production.
+
+Storage host path, portal UID/GID, direct HTTP denial, private state volume,
+backend service credentials and tunnel route are verified. Remaining worker
+rollout and acceptance steps are in [UPLOAD_PORTAL.md](UPLOAD_PORTAL.md).
+
+## Previous Phase 4 milestone
+
 Last updated: 2026-09-02 — **Phase 4 is complete (P4-0 through P4-7, all
 DONE)**. This session found that this dev machine (hostname `CGIVN`,
 `192.29.11.93`) **is COMP-01 itself** — not a separate unreachable dev

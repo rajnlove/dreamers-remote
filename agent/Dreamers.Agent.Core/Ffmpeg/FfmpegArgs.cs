@@ -79,6 +79,7 @@ public static class FfmpegArgs
             "-c:v", input.Codec,
             "-preset", input.Preset,
         };
+        args.InsertRange(1, MediaInputSafety.Options(input.SourcePath));
 
         if (gpuSlot is { } gpu)
         {
