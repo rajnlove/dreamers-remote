@@ -1,5 +1,52 @@
 # Project Status
 
+## 2026-09-05 — Upload portal implementation (not deployed)
+
+Integration preparation: backend now seeds a separate non-admin Upload service
+account from `UPLOAD_SERVICE_*`. Portal jobs require software marker
+`upload_input_safety: "1"`, advertised by the new agent build, preventing legacy
+workers from receiving public uploads. Private SQLite uses Docker named volume
+`dreamers-upload-state` with UID/GID 3001:3001; it is not stored beneath the web
+root. A fourth HTTP test verifies private authentication and this worker gate.
+
+Storage selection: the owner chose `V:\online` and supplied its UNC location;
+the isolated child is `\\192.29.11.92\web_data\www\online\dreamers-upload`.
+Verified directly after the owner logged in to TrueNAS: web-online mounts
+`/mnt/pool_cgivn_work/web_data/www/online` at `/app` read/write. The upload child
+exists, owned by UID/GID 3001:3001 with mode 0770. Its Apache `.htaccess` contains
+`Require all denied`. A known canary file created as UID/GID 3001:3001 was denied
+at the LAN origin (403) and public `/dreamers-upload/` alias (403); the public
+`/online/dreamers-upload/` alias returned 404. No content was exposed, and the
+canary was removed. Local SMB access remains denied, but the authorized TrueNAS
+container shell now permits these checks. Host path and UID/GID are configured.
+PHP Web already occupies NAS port 8090; the prepared upload host binding was
+changed to configurable loopback 18090, leaving its container port at 8090.
+
+Built a separate `/upload/` portal for the user-selected `https://vncgi.online`
+origin. It receives resumable 4 MiB chunks, authenticates its own account/session,
+validates checksums and ownership, limits transfers/storage, and submits only fixed
+NVENC presets to the existing private Job Engine. TrueNAS performs storage and
+coordination only. Windows workers handle all media operations. Job creation now
+supports durable, account-scoped idempotency keys; accepted worker formats are
+restricted to file-only input protocols and the expected demuxer.
+
+Server and upload-web builds pass; three HTTP/store/idempotency tests and 29
+targeted worker tests pass. Browser login/layout verified against the local portal.
+The full worker test run passed 122/123; the existing hardware memory metric test
+fails in this sandbox. Real NAS encoding, Linux container build/resource limits and
+Cloudflare routing are not yet verified. The local preview does not submit jobs to
+production. No production configuration or images were updated in this milestone.
+
+Docker status: existing server/web remain PRODUCTION. Proposed `vncgi-upload` is
+FUTURE until its deployment gate passes; see [CONTAINERS.md](CONTAINERS.md) and
+[UPLOAD_PORTAL.md](UPLOAD_PORTAL.md). Storage host path, portal UID/GID and direct
+HTTP denial are verified. Remaining rollout inputs: private state directory,
+worker SMB access to the chosen child, private service credentials and the
+existing tunnel path route. Backend and all four agents must be updated before
+public uploads are enabled.
+
+## Previous Phase 4 milestone
+
 Last updated: 2026-09-02 — **Phase 4 is complete (P4-0 through P4-7, all
 DONE)**. This session found that this dev machine (hostname `CGIVN`,
 `192.29.11.93`) **is COMP-01 itself** — not a separate unreachable dev

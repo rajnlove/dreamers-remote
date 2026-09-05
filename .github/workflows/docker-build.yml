@@ -18,7 +18,23 @@ permissions:
   packages: write
 
 jobs:
+  verify-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: server
+      - run: npm run build
+        working-directory: server
+      - run: node --test dist/upload/*.test.js dist/job/idempotency.test.js
+        working-directory: server
+        env:
+          DATABASE_FILE: /tmp/dreamers-job-test.sqlite
   build:
+    needs: verify-upload
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -27,6 +43,8 @@ jobs:
             dockerfile: docker/server.Dockerfile
           - image: web
             dockerfile: docker/web.Dockerfile
+          - image: upload
+            dockerfile: docker/upload.Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4

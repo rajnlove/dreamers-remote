@@ -1,0 +1,225 @@
+import express, { type Request, type Response, type NextFunction } from "express";
+import { randomBytes, createHash } from "node:crypto";
+import { lstat, realpath } from "node:fs/promises";
+import path from "node:path";
+import type { UploadConfig } from "./config.js";
+import { hashPassword, verifyPassword } from "../auth/password.js";
+import { UploadStore, PortalError, type Upload } from "./store.js";
+import { completeFile, freeSpace, receiveChunk, removeUploadFiles, safeFolder } from "./files.js";
+import type { Engine } from "./engine.js";
+import type { Job } from "../job/types.js";
+
+const API = "/upload/api";
+const cookieName = "dreamers.upload";
+const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+const asyncRoute = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => { void fn(req, res).catch(next); };
+type Session = { owner: string; csrf: string };
+const view = (u: Upload) => ({ id: u.id, name: u.name, size: u.size, offset: u.offset, fingerprint: u.fingerprint, preset: u.preset, state: u.state, jobId: u.job_id, createdAt: u.created_at, updatedAt: u.updated_at });
+
+export async function createUploadApp(config: UploadConfig, engine: Engine) {
+  const store = new UploadStore(config);
+  // Password rotation revokes old cookies, while ordinary restarts preserve sessions.
+  store.db.exec("CREATE TABLE IF NOT EXISTS auth_config (id INTEGER PRIMARY KEY, verifier TEXT NOT NULL)");
+  const authConfig = store.db.prepare("SELECT verifier FROM auth_config WHERE id = 1").get() as { verifier: string } | undefined;
+  if (!authConfig || !await verifyPassword(`${config.username}\n${config.password}`, authConfig.verifier)) {
+    const verifier = await hashPassword(`${config.username}\n${config.password}`);
+    store.db.transaction(() => {
+      store.db.prepare("DELETE FROM sessions").run();
+      store.db.prepare("INSERT OR REPLACE INTO auth_config VALUES (1, ?)").run(verifier);
+    })();
+  }
+  const passwordHash = await hashPassword(config.password);
+  const app = express();
+  let requestWindow = Date.now(), requests = 0;
+  app.disable("x-powered-by");
+  // Explicit origin, no reflected CORS, no trust of forwarded IP/host headers.
+  app.use((_req, res, next) => {
+    res.set({ "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+      "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'" });
+    next();
+  });
+  app.use(API, (req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    if (Date.now() - requestWindow > 60_000) { requestWindow = Date.now(); requests = 0; }
+    if (++requests > 1200) { res.set("Retry-After", "60"); res.status(429).json({ error: "Cổng đang bận. Vui lòng thử lại sau một phút." }); return; }
+    const origin = req.get("Origin");
+    if ((origin && origin !== config.origin) || (!["GET", "HEAD"].includes(req.method) && origin !== config.origin)) {
+      res.status(403).json({ error: "Nguồn truy cập không được phép." }); return;
+    }
+    if (req.get("Sec-Fetch-Site") === "cross-site") { res.status(403).json({ error: "Không cho phép truy cập chéo trang." }); return; }
+    next();
+  });
+  app.use(API, express.json({ limit: "8kb" }));
+  const sessions = (req: Request): Session | undefined => {
+    const token = (req.get("Cookie") ?? "").split(";").map(value => value.trim()).find(value => value.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1);
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) return undefined;
+    return store.db.prepare("SELECT owner, csrf FROM sessions WHERE hash = ? AND expires > ?").get(hash(token), Date.now()) as Session | undefined;
+  };
+  let loginBusy = false;
+  app.post(`${API}/login`, asyncRoute(async (req, res) => {
+    const body = req.body as Record<string, unknown> | undefined;
+    if (!body || typeof body.username !== "string" || typeof body.password !== "string" || body.username.length > 100 || body.password.length > 256) throw new PortalError(400, "Thông tin đăng nhập không hợp lệ.");
+    // Fixed account/global budget survives restarts; never key by an attacker-supplied username/IP.
+    if (loginBusy || !store.allowLogin("portal-login")) { res.set("Retry-After", "900"); throw new PortalError(429, "Quá nhiều lần đăng nhập. Vui lòng thử lại sau 15 phút."); }
+    loginBusy = true;
+    let valid = false;
+    try { valid = await verifyPassword(body.password, passwordHash); } finally { loginBusy = false; }
+    if (!valid || body.username !== config.username) throw new PortalError(401, "Tài khoản hoặc mật khẩu không đúng.");
+    store.db.prepare("DELETE FROM auth_limits WHERE key = 'portal-login'").run();
+    const token = randomBytes(32).toString("hex"), csrf = randomBytes(32).toString("hex"), now = Date.now();
+    store.db.prepare("DELETE FROM sessions WHERE expires < ?").run(now);
+    // Bound concurrent sessions for this account without exposing them to clients.
+    store.db.prepare("DELETE FROM sessions WHERE hash IN (SELECT hash FROM sessions WHERE owner = ? ORDER BY expires DESC LIMIT -1 OFFSET 19)").run(config.username);
+    store.db.prepare("INSERT INTO sessions VALUES (?, ?, ?, ?)").run(hash(token), config.username, csrf, now + 24 * 3600_000);
+    res.cookie(cookieName, token, { httpOnly: true, secure: config.origin.startsWith("https:"), sameSite: "strict", path: "/upload", maxAge: 24 * 3600_000 });
+    res.json({ username: config.username, csrf });
+  }));
+  app.use(API, (req, res, next) => {
+    const session = sessions(req);
+    if (!session || session.owner !== config.username) { res.status(401).json({ error: "Vui lòng đăng nhập." }); return; }
+    res.locals.portalSession = session;
+    if (!["GET", "HEAD"].includes(req.method) && req.get("X-CSRF-Token") !== session.csrf) {
+      res.status(403).json({ error: "Phiên xác thực không hợp lệ. Hãy tải lại trang." }); return;
+    }
+    next();
+  });
+  app.get(`${API}/me`, (_req, res) => {
+    const session = res.locals.portalSession as Session;
+    res.json({ username: session.owner, csrf: session.csrf, chunkBytes: config.chunkBytes, maxFileBytes: config.maxFileBytes,
+      quotaBytes: config.quotaBytes, incompleteTtlHours: config.ttlMs / 3600_000 });
+  });
+  app.post(`${API}/logout`, (req, res) => {
+    const session = res.locals.portalSession as Session;
+    store.db.prepare("DELETE FROM sessions WHERE owner = ? AND csrf = ?").run(session.owner, session.csrf);
+    res.clearCookie(cookieName, { path: "/upload", secure: config.origin.startsWith("https:"), httpOnly: true, sameSite: "strict" });
+    res.json({ ok: true });
+  });
+  const owner = (res: Response) => (res.locals.portalSession as Session).owner;
+  const locked = new Set<string>();
+  const exclusive = async <T>(id: string, fn: () => Promise<T>) => {
+    if (locked.has(id)) throw new PortalError(409, "Phiên đang xử lý một yêu cầu khác. Vui lòng thử lại.");
+    locked.add(id);
+    try { return await fn(); } finally { locked.delete(id); }
+  };
+  let transfers = 0;
+  const transfer = async <T>(fn: () => Promise<T>) => {
+    if (transfers >= config.maxTransfers) throw new PortalError(429, "Cổng đang nhận đủ số luồng cho phép. Sẽ thử lại.");
+    transfers++;
+    try { return await fn(); } finally { transfers--; }
+  };
+  app.get(`${API}/uploads`, (_req, res) => res.json(store.list(owner(res)).map(view)));
+  app.post(`${API}/uploads`, asyncRoute(async (req, res) => {
+    if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) throw new PortalError(400, "Yêu cầu không hợp lệ.");
+    if (typeof req.body.size === "number" && Number.isSafeInteger(req.body.size) && req.body.size > 0) await freeSpace(store, req.body.size * 3);
+    const upload = store.create(owner(res), req.body as Record<string, unknown>);
+    await safeFolder(store, upload);
+    res.status(201).json(view(upload));
+  }));
+  app.get(`${API}/uploads/:id`, (req, res, next) => {
+    try { res.json(view(store.get(owner(res), req.params.id!))); } catch (error) { next(error); }
+  });
+  app.put(`${API}/uploads/:id/chunk`, asyncRoute(async (req, res) => {
+    const upload = store.get(owner(res), req.params.id!);
+    await exclusive(upload.id, () => transfer(async () => {
+      await receiveChunk(store, upload, req);
+      res.json(view(store.get(owner(res), upload.id)));
+    }));
+  }));
+  const submit = async (upload: Upload) => {
+    if (upload.job_id) return;
+    store.state(upload, "submitting");
+    // State persists before the HTTP request. The Job Engine persists the same key atomically.
+    const job = await engine.create(`upload-${upload.id}`, store.input(upload));
+    store.state(upload, "submitted", job.id);
+  };
+  app.post(`${API}/uploads/:id/complete`, asyncRoute(async (req, res) => {
+    const upload = store.get(owner(res), req.params.id!);
+    await exclusive(upload.id, async () => {
+      if (upload.state === "uploading") await completeFile(store, upload);
+      try { await submit(store.get(owner(res), upload.id)); } catch { /* Durable retry by maintenance; client sees submitting. */ }
+      res.json(view(store.get(owner(res), upload.id)));
+    });
+  }));
+  const cache = new Map<number, { until: number; promise: Promise<Job> }>();
+  const getJob = (id: number) => {
+    const previous = cache.get(id);
+    if (previous && previous.until > Date.now()) return previous.promise;
+    if (cache.size >= 200) cache.delete(cache.keys().next().value!);
+    const promise = engine.get(id).catch(error => { cache.delete(id); throw error; });
+    cache.set(id, { until: Date.now() + 5000, promise });
+    return promise;
+  };
+  app.get(`${API}/uploads/:id/job`, asyncRoute(async (req, res) => {
+    const upload = store.get(owner(res), req.params.id!);
+    if (!upload.job_id) { res.json(null); return; }
+    const job = await getJob(upload.job_id);
+    // No studio paths, other users' jobs, process arguments, or raw worker errors in public responses.
+    res.json({ id: job.id, status: job.status, progress: job.progress, fps: job.fps, etaSeconds: job.eta_seconds,
+      error: job.status === "FAILED" ? "Xử lý thất bại. Quản trị viên có thể xem chi tiết trong Render Queue." : null });
+  }));
+  app.post(`${API}/uploads/:id/cancel`, asyncRoute(async (req, res) => {
+    const upload = store.get(owner(res), req.params.id!);
+    await exclusive(upload.id, async () => {
+      if (!upload.job_id) throw new PortalError(409, "Job chưa được xác nhận. Hãy chờ đồng bộ.");
+      await engine.cancel(upload.job_id); cache.delete(upload.job_id);
+      res.json({ ok: true });
+    });
+  }));
+  app.delete(`${API}/uploads/:id`, asyncRoute(async (req, res) => {
+    const upload = store.get(owner(res), req.params.id!);
+    await exclusive(upload.id, async () => {
+      if (upload.state === "submitting") throw new PortalError(409, "Đang xác nhận job; chưa thể xóa file.");
+      if (upload.job_id) {
+        const job = await engine.get(upload.job_id);
+        // CANCELLED can precede actual process termination; don't delete a still-open source/output.
+        if (!["COMPLETED", "FAILED"].includes(job.status)) throw new PortalError(409, "Chỉ xóa file khi job đã hoàn tất hoặc thất bại. Job đã hủy cần quản trị viên xác nhận dừng xử lý.");
+      }
+      await removeUploadFiles(store, upload);
+      res.json({ ok: true });
+    });
+  }));
+  app.get(`${API}/uploads/:id/output`, asyncRoute(async (req, res) => {
+    const upload = store.get(owner(res), req.params.id!);
+    if (!upload.job_id || (await getJob(upload.job_id)).status !== "COMPLETED") throw new PortalError(409, "Kết quả chưa sẵn sàng.");
+    if (transfers >= config.maxTransfers) throw new PortalError(429, "Cổng đang bận. Vui lòng tải lại sau.");
+    const folder = await safeFolder(store, upload), file = path.join(folder, "output.mp4");
+    const info = await lstat(file).catch(() => null);
+    if (!info || !info.isFile() || info.isSymbolicLink() || await realpath(file) !== path.join(await realpath(folder), "output.mp4")) throw new PortalError(404, "Không tìm thấy kết quả trên kho lưu trữ.");
+    if (transfers >= config.maxTransfers) throw new PortalError(429, "Cổng đang bận. Vui lòng tải lại sau.");
+    transfers++;
+    let released = false;
+    const release = () => { if (!released) { transfers--; released = true; } };
+    res.on("close", release); res.on("finish", release);
+    res.set("Content-Type", "application/octet-stream");
+    res.download(file, `${path.parse(upload.name).name}-encoded.mp4`, error => { release(); if (error && !res.headersSent) res.status(500).end(); });
+  }));
+  app.use(API, (_req, res) => res.status(404).json({ error: "Không tìm thấy chức năng." }));
+  app.use("/upload/assets", express.static(path.join(config.staticRoot, "assets"), { immutable: true, maxAge: "1y", dotfiles: "deny" }));
+  app.get(["/upload", "/upload/"], (_req, res) => {
+    res.set("Cache-Control", "no-store"); res.sendFile(path.join(config.staticRoot, "index.html"));
+  });
+  app.use((_req, res) => res.status(404).end());
+  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (res.headersSent || res.destroyed) return;
+    if (error instanceof PortalError) { res.status(error.status).json({ error: error.message }); return; }
+    const status = (error as { status?: number })?.status;
+    if (status === 413 || status === 400) { res.status(status).json({ error: "Yêu cầu không hợp lệ hoặc quá lớn." }); return; }
+    // Log only class/code, not raw secrets, paths, request data or service responses.
+    console.error("Upload request failed", error instanceof Error ? error.name : "unknown");
+    res.status(503).json({ error: "Dịch vụ tạm thời chưa sẵn sàng. File đã nhận vẫn được giữ; hãy thử lại." });
+  });
+  let maintaining = false;
+  const maintenance = async () => {
+    if (maintaining) return;
+    maintaining = true;
+    try {
+      store.db.prepare("DELETE FROM sessions WHERE expires < ?").run(Date.now());
+      const pending = store.db.prepare("SELECT * FROM uploads WHERE state IN ('submitting','ready') ORDER BY updated_at LIMIT 1").all() as Upload[];
+      for (const upload of pending) if (!locked.has(upload.id)) await exclusive(upload.id, () => submit(upload)).catch(() => {});
+      const expired = store.db.prepare("SELECT * FROM uploads WHERE state = 'uploading' AND updated_at < ? LIMIT 2").all(Date.now() - config.ttlMs) as Upload[];
+      for (const upload of expired) if (!locked.has(upload.id)) await exclusive(upload.id, () => removeUploadFiles(store, upload));
+    } finally { maintaining = false; }
+  };
+  return { app, store, maintenance };
+}

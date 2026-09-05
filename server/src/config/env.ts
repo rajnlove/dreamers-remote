@@ -11,6 +11,8 @@ export const env = {
   // integration isn't live yet.
   phpServiceUsername: process.env.PHP_SERVICE_USERNAME ?? "php-service",
   phpServicePassword: process.env.PHP_SERVICE_PASSWORD,
+  uploadServiceUsername: process.env.UPLOAD_SERVICE_USERNAME ?? "upload-portal",
+  uploadServicePassword: process.env.UPLOAD_SERVICE_PASSWORD,
   // Phase 4 (P4-2): UNC roots an ffmpeg job's sourcePath/outputPath must
   // fall under -- comma-separated, e.g.
   // "\\192.29.11.92\Projects,\\192.29.11.92\Renders". Empty by default

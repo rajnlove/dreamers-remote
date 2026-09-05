@@ -15,7 +15,7 @@ public static class WorkerSoftwareVersions
     {
         get
         {
-            var versions = new Dictionary<string, string> { ["test"] = "1.0.0" };
+            var versions = new Dictionary<string, string> { ["test"] = "1.0.0", ["upload_input_safety"] = "1" };
             var ffmpeg = FfmpegDetector.Current;
             if (ffmpeg.Available && ffmpeg.Version is not null)
             {

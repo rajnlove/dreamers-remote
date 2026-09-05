@@ -42,6 +42,7 @@ public static class FfmpegThumbnail
                 psi.ArgumentList.Add("-ss");
                 psi.ArgumentList.Add(seekSeconds.ToString());
             }
+            foreach (var option in MediaInputSafety.Options(videoPath)) psi.ArgumentList.Add(option);
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(videoPath);
             psi.ArgumentList.Add("-vframes");
