@@ -6,6 +6,26 @@ in their existing services. The new process only serves `/upload/` and `/upload/
 
 ## Processing and storage
 
+### Chunk-size deployment (2026-09-05)
+
+Upload container deployed at `9b5dee265486424e1c75d410cebd1ebd8d26016e`,
+after [CI 33961850302](https://github.com/rajnlove/dreamers-remote/actions/runs/33961850302)
+passed upload/job tests and image builds. Container healthy; CPU 0.50 and RAM
+512 MiB limits unchanged. Backend and Remote web images were not redeployed.
+
+A paired public-path probe through `vncgi.online` (Cloudflare SIN) sent the same
+64 MiB + 123 bytes serially at each size: 4 MiB took 17 requests at 2.02 MB/s;
+32 MiB took 3 requests at 7.80 MB/s. These are transfer-only measurements from
+one run, excluding browser pre-hashing, and do not guarantee other users' speeds.
+The legacy create request without `chunkBytes` retained 4 MiB. A deliberately
+incorrect 32 MiB checksum returned 422 with offset still zero; subsequent valid
+chunks and the short final chunk succeeded. Both probe sessions/files were deleted
+without finalizing or creating any encode job.
+
+Tests also cover migration of the legacy SQLite schema, persistent per-session
+chunk size across configuration changes/restarts, checksum rollback, and content
+equality after resumed writes.
+
 ```
 Browser → Cloudflare → Upload portal → private NAS dataset
                            ↓ private authenticated Job Engine API
