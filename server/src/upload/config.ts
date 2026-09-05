@@ -36,7 +36,7 @@ export function uploadConfig(): UploadConfig {
     engineUsername: required("UPLOAD_ENGINE_USERNAME"), enginePassword: required("UPLOAD_ENGINE_PASSWORD"),
     username: required("UPLOAD_USERNAME"), password,
     port: number("UPLOAD_PORT", 8090, 1024, 65535),
-    chunkBytes: 4 * 1024 * 1024,
+    chunkBytes: number("UPLOAD_CHUNK_MB", 32, 4, 32) * 1024 * 1024,
     maxFileBytes: number("UPLOAD_MAX_FILE_GB", 20, 1, 1024) * 1024 ** 3,
     quotaBytes: number("UPLOAD_QUOTA_GB", 100, 1, 8192) * 1024 ** 3,
     reserveBytes: number("UPLOAD_DISK_RESERVE_GB", 10, 1, 1024) * 1024 ** 3,

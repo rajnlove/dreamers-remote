@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { api, ApiError, setCsrf, identify, chunk, delay, type User, type Upload, type Job } from "./api";
 import "./upload.css";
+import logoUrl from "./logo.png";
 import { CleanupDialog } from "./CleanupDialog";
 
 function Icon({ name = "upload" }: { name?: "upload" | "file" | "shield" | "cpu" | "check" | "pause" }) {
@@ -93,17 +94,19 @@ function Portal() {
     const signal = controller.signal;
     setError(""); setPhase("checking"); setChecked(0);
     try {
-      const identity = await identify(file, user.chunkBytes, signal, setChecked);
+      const existing = active ? await api<Upload>(`/uploads/${active.id}`) : null;
+      const chunkBytes = existing?.chunkBytes ?? (await api<User>("/me")).chunkBytes;
+      const identity = await identify(file, chunkBytes, signal, setChecked);
       signal.throwIfAborted();
       if (resumeTarget.current && identity.fingerprint !== resumeTarget.current.fingerprint) throw new Error("Nội dung file đã thay đổi. Không thể nối vào phiên cũ.");
-      let current = active ? await api<Upload>(`/uploads/${active.id}`) : await api<Upload>("/uploads", "POST", { name: file.name, size: file.size, fingerprint: identity.fingerprint, preset });
-      if (current.fingerprint !== identity.fingerprint) throw new Error("File không khớp với phiên upload.");
+      let current = existing ?? await api<Upload>("/uploads", "POST", { name: file.name, size: file.size, fingerprint: identity.fingerprint, preset, chunkBytes });
+      if (current.fingerprint !== identity.fingerprint || current.chunkBytes !== chunkBytes) throw new Error("File không khớp với phiên upload.");
       setActive(current); let retries = 0;
       while (current.state === "uploading" && current.offset < file.size) {
         signal.throwIfAborted(); setPhase("uploading"); setLoaded(current.offset);
         try {
           const offset = current.offset;
-          current = await chunk(current, file, user.chunkBytes, identity.hashes[Math.floor(offset / user.chunkBytes)]!, signal, n => setLoaded(offset + n));
+          current = await chunk(current, file, chunkBytes, identity.hashes[Math.floor(offset / chunkBytes)]!, signal, n => setLoaded(offset + n));
           setActive(current); setLoaded(current.offset); retries = 0;
         } catch (e) {
           if (signal.aborted) throw e;
@@ -130,7 +133,7 @@ function Portal() {
     catch (e) { setError(e instanceof Error ? e.message : "Chưa thể tạo job."); }
     finally { setActionBusy(false); }
   }
-  const brand = <div className="up-brand"><span className="up-logo">D</span><div>DREAMERS<span>UPLOAD & ENCODE</span></div></div>;
+  const brand = <div className="up-brand"><img className="up-logo" src={logoUrl} alt="Dreamers" width="48" height="48"/><div>DREAMERS<span>UPLOAD & ENCODE</span></div></div>;
   if (user === undefined) return <main className="up-login">{brand}<p>Đang kết nối cổng Upload…</p></main>;
   if (!user) return <main className="up-login">{brand}<div className="up-login-card"><span className="up-kicker">KHÔNG GIAN GỬI FILE</span><h1>Đưa video vào<br/>luồng xử lý của studio.</h1><p>Upload an toàn. Theo dõi encode.<br/>Nhận kết quả tại một nơi.</p><form onSubmit={login}><label>Tài khoản<input name="username" autoComplete="username" required maxLength={100}/></label><label>Mật khẩu<input name="password" type="password" autoComplete="current-password" required maxLength={256}/></label>{loginError && <p className="up-error" role="alert">{loginError}</p>}<button className="up-primary" disabled={logging}>{logging ? "Đang đăng nhập…" : "Đăng nhập"}</button></form><small><Icon name="shield"/> Chỉ dành cho tài khoản được studio cấp quyền.</small></div></main>;
   const finished = uploads.filter(u => jobs[u.id]?.status === "COMPLETED").length;

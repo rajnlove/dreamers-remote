@@ -14,7 +14,7 @@ const cookieName = "dreamers.upload";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const asyncRoute = (fn: (req: Request, res: Response) => Promise<unknown>) => (req: Request, res: Response, next: NextFunction) => { void fn(req, res).catch(next); };
 type Session = { owner: string; csrf: string };
-const view = (u: Upload) => ({ id: u.id, name: u.name, size: u.size, offset: u.offset, fingerprint: u.fingerprint, preset: u.preset, state: u.state, jobId: u.job_id, createdAt: u.created_at, updatedAt: u.updated_at });
+const view = (u: Upload) => ({ id: u.id, name: u.name, size: u.size, offset: u.offset, chunkBytes: u.chunk_bytes, fingerprint: u.fingerprint, preset: u.preset, state: u.state, jobId: u.job_id, createdAt: u.created_at, updatedAt: u.updated_at });
 
 export async function createUploadApp(config: UploadConfig, engine: Engine) {
   const store = new UploadStore(config);

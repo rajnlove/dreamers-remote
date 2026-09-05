@@ -136,9 +136,11 @@ test("portal: authenticated streaming, resume, checksum, idempotent jobs, privat
     // Simulate a crash after filesystem write but before database commit.
     await writeFile(path.join(config.root, upload.id, "source.part"), Buffer.concat([data.subarray(0, 1024), Buffer.from("uncommitted tail")]));
     await close();
+    config.chunkBytes = 32 * 1024;
     service = await createUploadApp(config, engine); server = service.app.listen(0, "127.0.0.1");
     await new Promise<void>(resolve => server.once("listening", resolve)); base = `http://127.0.0.1:${(server.address() as { port: number }).port}/upload/api`;
     assert.equal((await request("/me")).status, 200, "session persists across restart");
+    assert.equal(service.store.get(config.username, upload.id).chunk_bytes, 1024, "resume keeps the session chunk size after configuration changes");
     assert.equal((await (await request(`/uploads/${upload.id}`)).json() as Upload).offset, 1024);
     assert.equal((await put(1024, data.subarray(1024, 2048))).status, 200);
     assert.equal((await put(2048, data.subarray(2048))).status, 200);

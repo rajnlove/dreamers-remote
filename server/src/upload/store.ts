@@ -8,7 +8,7 @@ export class PortalError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 export interface Upload {
-  id: string; owner: string; name: string; size: number; offset: number;
+  id: string; owner: string; name: string; size: number; offset: number; chunk_bytes: number;
   extension: string; fingerprint: string; preset: string; state: "uploading" | "ready" | "submitting" | "submitted";
   job_id: number | null; created_at: number; updated_at: number;
 }
@@ -37,6 +37,11 @@ export class UploadStore {
       CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, owner TEXT NOT NULL, csrf TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS auth_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
     `);
+    // Existing production sessions were hashed and sliced at 4 MiB. Never reinterpret them.
+    const columns = this.db.pragma("table_info(uploads)") as { name: string }[];
+    if (!columns.some(column => column.name === "chunk_bytes")) {
+      this.db.exec("ALTER TABLE uploads ADD COLUMN chunk_bytes INTEGER NOT NULL DEFAULT 4194304");
+    }
   }
   get(owner: string, id: string) {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw new PortalError(404, "Không tìm thấy phiên upload.");
@@ -49,6 +54,13 @@ export class UploadStore {
   }
   create(owner: string, raw: Record<string, unknown>) {
     const { name, size, fingerprint, preset } = raw;
+    // Older open tabs omit this field; retain their original transfer size.
+    const maximum = this.config.chunkBytes ?? 4 * 1024 * 1024;
+    const chunkBytes = raw.chunkBytes === undefined ? Math.min(maximum, 4 * 1024 * 1024) : raw.chunkBytes;
+    if (typeof chunkBytes !== "number" || !Number.isSafeInteger(chunkBytes) ||
+        chunkBytes < Math.min(maximum, 4 * 1024 * 1024) || chunkBytes > maximum) {
+      throw new PortalError(400, "Kích thước phần upload không hợp lệ.");
+    }
     if (typeof name !== "string" || !name.trim() || name.length > 200 || /[\\/\x00-\x1f\x7f]/.test(name)) throw new PortalError(400, "Tên file không hợp lệ.");
     const extension = path.extname(name).toLowerCase();
     if (![".mp4", ".mov", ".mkv", ".webm", ".avi", ".mxf"].includes(extension)) throw new PortalError(400, "Chỉ nhận MP4, MOV, MKV, WEBM, AVI hoặc MXF.");
@@ -59,7 +71,10 @@ export class UploadStore {
       // Also handles a lost create response. Does not reuse already-queued jobs.
       const previous = this.db.prepare("SELECT * FROM uploads WHERE owner = ? AND name = ? AND size = ? AND fingerprint = ? AND preset = ? AND state != 'submitted'")
         .get(owner, name, size, fingerprint, preset) as Upload | undefined;
-      if (previous) return previous;
+      if (previous) {
+        if (previous.chunk_bytes !== chunkBytes) throw new PortalError(409, "Kích thước phần upload không khớp phiên cũ.");
+        return previous;
+      }
       const active = this.db.prepare("SELECT count(*) AS n FROM uploads WHERE state != 'submitted'").get() as { n: number };
       const records = this.db.prepare("SELECT count(*) AS n FROM uploads").get() as { n: number };
       if (records.n >= 100) throw new PortalError(429, "Đã đạt 100 file lưu trữ. Hãy tải kết quả và xóa phiên cũ.");
@@ -67,8 +82,8 @@ export class UploadStore {
       const quota = this.db.prepare("SELECT COALESCE(SUM(size * 3), 0) AS n FROM uploads").get() as { n: number };
       if (quota.n + size * 3 > this.config.quotaBytes) throw new PortalError(507, "Kho upload đã đạt hạn mức. Hãy tải kết quả và xóa phiên cũ.");
       const id = randomUUID(), now = Date.now();
-      this.db.prepare("INSERT INTO uploads (id, owner, name, size, extension, fingerprint, preset, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(id, owner, name, size, extension, fingerprint, preset, now, now);
+      this.db.prepare("INSERT INTO uploads (id, owner, name, size, extension, fingerprint, preset, created_at, updated_at, chunk_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, owner, name, size, extension, fingerprint, preset, now, now, chunkBytes);
       return this.get(owner, id);
     })();
   }

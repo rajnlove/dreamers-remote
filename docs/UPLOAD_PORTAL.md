@@ -6,6 +6,26 @@ in their existing services. The new process only serves `/upload/` and `/upload/
 
 ## Processing and storage
 
+### Chunk-size deployment (2026-09-05)
+
+Upload container deployed at `9b5dee265486424e1c75d410cebd1ebd8d26016e`,
+after [CI 33961850302](https://github.com/rajnlove/dreamers-remote/actions/runs/33961850302)
+passed upload/job tests and image builds. Container healthy; CPU 0.50 and RAM
+512 MiB limits unchanged. Backend and Remote web images were not redeployed.
+
+A paired public-path probe through `vncgi.online` (Cloudflare SIN) sent the same
+64 MiB + 123 bytes serially at each size: 4 MiB took 17 requests at 2.02 MB/s;
+32 MiB took 3 requests at 7.80 MB/s. These are transfer-only measurements from
+one run, excluding browser pre-hashing, and do not guarantee other users' speeds.
+The legacy create request without `chunkBytes` retained 4 MiB. A deliberately
+incorrect 32 MiB checksum returned 422 with offset still zero; subsequent valid
+chunks and the short final chunk succeeded. Both probe sessions/files were deleted
+without finalizing or creating any encode job.
+
+Tests also cover migration of the legacy SQLite schema, persistent per-session
+chunk size across configuration changes/restarts, checksum rollback, and content
+equality after resumed writes.
+
 ```
 Browser → Cloudflare → Upload portal → private NAS dataset
                            ↓ private authenticated Job Engine API
@@ -19,7 +39,11 @@ FFmpeg, ffprobe, Topaz, thumbnail creation or rendering. The upload image contai
 no media tools. The existing agents perform decoding, scaling, GPU encoding and
 audio processing; this can also use CPU on those workstations.
 
-Each request carries at most **4 MiB**. The server checks SHA-256 for that chunk,
+New uploads default to **32 MiB** per request (`UPLOAD_CHUNK_MB`, range 4–32).
+The size is persisted per upload; legacy database sessions and older open tabs
+retain 4 MiB chunks. Resume hashes and slices using that session's stored size,
+including after a server restart or configuration change.
+The server checks SHA-256 for that chunk,
 writes directly to the committed position in `source.part`, fsyncs, then commits
 the SQLite offset. Completion renames that same file to `source.<extension>`;
 there is no second complete copy or full-file merge/hash on TrueNAS. A restart
@@ -185,7 +209,7 @@ ingress:
 For remotely managed tunnels, configure the equivalent hostname/path/service in
 the dashboard. Bypass caching for `/upload/api/*` and `/upload/`; serve API cookie
 responses without caching. Keep HTTPS at the public edge and the origin restricted
-to the private tunnel. Ensure any zone-specific request-size rule allows 4 MiB.
+to the private tunnel. Ensure any zone-specific request-size rule allows 32 MiB.
 Cloudflare documents chunking as a response to large-request 413 errors:
 [Cloudflare 413 guidance](https://developers.cloudflare.com/support/troubleshooting/http-status-codes/4xx-client-error/error-413/).
 
