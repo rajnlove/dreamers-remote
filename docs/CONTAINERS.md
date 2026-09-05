@@ -42,8 +42,10 @@ ask the user for it if a future check needs to go beyond what's below.
   healthy in Dockge. Upload, GPU encode on the updated COMP-01 Agent, and
   authenticated result/range downloads are verified (job 380). All four Agents
   now meet the software gate; additional H.264 jobs 382 and 384 passed on CGI-01
-  and CGI-Render. CGI-DUC job 383 exposed a driver/API mismatch requiring NVIDIA
-  driver 610.00 or newer. See PROJECT_STATUS.md for per-worker acceptance.
+  and CGI-Render. After the owner updated CGI-DUC's NVIDIA driver, fresh job 387
+  completed on that worker and its authenticated MP4 download passed; companion
+  job 386 passed on CGI-01. All four workers are verified for H.264 delivery.
+  See PROJECT_STATUS.md for per-worker acceptance and limits of these checks.
 - **Purpose**: private authenticated chunk storage and a restricted bridge to the
   existing Job Engine for the public `/upload/` portal. No local media processing.
 - **Image**: `ghcr.io/rajnlove/dreamers-remote-upload:6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52` from

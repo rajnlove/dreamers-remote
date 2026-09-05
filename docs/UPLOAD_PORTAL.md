@@ -1,6 +1,6 @@
 # Upload & Encode portal
 
-Status (2026-09-05): **deployed; H.264 encode/download verified on three workers; CGI-DUC requires a driver update** at the owner-selected
+Status (2026-09-05): **deployed; H.264 encode/download verified on all four workers** at the owner-selected
 `https://vncgi.online/upload/`. Existing root site and Remote UI remain
 in their existing services. The new process only serves `/upload/` and `/upload/api/*`.
 
@@ -228,9 +228,12 @@ Farm follow-up: all four Agents are updated and pass NAS access checks. Fresh
 public-portal jobs 382 (CGI-01) and 384 (CGI-Render, GPU 0) completed H.264 NVENC
 and downloaded successfully. Job 383 on CGI-DUC failed to initialize NVENC:
 the FFmpeg build requires API 13.1, while its installed driver exposes 13.0.
-Update CGI-DUC's NVIDIA driver to 610.00 or newer and verify execution on that
-specific worker. Capability advertisement alone does not validate GPU driver
-compatibility. NVIDIA confirms the driver requirement in the
+After the owner updated the driver, fresh job **387 completed on CGI-DUC,
+worker 4 / GPU 0**, and its authenticated 1,915,699-byte MP4 download passed.
+Companion job 386 completed on CGI-01. All four workers have now passed real
+H.264 encode/download checks. The exact installed driver version was not read;
+capability advertisement alone does not validate GPU driver compatibility.
+NVIDIA confirms the original minimum 610.00 driver requirement in the
 [SDK 13.1 release notes](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/read-me/index.html).
 The existing job scheduler may assign a retry to a different worker.
 Do not remove the software-version gate to make old Agents receive public jobs.

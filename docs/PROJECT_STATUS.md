@@ -1,6 +1,6 @@
 # Project Status
 
-## 2026-09-05 — Farm acceptance: three workers passed, CGI-DUC driver blocked
+## 2026-09-05 — Farm acceptance: all four workers passed H.264 encode/download
 
 All four Agents are online, advertise `upload_input_safety: "1"`, and pass the
 NAS access gate. CGI-01 and CGI-DUC now report FFmpeg 9.0.1 (Gyan); CGI-Render
@@ -12,20 +12,22 @@ the queue was idle. The scheduler assigned one job to each newly added worker:
 
 | Worker | Job | H.264 NVENC result | Public authenticated output |
 |---|---|---|---|
-| CGI-01 / RTX 5090 | 382 | COMPLETED | 1,915,699 bytes, downloaded |
-| CGI-DUC / RTX 5070 Ti | 383 | FAILED: NVENC API mismatch | No valid result |
+| CGI-01 / RTX 5090 | 382, 386 | COMPLETED | 1,915,699 bytes, downloaded |
+| CGI-DUC / RTX 5070 Ti | 387 | COMPLETED after driver update | 1,915,699 bytes, downloaded |
 | CGI-Render / RTX 3090, GPU 0 | 384 | COMPLETED | 1,868,705 bytes, downloaded |
 | COMP-01 / RTX 5070 Ti | 380, 381 (earlier) | COMPLETED | Download and range checks passed |
 
-CGI-DUC's real FFmpeg error reports **Required NVENC API 13.1, Found 13.0** and
-requires NVIDIA driver **610.00 or newer**. Heartbeat capability detection checks
-FFmpeg availability and NAS access, but does not test driver/NVENC initialization;
-therefore four advertised workers must not be described as four verified workers.
-Update the NVIDIA driver on CGI-DUC, then verify an encode actually executes on
-that worker. Retrying a job may assign it elsewhere because scheduling is automatic.
-No driver installation, workstation reboot, scheduling override, or CPU fallback
-was performed. Topaz processing, HEVC and CGI-Render's second GPU were not part of
-this smoke run. These are bounded H.264 acceptance checks, not a load benchmark.
+CGI-DUC's original job 383 failed with **Required NVENC API 13.1, Found 13.0**,
+requiring NVIDIA driver **610.00 or newer**. After the owner reported updating
+the driver, two fresh 1.1 MiB uploads produced jobs 386 and 387. The scheduler
+assigned 386 to CGI-01 and **387 to CGI-DUC (worker 4, GPU 0)**. Both completed
+with no error. Authenticated downloads returned valid MP4 headers and 1,915,699
+bytes each, SHA-256 `898fb7a8e619867baba879909944fa5f2d51d83415c9baf6b418c0cefc24e49a`.
+This verifies actual NVENC execution on CGI-DUC; its exact installed driver
+version was not independently read. No scheduling override or CPU fallback was
+used. Heartbeat capability advertisement alone does not validate NVENC startup.
+Topaz processing, HEVC and CGI-Render's second GPU were not part of this smoke
+run. These are bounded H.264 acceptance checks, not a load benchmark.
 
 ## 2026-09-05 — Upload portal verified through GPU encode and download
 
@@ -46,7 +48,7 @@ initially waited for an updated Agent. The owner updated COMP-01; it now adverti
 change grants parent traversal and inherited read/write within the upload child.
 Job 380 then completed on COMP-01's RTX 5070 Ti. The authenticated 1,968,992-byte
 MP4 and byte-range downloads passed; direct public source/output access remains
-denied. Subsequent farm rollout and its remaining driver issue are recorded above.
+denied. Subsequent farm rollout and the resolved driver issue are recorded above.
 Fresh upload/job 381 also completed and downloaded without a further ACL change,
 verifying inherited permissions for subsequent uploads and worker-created results.
 Never execute media tools on TrueNAS.
