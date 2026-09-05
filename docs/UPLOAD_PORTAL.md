@@ -1,7 +1,7 @@
 # Upload & Encode portal
 
-Status: implemented and locally verified, **not deployed**. Public destination selected
-by the owner: `https://vncgi.online/upload/`. Existing root site and Remote UI remain
+Status (2026-09-05): **deployed; upload verified, worker encode pending** at the owner-selected
+`https://vncgi.online/upload/`. Existing root site and Remote UI remain
 in their existing services. The new process only serves `/upload/` and `/upload/api/*`.
 
 ## Processing and storage
@@ -77,7 +77,13 @@ the required share access. The backend and worker allow-lists remain mandatory.
 ## Configure the TrueNAS stack
 
 Files: `docker/upload.Dockerfile`, `docker/upload-compose.yml`,
-`docker/upload.env.example`. No new service has been started on TrueNAS.
+`docker/upload.env.example`. Dockge stack `vncgi-upload` is running and healthy.
+The portal and backend are pinned to image commit
+`6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`. GitHub Actions run
+[33950232243](https://github.com/rajnlove/dreamers-remote/actions/runs/33950232243)
+passed Linux verification and all three image builds. The backend's new service
+account authenticated successfully; its source allow-list includes the upload
+child. Existing PHP credentials and project roots were preserved.
 
 1. The owner selected `V:\online` and supplied its network location. The dedicated
    child is `\\192.29.11.92\web_data\www\online\dreamers-upload`.
@@ -133,12 +139,20 @@ docker compose --env-file /path/to/private/upload.env -f docker/upload-compose.y
 ```
 
 Avoid printing resolved Compose config: it contains credentials. Docker is not
-installed on this development machine, so the image and resolved stack still need
-their first Linux build/start verification before production routing.
+installed on this development machine; Linux builds ran in GitHub Actions and
+the pinned images were started through the authenticated Dockge UI.
 
 ## Cloudflare routing
 
-Add a specific path rule **before** the existing `vncgi.online` catch-all. Preserve
+The live remotely managed `cgivn-truenas` tunnel has the path rule
+`^/upload(/.*)?$` for `vncgi.online`, targeting `http://192.168.1.92:18090`,
+at order 2, before the existing root catch-all at order 3. Other destinations
+retain their previous relative order and services. The host binding uses NAS LAN
+address `192.168.1.92`; no router/public port forward was added.
+`UPLOAD_BIND_IP` in the env example reproduces this bridged-tunnel setup;
+the Compose default remains loopback when it is omitted.
+
+Keep the specific path rule **before** the existing `vncgi.online` catch-all. Preserve
 the full `/upload` prefix; route both static assets and API to the portal. If
 cloudflared runs as a container, attach it to `dreamers-upload` in its own Compose
 configuration (external network) and target `http://vncgi-upload:8090`. If it runs
@@ -154,7 +168,7 @@ Example fragment for a locally managed tunnel (merge with existing rules):
 ingress:
   - hostname: vncgi.online
     path: ^/upload(/.*)?$
-    service: http://vncgi-upload:8090
+    service: http://192.168.1.92:18090
   # Existing vncgi.online route and existing final fallback follow here.
 ```
 
@@ -170,7 +184,7 @@ Cloudflare documents chunking as a response to large-request 413 errors:
 Local validation performed:
 
 - TypeScript server build and separate React upload production build passed.
-- Three Node tests cover authenticated real HTTP streaming, checksum rejection,
+- Four Node tests cover authenticated real HTTP streaming, checksum rejection,
   duplicate chunks, interrupted chunk rollback, simultaneous-request limits,
   persistent sessions/offsets after restart, cross-owner and CSRF denial, private
   result downloads including ranges, quota, cleanup and atomic job idempotency.
@@ -180,12 +194,25 @@ Local validation performed:
 - Login and the complete empty-state portal were inspected in the in-app browser
   against the real local portal process. The preview has no production engine.
 
-Before public routing: run one small real video through the updated agents, verify
-source/output permissions, download it, interrupt/resume a multi-chunk upload,
-check no duplicate job appears, confirm CPU/memory limits via Docker stats, and
-check unauthenticated API/output requests are denied through Cloudflare. Test on
-the actual hostname because its Origin/cookie behavior is deliberately strict.
-No real NAS encode or Cloudflare end-to-end test has been claimed yet.
+Live checks on 2026-09-05:
+
+- HTTPS `/upload/` returns the new portal (200); existing `/` still returns its
+  original site (200). Unauthenticated API and result requests return 401.
+- Browser login with the studio account works with the production Secure cookie.
+- A 5,322,679-byte CC0 MDN flower MP4 (with a valid padding box) was uploaded in
+  two chunks through Cloudflare. Wrong checksum was rejected with 422 and offset
+  remained zero. After a valid 4 MiB chunk, a fresh login resumed its saved offset.
+- Completion created job **380**; repeating completion returned the same job ID.
+  Direct requests for that known source file were denied on both public aliases.
+- Job 380 is **QUEUED**, because none of the four workers yet advertises
+  `upload_input_safety: "1"`. It is retained for the first updated worker test.
+
+Remaining acceptance: update Windows Agents and their allowed upload root, then
+verify real GPU encode, worker SMB read/write, and authenticated result download.
+Do not remove the software-version gate to make old Agents receive public jobs.
+Container limits are set in the live Compose configuration; measured cgroup usage
+and a host-wide Docker inventory remain unverified because the authenticated
+TrueNAS shell requires a separate sudo password. No privilege workaround was used.
 
 Rollback: restore the previous public path rule, stop only `vncgi-upload`, and keep
 its state/media while existing jobs drain. Never delete source folders used by a

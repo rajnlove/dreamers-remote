@@ -1,6 +1,29 @@
 # Project Status
 
-## 2026-09-05 — Upload portal implementation (not deployed)
+## 2026-09-05 — Upload portal deployed; worker acceptance pending
+
+Public portal: **https://vncgi.online/upload/**. Backend and upload container are
+pinned to `6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`; GitHub Actions Linux tests
+and image builds passed. Dockge reports the upload container healthy. Its limits
+are 0.5 CPU and 512 MiB with no swap, UID/GID 3001:3001 and private state volume.
+The live binding is `192.168.1.92:18090:8090`; the portal reaches the backend at
+`http://192.168.1.92:8080`. The Cloudflare tunnel routes `^/upload(/.*)?$` before
+the existing root catch-all, whose page remains unchanged and returns 200.
+
+A real 5.1 MiB video upload through Cloudflare passed checksum rejection/rollback,
+resume after fresh login, and private source/output access checks. Completion
+created job **380** exactly once despite duplicate completion requests. The job
+remains QUEUED: all four live workers still lack `upload_input_safety: "1"`.
+An Administrator-run Agent update kit is prepared outside git. Real GPU encode,
+worker share permissions and result download await an updated worker; this is
+not yet a verified complete encode workflow. Never execute media tools on TrueNAS.
+
+Docker status: server/web and the now-active upload portal are PRODUCTION.
+No obsolete services were created. Host-wide inventory and measured cgroup usage
+remain pending; TrueNAS `sudo -n` requires a password. Existing root/PHP services
+were not redeployed. See [CONTAINERS.md](CONTAINERS.md).
+
+### Implementation and preparation record
 
 Integration preparation: backend now seeds a separate non-admin Upload service
 account from `UPLOAD_SERVICE_*`. Portal jobs require software marker
@@ -19,8 +42,9 @@ at the LAN origin (403) and public `/dreamers-upload/` alias (403); the public
 `/online/dreamers-upload/` alias returned 404. No content was exposed, and the
 canary was removed. Local SMB access remains denied, but the authorized TrueNAS
 container shell now permits these checks. Host path and UID/GID are configured.
-PHP Web already occupies NAS port 8090; the prepared upload host binding was
-changed to configurable loopback 18090, leaving its container port at 8090.
+PHP Web already occupies NAS port 8090; upload uses configurable host port 18090,
+leaving its container port at 8090. The template defaults to loopback; the supplied
+deployment env selects the verified NAS LAN address for the existing tunnel.
 
 Built a separate `/upload/` portal for the user-selected `https://vncgi.online`
 origin. It receives resumable 4 MiB chunks, authenticates its own account/session,
@@ -30,20 +54,15 @@ coordination only. Windows workers handle all media operations. Job creation now
 supports durable, account-scoped idempotency keys; accepted worker formats are
 restricted to file-only input protocols and the expected demuxer.
 
-Server and upload-web builds pass; three HTTP/store/idempotency tests and 29
+Server and upload-web builds pass; four HTTP/store/idempotency tests and 29
 targeted worker tests pass. Browser login/layout verified against the local portal.
 The full worker test run passed 122/123; the existing hardware memory metric test
-fails in this sandbox. Real NAS encoding, Linux container build/resource limits and
-Cloudflare routing are not yet verified. The local preview does not submit jobs to
-production. No production configuration or images were updated in this milestone.
+fails in this sandbox. Linux builds and live Cloudflare upload checks subsequently
+passed as described above. The local preview does not submit jobs to production.
 
-Docker status: existing server/web remain PRODUCTION. Proposed `vncgi-upload` is
-FUTURE until its deployment gate passes; see [CONTAINERS.md](CONTAINERS.md) and
-[UPLOAD_PORTAL.md](UPLOAD_PORTAL.md). Storage host path, portal UID/GID and direct
-HTTP denial are verified. Remaining rollout inputs: private state directory,
-worker SMB access to the chosen child, private service credentials and the
-existing tunnel path route. Backend and all four agents must be updated before
-public uploads are enabled.
+Storage host path, portal UID/GID, direct HTTP denial, private state volume,
+backend service credentials and tunnel route are verified. Remaining worker
+rollout and acceptance steps are in [UPLOAD_PORTAL.md](UPLOAD_PORTAL.md).
 
 ## Previous Phase 4 milestone
 

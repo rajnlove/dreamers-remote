@@ -40,9 +40,9 @@ services:
       - type: volume
         source: upload-state
         target: /data
-    # Only local host access; a containerized cloudflared can join the network below.
-    # NAS host 8090 is already used by PHP Web; keep container 8090 private.
-    ports: ["127.0.0.1:${UPLOAD_HOST_PORT:-18090}:8090"]
+    # Default to loopback. Set the NAS LAN address for an existing bridged tunnel.
+    # Live TrueNAS: 192.168.1.92:18090; PHP Web already occupies host 8090.
+    ports: ["${UPLOAD_BIND_IP:-127.0.0.1}:${UPLOAD_HOST_PORT:-18090}:8090"]
     networks: [upload]
     logging:
       driver: json-file
