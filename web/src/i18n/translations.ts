@@ -157,6 +157,9 @@ export const translations = {
     vramIndexLabel: "VRAM {index}",
     cpuLabel: "CPU",
     ramLabel: "RAM",
+    cpuCoresShort: "{physical}C / {logical}T",
+    gpuModelLabel: "GPU model",
+    gpuModelIndexLabel: "GPU {index} model",
 
     // status labels shared
     statusOnline: "ONLINE",
@@ -472,6 +475,9 @@ export const translations = {
     vramIndexLabel: "VRAM {index}",
     cpuLabel: "CPU",
     ramLabel: "RAM",
+    cpuCoresShort: "{physical} lõi / {logical} luồng",
+    gpuModelLabel: "Model GPU",
+    gpuModelIndexLabel: "Model GPU {index}",
 
     statusOnline: "ONLINE",
     statusOffline: "OFFLINE",

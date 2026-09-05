@@ -115,9 +115,44 @@ export default function WorkstationCard({ username, workstation, status, stale =
               <MetricBar key={gpu.index} label={gpus.length > 1 ? t("gpuIndexLabel", { index: gpu.index }) : t("gpuLabel")} value={gpu.utilizationPercent} />
             ))
           : <MetricBar label={t("gpuLabel")} value={undefined} />}
+
+        {metrics?.cpu ? (
+          <div className="studio-vram" title={metrics.cpu.name}>
+            <span>{t("cpuLabel")}</span>
+            <span>
+              {metrics.cpu.name} · {t("cpuCoresShort", { physical: metrics.cpu.physicalCoreCount, logical: metrics.cpu.logicalProcessorCount })}
+            </span>
+          </div>
+        ) : (
+          <div className="studio-vram">
+            <span>{t("cpuLabel")}</span>
+            <span>—</span>
+          </div>
+        )}
+        {metrics?.memory ? (
+          <div className="studio-vram">
+            <span>{t("ramLabel")}</span>
+            <span>
+              {(metrics.memory.usedMb / 1024).toFixed(1)} / {(metrics.memory.totalMb / 1024).toFixed(0)} GB
+            </span>
+          </div>
+        ) : (
+          <div className="studio-vram">
+            <span>{t("ramLabel")}</span>
+            <span>—</span>
+          </div>
+        )}
         {gpus.length
           ? gpus.map((gpu) => (
-              <div className="studio-vram" key={`vram-${gpu.index}`} title={gpu.name}>
+              <div className="studio-vram" key={`gpu-model-${gpu.index}`} title={gpu.name}>
+                <span>{gpus.length > 1 ? t("gpuModelIndexLabel", { index: gpu.index }) : t("gpuModelLabel")}</span>
+                <span>{gpu.name}</span>
+              </div>
+            ))
+          : null}
+        {gpus.length
+          ? gpus.map((gpu) => (
+              <div className="studio-vram" key={`vram-${gpu.index}`}>
                 <span>{gpus.length > 1 ? t("vramIndexLabel", { index: gpu.index }) : t("vramLabel")}</span>
                 <span>
                   {(gpu.vramUsedMb / 1024).toFixed(1)} / {(gpu.vramTotalMb / 1024).toFixed(0)} GB

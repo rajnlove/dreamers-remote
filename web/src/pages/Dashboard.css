@@ -94,8 +94,8 @@
 .studio-meter { height: 7px; overflow: hidden; border: 1px solid #283545; border-radius: 6px; background: #09101a; }
 .studio-meter>span { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, #195bd2, #347df0); transition: width .3s ease; }
 .studio-vram { display: flex; align-items: center; gap: 10px; font-size: 10px; color: #a0afc2; font-variant-numeric: tabular-nums; }
-.studio-vram>span:first-child { min-width: 42px; }
-.studio-vram>span:last-child { margin-left: auto; }
+.studio-vram>span:first-child { min-width: 42px; flex-shrink: 0; }
+.studio-vram>span:last-child { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .studio-apps { display: flex; flex-wrap: wrap; gap: 5px; padding-top: 10px; }
 .studio-apps>span { display: inline-flex; gap: 5px; align-items: center; padding: 3px 5px; border: 1px solid #27394c; border-radius: 4px; font-size: 8px; color: #99b2cd; }
 .studio-apps .studio-dot { width: 4px; height: 4px; }
