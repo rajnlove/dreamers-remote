@@ -31,11 +31,12 @@ export default function StudioSidebar({ ready, error = false, total, online, job
   return (
     <aside className="shared-sidebar" aria-label="Main navigation">
       <Link to="/" className="shared-brand">
-        <svg width="36" height="38" viewBox="0 0 36 38" fill="none" aria-hidden="true">
-          <path d="m18 2 14 8v18l-14 8-14-8V10L18 2Z" fill="#2678ed" />
-          <path d="m18 11 6 3.5v9L18 27l-8-4.5v-7L18 11Z" fill="#0d1520" />
-          <path d="m4 10 9 5v8l-9 5V10Z" fill="#609eff" />
-        </svg><span>DREAMERS<small>REMOTE</small></span>
+        {/* The mark is a CSS mask rather than an <img>: the artwork is
+            line art on a white ground, and masking lets it take the
+            brand text's own colour instead of pasting a white block
+            onto the dark sidebar. */}
+        <span className="shared-brand-mark" aria-hidden="true" />
+        <span>DREAMERS<small>REMOTE</small></span>
       </Link>
       <nav>
         {sections.map(item => <Link key={item.id} to={{ pathname: "/", hash: `#${item.id}` }} className={`shared-nav ${!jobsPage && section === item.id ? "active" : ""}`} aria-current={!jobsPage && section === item.id ? "location" : undefined}><StudioIcon name={item.icon} />{t(item.label)}</Link>)}

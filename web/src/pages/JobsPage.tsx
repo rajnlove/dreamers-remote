@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { cancelJob, createJob, deleteAllTerminalJobs, deleteJob, listJobs, retryJob } from "../api/jobs";
 import { getWorkstationsStatus, listWorkstations } from "../api/workstations";
@@ -163,6 +163,9 @@ export default function JobsPage({ username }: { username: string }) {
   const [confirming, setConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearNotice, setClearNotice] = useState<string | null>(null);
+  // One audit row open at a time -- these are wide, full-width rows, and
+  // several open at once turns the queue into a wall of timestamps.
+  const [auditOpen, setAuditOpen] = useState<number | null>(null);
 
   useEffect(() => {
     listWorkstations()
@@ -553,7 +556,8 @@ export default function JobsPage({ username }: { username: string }) {
                     ["auditFinalStatus", job.status === "ASSIGNED" ? t("statusAssigned") : t(tabLabelKey[LABEL[job.status]])],
                   ];
                   return (
-                    <tr key={job.id}>
+                    <Fragment key={job.id}>
+                    <tr>
                       <td>
                         <div className="queue-job-cell">
                           <span className={`queue-app-icon ${job.type === "topaz" ? "topaz" : job.type === "ffmpeg" ? "encode" : "test"}`}>
@@ -570,17 +574,19 @@ export default function JobsPage({ username }: { username: string }) {
                             <small>{t("priorityLabel", { id: job.id, type: job.type, priority: job.priority })}</small>
                             {job.depends_on !== null && <small>{t("dependsOn", { id: job.depends_on })}</small>}
                             {job.retry_count > 0 && <small>{t("attemptN", { n: job.retry_count + 1 })}</small>}
-                            <details className="queue-job-audit">
-                              <summary>{t("auditDetails")}</summary>
-                              <dl className="queue-audit-grid">
-                                {auditRows.map(([labelKey, value]) => (
-                                  <div key={labelKey}>
-                                    <dt>{t(labelKey)}</dt>
-                                    <dd title={value}>{value}</dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            </details>
+                            {/* Toggles a full-width row below rather than
+                                expanding in place: this column is a fixed
+                                30% of the table, too narrow to show
+                                timestamps without truncating them. */}
+                            <button
+                              type="button"
+                              className="queue-audit-toggle"
+                              aria-expanded={auditOpen === job.id}
+                              aria-controls={`audit-${job.id}`}
+                              onClick={() => setAuditOpen((open) => (open === job.id ? null : job.id))}
+                            >
+                              <span aria-hidden="true">{auditOpen === job.id ? "▾" : "▸"}</span> {t("auditDetails")}
+                            </button>
                             {job.error && (
                               <details className="queue-job-error">
                                 <summary>{t("errorDetails")}</summary>
@@ -643,6 +649,21 @@ export default function JobsPage({ username }: { username: string }) {
                         </div>
                       </td>
                     </tr>
+                    {auditOpen === job.id && (
+                      <tr className="queue-audit-row">
+                        <td colSpan={6} id={`audit-${job.id}`}>
+                          <dl className="queue-audit-grid">
+                            {auditRows.map(([labelKey, value]) => (
+                              <div key={labelKey}>
+                                <dt>{t(labelKey)}</dt>
+                                <dd title={value}>{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

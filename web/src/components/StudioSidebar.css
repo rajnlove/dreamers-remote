@@ -3,6 +3,10 @@
 .shared-sidebar :focus-visible { outline:2px solid #68a8ff; outline-offset:4px; }
 .shared-brand { display:flex; gap:11px; align-items:center; padding:0 15px; margin-bottom:38px; }
 .shared-brand svg { flex-shrink:0; }
+/* Painted with currentColor through a mask, so the mark follows the brand
+   text colour instead of carrying a baked-in white ground. */
+.shared-brand-mark { flex-shrink:0; display:block; width:40px; height:44px; background:currentColor;
+  -webkit-mask:url("../assets/logo-mark.png") center/contain no-repeat; mask:url("../assets/logo-mark.png") center/contain no-repeat; }
 .shared-brand>span { font-size:18px; font-weight:700; letter-spacing:.2px; line-height:1.05; }
 .shared-sidebar .shared-brand small { display:block; font-size:11px; letter-spacing:1.5px; font-weight:500; margin-top:5px; color:inherit; }
 .shared-sidebar nav { display:grid; gap:6px; }
@@ -30,6 +34,7 @@
   .shared-sidebar { width:auto; padding:16px 16px 10px; border-right:0; border-bottom:1px solid #26303d; }
   .shared-brand { margin-bottom:16px; padding:0; }
   .shared-brand svg { width:29px; height:32px; }
+  .shared-brand-mark { width:32px; height:35px; }
   .shared-brand>span { font-size:15px; }
   .shared-sidebar .shared-brand small { font-size:8px; margin-top:3px; }
   .shared-sidebar nav { display:flex; gap:6px; overflow-x:auto; padding:2px 0 5px; }
