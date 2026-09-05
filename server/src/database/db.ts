@@ -19,6 +19,12 @@ export const db = new Database(env.databaseFile);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
+// Keep only cleanup metadata when queue history is cleared. No FK: the job may be gone.
+db.exec(`CREATE TABLE IF NOT EXISTS job_file_cleanup (
+  job_id INTEGER PRIMARY KEY, project_id TEXT NOT NULL, status TEXT NOT NULL,
+  claimed INTEGER NOT NULL DEFAULT 0
+)`);
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS workstations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

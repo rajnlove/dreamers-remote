@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { createJobOnce } from "../job/idempotency.js";
-import { cancelJob, createJob, deleteJob, deleteTerminalJobs, getJob, listJobs, retryJob } from "../job/repository.js";
+import { cancelJob, createJob, deleteJob, deleteTerminalJobs, getJob, listJobs, retryJob, jobCleanup } from "../job/repository.js";
 import { runScheduler } from "../job/scheduler.js";
 import { validateCreateInput } from "../job/validation.js";
 import { requireAdmin } from "../auth/middleware.js";
@@ -19,6 +19,13 @@ function parseId(raw: string | undefined): number {
 
 jobsRouter.get("/", (_req, res) => {
   res.json(listJobs());
+});
+
+jobsRouter.post("/:id/file-cleanup", (req, res, next) => {
+  try {
+    if (typeof req.body?.projectId !== "string" || typeof req.body?.claim !== "boolean") throw new ValidationError("Invalid cleanup request");
+    res.json(jobCleanup(parseId(req.params.id), req.body.projectId, req.body.claim));
+  } catch (err) { next(err); }
 });
 
 jobsRouter.get("/:id", (req, res, next) => {

@@ -1,10 +1,15 @@
 import type { UploadConfig } from "./config.js";
 import type { Job } from "../job/types.js";
 
+export class EngineResponseError extends Error {
+  constructor(readonly status: number) { super(`Engine response ${status}`); }
+}
+
 export interface Engine {
   create(key: string, input: Record<string, unknown>, provenance?: Record<string, unknown>): Promise<Job>;
   get(id: number): Promise<Job>;
   cancel(id: number): Promise<Job>;
+  cleanup?(id: number, projectId: string, claim: boolean): Promise<{ id: number; status: string; allowed: boolean; archived: boolean }>;
 }
 export class EngineClient implements Engine {
   private cookie = "";
@@ -32,7 +37,7 @@ export class EngineClient implements Engine {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
       if (response.status === 401 && attempt === 0) { await this.login(); continue; }
-      if (!response.ok) throw new Error(`Engine response ${response.status}`);
+      if (!response.ok) throw new EngineResponseError(response.status);
       const job = await response.json() as Job;
       if (!Number.isInteger(job.id) || job.id <= 0) throw new Error("Invalid engine response");
       return job;
@@ -51,4 +56,9 @@ export class EngineClient implements Engine {
   }
   get(id: number) { return this.request(`/${id}`); }
   cancel(id: number) { return this.request(`/${id}/cancel`, "POST"); }
+  async cleanup(id: number, projectId: string, claim: boolean) {
+    const result = await this.request(`/${id}/file-cleanup`, "POST", { projectId, claim }) as unknown as { id: number; status: string; allowed: boolean; archived: boolean };
+    if (typeof result.allowed !== "boolean" || typeof result.archived !== "boolean") throw new Error("Invalid cleanup response");
+    return result;
+  }
 }

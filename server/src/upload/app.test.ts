@@ -10,9 +10,53 @@ import { createUploadApp } from "./app.js";
 import type { UploadConfig } from "./config.js";
 import type { Upload } from "./store.js";
 import type { Job } from "../job/types.js";
-import type { Engine } from "./engine.js";
+import { EngineResponseError, type Engine } from "./engine.js";
 
 const sha = (b: Buffer) => createHash("sha256").update(b).digest("hex");
+test("cleanup previews bytes, isolates owners, rechecks state, and removes archived files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "upload-cleanup-"));
+  const config = { root: path.join(root, "files"), database: path.join(root, "db.sqlite"), staticRoot: root,
+    origin: "http://127.0.0.1:8090", username: "owner", password: "fixture-password-only", maxFileBytes: 10000, quotaBytes: 100000, maxActive: 20, reserveBytes: 1 } as UploadConfig;
+  const states = new Map<number, string>();
+  const service = await createUploadApp(config, { cleanup: async (id, _project, claim) => {
+    if (!states.has(id)) throw new EngineResponseError(404);
+    const status = states.get(id)!;
+    if (claim && !["COMPLETED", "FAILED"].includes(status)) throw new EngineResponseError(409);
+    return { id, status, allowed: ["COMPLETED", "FAILED"].includes(status), archived: true };
+  } } as Engine);
+  const server = service.app.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => server.once("listening", resolve));
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}/upload/api`;
+  let cookie = "", csrf = "";
+  const req = (route: string, method = "GET", body?: unknown, token = csrf) => fetch(base + route, { method, headers: { Cookie: cookie, Origin: config.origin, "X-CSRF-Token": token, "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  try {
+    assert.equal((await req("/cleanup")).status, 401);
+    const login = await req("/login", "POST", { username: config.username, password: config.password });
+    cookie = login.headers.get("set-cookie")!.split(";")[0]!; csrf = (await login.json() as { csrf: string }).csrf;
+    const make = async (owner: string, id: number, status?: string) => {
+      const u = service.store.create(owner, { name: `test-${id}.mp4`, size: 20, fingerprint: "a".repeat(64), preset: "review" });
+      service.store.state(u, "submitted", id); if (status) states.set(id, status);
+      await mkdir(service.store.folder(u)); await writeFile(service.store.source(u), Buffer.alloc(20));
+      await writeFile(path.join(service.store.folder(u), "output.mp4"), Buffer.alloc(30));
+      return u;
+    };
+    const completed = await make("owner", 1, "COMPLETED"), changed = await make("owner", 2, "FAILED"), cancelled = await make("owner", 3, "CANCELLED"), missing = await make("owner", 4), other = await make("other", 5, "COMPLETED");
+    const preview = await (await req("/cleanup")).json() as Array<{ id: string; allowed: boolean; bytes: number }>;
+    assert.equal(preview.length, 4); assert.equal(preview.find(p => p.id === completed.id)!.bytes, 50);
+    assert.equal(preview.find(p => p.id === missing.id)!.allowed, false);
+    assert.equal(preview.find(p => p.id === cancelled.id)!.allowed, false);
+    assert.equal(preview.find(p => p.id === changed.id)!.allowed, true);
+    assert.equal((await req("/cleanup", "POST", { ids: [completed.id] }, "wrong")).status, 403);
+    assert.equal((await req("/cleanup", "POST", { ids: [completed.id, other.id] })).status, 404);
+    assert.equal((await stat(service.store.source(completed))).size, 20);
+    states.set(2, "RUNNING");
+    const result = await (await req("/cleanup", "POST", { ids: [completed.id, changed.id, cancelled.id, missing.id] })).json() as { results: { id: string; deleted: boolean; bytes: number }[] };
+    assert.deepEqual(result.results.map(r => r.deleted), [true, false, false, false]);
+    assert.equal(result.results[0]!.bytes, 50);
+    await assert.rejects(stat(service.store.folder(completed)));
+    for (const u of [changed, cancelled, missing, other]) assert.equal((await stat(service.store.source(u))).size, 20);
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); service.store.db.close(); await rm(root, { recursive: true, force: true }); }
+});
 test("portal: authenticated streaming, resume, checksum, idempotent jobs, private output, cleanup", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "dreamers-upload-"));
   const config: UploadConfig = { origin: "http://127.0.0.1:8090", root: path.join(root, "files"), database: path.join(root, "upload.sqlite"),

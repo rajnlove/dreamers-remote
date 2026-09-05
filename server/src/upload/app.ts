@@ -1,12 +1,12 @@
 import express, { type Request, type Response, type NextFunction } from "express";
 import { randomBytes, createHash } from "node:crypto";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, realpath, readdir } from "node:fs/promises";
 import path from "node:path";
 import type { UploadConfig } from "./config.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import { UploadStore, PortalError, type Upload } from "./store.js";
 import { completeFile, freeSpace, receiveChunk, removeUploadFiles, safeFolder } from "./files.js";
-import type { Engine } from "./engine.js";
+import { EngineResponseError, type Engine } from "./engine.js";
 import type { Job } from "../job/types.js";
 
 const API = "/upload/api";
@@ -97,6 +97,7 @@ export async function createUploadApp(config: UploadConfig, engine: Engine) {
   });
   const owner = (res: Response) => (res.locals.portalSession as Session).owner;
   const locked = new Set<string>();
+  const downloads = new Map<string, number>();
   const exclusive = async <T>(id: string, fn: () => Promise<T>) => {
     if (locked.has(id)) throw new PortalError(409, "Phiên đang xử lý một yêu cầu khác. Vui lòng thử lại.");
     locked.add(id);
@@ -109,6 +110,70 @@ export async function createUploadApp(config: UploadConfig, engine: Engine) {
     try { return await fn(); } finally { transfers--; }
   };
   app.get(`${API}/uploads`, (_req, res) => res.json(store.list(owner(res)).map(view)));
+  const cleanupAccess = async (upload: Upload, claim = false) => {
+    if (["ready", "submitting"].includes(upload.state)) throw new PortalError(409, "Đang xác nhận job; chưa thể xóa file.");
+    if (downloads.has(upload.id)) throw new PortalError(409, "File đang được tải xuống. Vui lòng chờ tải xong.");
+    if (!upload.job_id) return "Chưa gửi encode";
+    if (engine.cleanup) {
+      const result = await engine.cleanup(upload.job_id, `upload-${upload.id}`, claim).catch(error => {
+        if (error instanceof EngineResponseError && error.status === 404) throw new PortalError(409, "Job cũ thiếu lịch sử xác nhận dừng. Quản trị viên cần kiểm tra một lần.");
+        if (error instanceof EngineResponseError && error.status === 409) throw new PortalError(409, "Trạng thái job vừa thay đổi; chưa thể dọn file.");
+        throw error;
+      });
+      if (!result.allowed) throw new PortalError(409, "Job đang chờ, đang chạy hoặc chưa xác nhận dừng; chưa thể dọn file.");
+      return result.archived ? "Job đã dọn khỏi lịch sử" : result.status === "COMPLETED" ? "Hoàn tất" : "Thất bại";
+    }
+    const job = await engine.get(upload.job_id);
+    if (!["COMPLETED", "FAILED"].includes(job.status)) throw new PortalError(409, "Job chưa kết thúc; chưa thể xóa file.");
+    return job.status === "COMPLETED" ? "Hoàn tất" : "Thất bại";
+  };
+  const storedBytes = async (upload: Upload) => {
+    const folder = store.folder(upload);
+    const info = await lstat(folder).catch((e: NodeJS.ErrnoException) => { if (e.code === "ENOENT") return null; throw e; });
+    if (!info) return 0;
+    await safeFolder(store, upload);
+    let bytes = 0;
+    for (const name of await readdir(folder)) {
+      const file = await lstat(path.join(folder, name));
+      if (!file.isFile() || file.isSymbolicLink()) throw new PortalError(409, "Kho chứa mục bất thường; chưa thể tự động dọn.");
+      bytes += file.size;
+    }
+    return bytes;
+  };
+  app.get(`${API}/cleanup`, asyncRoute(async (_req, res) => {
+    const items = [];
+    let unavailable = false;
+    for (const upload of store.list(owner(res))) {
+      let bytes = 0, allowed = false, reason = "";
+      try {
+        if (locked.has(upload.id)) throw new PortalError(409, "File đang được truyền hoặc xử lý.");
+        bytes = await storedBytes(upload);
+        if (unavailable && upload.job_id) throw new PortalError(503, "Hàng đợi chưa kết nối. Vui lòng thử lại sau.");
+        reason = await cleanupAccess(upload); allowed = true;
+      } catch (error) { if (!(error instanceof PortalError)) unavailable = true; reason = error instanceof PortalError ? error.message : "Chưa xác minh được trạng thái job. Thử làm mới sau."; }
+      items.push({ id: upload.id, name: upload.name, bytes, allowed, reason });
+    }
+    res.json(items);
+  }));
+  const deleteUpload = async (upload: Upload) => exclusive(upload.id, async () => {
+    // The engine claim atomically prevents a FAILED job from being retried during deletion.
+    const bytes = await storedBytes(upload);
+    await cleanupAccess(upload, true);
+    await removeUploadFiles(store, upload);
+    return bytes;
+  });
+  app.post(`${API}/cleanup`, asyncRoute(async (req, res) => {
+    const ids: unknown = req.body?.ids;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 100 || ids.some(id => typeof id !== "string") || new Set(ids).size !== ids.length) throw new PortalError(400, "Chọn từ 1 đến 100 file khác nhau.");
+    // Resolve every record through the owner gate before deleting anything in the batch.
+    const uploads = ids.map(id => store.get(owner(res), id));
+    const results = [];
+    for (const upload of uploads) {
+      try { results.push({ id: upload.id, deleted: true, bytes: await deleteUpload(upload) }); }
+      catch (error) { results.push({ id: upload.id, deleted: false, bytes: 0, reason: error instanceof PortalError ? error.message : "Chưa thể xác minh hoặc xóa file. Vui lòng thử lại." }); }
+    }
+    res.json({ results });
+  }));
   app.post(`${API}/uploads`, asyncRoute(async (req, res) => {
     if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) throw new PortalError(400, "Yêu cầu không hợp lệ.");
     if (typeof req.body.size === "number" && Number.isSafeInteger(req.body.size) && req.body.size > 0) await freeSpace(store, req.body.size * 3);
@@ -159,10 +224,16 @@ export async function createUploadApp(config: UploadConfig, engine: Engine) {
     cache.set(id, { until: Date.now() + 5000, promise });
     return promise;
   };
+  const uploadJob = (upload: Upload) => getJob(upload.job_id!).catch(async error => {
+      if (!engine.cleanup) throw error;
+      const archived = await engine.cleanup(upload.job_id!, `upload-${upload.id}`, false);
+      if (!archived.archived) throw error;
+      return { id: archived.id, status: archived.status, progress: archived.status === "COMPLETED" ? 100 : 0, fps: null, eta_seconds: null };
+    });
   app.get(`${API}/uploads/:id/job`, asyncRoute(async (req, res) => {
     const upload = store.get(owner(res), req.params.id!);
     if (!upload.job_id) { res.json(null); return; }
-    const job = await getJob(upload.job_id);
+    const job = await uploadJob(upload);
     // No studio paths, other users' jobs, process arguments, or raw worker errors in public responses.
     res.json({ id: job.id, status: job.status, progress: job.progress, fps: job.fps, etaSeconds: job.eta_seconds,
       error: job.status === "FAILED" ? "Xử lý thất bại. Quản trị viên có thể xem chi tiết trong Render Queue." : null });
@@ -177,20 +248,21 @@ export async function createUploadApp(config: UploadConfig, engine: Engine) {
   }));
   app.delete(`${API}/uploads/:id`, asyncRoute(async (req, res) => {
     const upload = store.get(owner(res), req.params.id!);
-    await exclusive(upload.id, async () => {
-      if (upload.state === "submitting") throw new PortalError(409, "Đang xác nhận job; chưa thể xóa file.");
-      if (upload.job_id) {
-        const job = await engine.get(upload.job_id);
-        // CANCELLED can precede actual process termination; don't delete a still-open source/output.
-        if (!["COMPLETED", "FAILED"].includes(job.status)) throw new PortalError(409, "Chỉ xóa file khi job đã hoàn tất hoặc thất bại. Job đã hủy cần quản trị viên xác nhận dừng xử lý.");
-      }
-      await removeUploadFiles(store, upload);
-      res.json({ ok: true });
-    });
+    await deleteUpload(upload);
+    res.json({ ok: true });
   }));
   app.get(`${API}/uploads/:id/output`, asyncRoute(async (req, res) => {
     const upload = store.get(owner(res), req.params.id!);
-    if (!upload.job_id || (await getJob(upload.job_id)).status !== "COMPLETED") throw new PortalError(409, "Kết quả chưa sẵn sàng.");
+    if (locked.has(upload.id)) throw new PortalError(409, "File đang được xử lý hoặc dọn dẹp.");
+    downloads.set(upload.id, (downloads.get(upload.id) ?? 0) + 1);
+    let downloadReleased = false;
+    const releaseDownload = () => {
+      if (downloadReleased) return; downloadReleased = true;
+      const count = (downloads.get(upload.id) ?? 1) - 1;
+      if (count) downloads.set(upload.id, count); else downloads.delete(upload.id);
+    };
+    res.on("close", releaseDownload); res.on("finish", releaseDownload);
+    if (!upload.job_id || (await uploadJob(upload)).status !== "COMPLETED") throw new PortalError(409, "Kết quả chưa sẵn sàng.");
     if (transfers >= config.maxTransfers) throw new PortalError(429, "Cổng đang bận. Vui lòng tải lại sau.");
     const folder = await safeFolder(store, upload), file = path.join(folder, "output.mp4");
     const info = await lstat(file).catch(() => null);

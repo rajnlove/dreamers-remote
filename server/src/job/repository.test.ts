@@ -267,11 +267,14 @@ test("failStaleRunningJobs stamps failed_at too, not just finished_at", () => {
 test("retryJob re-stamps engine_queued_at, clears the previous attempt's stamps, and keeps provenance", () => {
   const workerId = makeWorkstation();
   const job = newTestJob({ origin: "admin_manual", provenance: { ...EMPTY_PROVENANCE, uploaded_by_name: "admin" } });
+  // The first attempt is backdated rather than left at "just now", so
+  // the re-stamp assertion below can't coin-flip on createJob and
+  // retryJob landing in the same millisecond.
+  const queuedBefore = isoMinusMs(70_000);
   db.prepare(
-    `UPDATE jobs SET status = 'FAILED', worker_id = ?, assigned_at = ?, started_at = ?, finished_at = ?, failed_at = ?
-       WHERE id = ?`,
-  ).run(workerId, isoMinusMs(60_000), isoMinusMs(50_000), isoMinusMs(40_000), isoMinusMs(40_000), job.id);
-  const queuedBefore = getJob(job.id)!.engine_queued_at;
+    `UPDATE jobs SET status = 'FAILED', worker_id = ?, engine_queued_at = ?, assigned_at = ?, started_at = ?,
+       finished_at = ?, failed_at = ? WHERE id = ?`,
+  ).run(workerId, queuedBefore, isoMinusMs(60_000), isoMinusMs(50_000), isoMinusMs(40_000), isoMinusMs(40_000), job.id);
 
   retryJob(job.id);
 
@@ -279,7 +282,10 @@ test("retryJob re-stamps engine_queued_at, clears the previous attempt's stamps,
   assert.equal(requeued.status, "QUEUED");
   assert.equal(requeued.assigned_at, null);
   assert.equal(requeued.failed_at, null);
-  assert.notEqual(requeued.engine_queued_at, queuedBefore, "the retry is a new queue entry, with its own wait time");
+  assert.ok(
+    new Date(requeued.engine_queued_at!).getTime() > new Date(queuedBefore).getTime(),
+    "the retry is a new queue entry, with its own wait time",
+  );
   assert.equal(requeued.origin, "admin_manual", "where a job came from doesn't change because it was retried");
   assert.equal(JSON.parse(requeued.provenance!).uploaded_by_name, "admin");
 });

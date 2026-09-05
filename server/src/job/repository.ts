@@ -1,8 +1,35 @@
 import { db } from "../database/db.js";
 import { isAgentOnline } from "../agent/onlineStatus.js";
 import type { Job, JobInput } from "./types.js";
+import { ConflictError, NotFoundError } from "../workstation/errors.js";
 
 const TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+
+function uploadProject(job: Job): string | null {
+  try { const p = JSON.parse(job.input ?? "null")?.projectId; return typeof p === "string" && /^upload-[0-9a-f-]{36}$/.test(p) ? p : null; }
+  catch { return null; }
+}
+function retainCleanup(job: Job) {
+  const project = uploadProject(job);
+  if (project) db.prepare(`INSERT INTO job_file_cleanup(job_id, project_id, status) VALUES (?, ?, ?)
+    ON CONFLICT(job_id) DO UPDATE SET status = excluded.status`).run(job.id, project, job.status);
+}
+export function jobCleanup(id: number, projectId: string, claim = false) {
+  return db.transaction(() => {
+    const live = getJob(id);
+    const archived = db.prepare("SELECT * FROM job_file_cleanup WHERE job_id = ?").get(id) as { project_id: string; status: string } | undefined;
+    const project = live ? uploadProject(live) : archived?.project_id;
+    if (!project || project !== projectId) throw new NotFoundError("Cleanup history unavailable");
+    const status = live?.status ?? archived!.status;
+    const allowed = ["COMPLETED", "FAILED"].includes(status);
+    if (claim) {
+      if (!allowed) throw new ConflictError("Job may still be using its files");
+      if (live) retainCleanup(live);
+      db.prepare("UPDATE job_file_cleanup SET claimed = 1 WHERE job_id = ?").run(id);
+    }
+    return { id, status, allowed, archived: !live };
+  })();
+}
 
 export function listJobs(): Job[] {
   return db.prepare("SELECT * FROM jobs ORDER BY id DESC").all() as Job[];
@@ -85,7 +112,7 @@ export function deleteJob(id: number): DeleteJobResult {
   if (!job) return "not_found";
   if (!TERMINAL_STATUSES.has(job.status)) return "still_active";
 
-  db.prepare(`DELETE FROM jobs WHERE id = ?`).run(id);
+  db.transaction(() => { retainCleanup(job); db.prepare(`DELETE FROM jobs WHERE id = ?`).run(id); })();
   return "deleted";
 }
 
@@ -115,7 +142,7 @@ export function deleteTerminalJobs(): number {
 
   const del = db.prepare(`DELETE FROM jobs WHERE id = ?`);
   const deleteAll = db.transaction((ids: number[]) => {
-    for (const id of ids) del.run(id);
+    for (const id of ids) { retainCleanup(getJob(id)!); del.run(id); }
   });
   deleteAll(terminal.map((row) => row.id));
   return terminal.length;
@@ -223,6 +250,9 @@ export function retryJob(id: number): Job | undefined {
   const job = getJob(id);
   if (!job) return undefined;
   if (job.status !== "FAILED") return job;
+  if (db.prepare("SELECT 1 FROM job_file_cleanup WHERE job_id = ? AND claimed = 1").get(id)) {
+    throw new ConflictError("Upload files have been released for cleanup; upload the source again");
+  }
 
   // The audit timeline is per-attempt: the previous run's assignment/
   // start/failure stamps are cleared along with the result fields they
