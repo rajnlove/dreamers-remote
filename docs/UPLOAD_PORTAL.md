@@ -250,3 +250,27 @@ container audit in `CONTAINERS.md` once rollout is verified.
 FFmpeg security options used:
 [protocol whitelist](https://ffmpeg.org/ffmpeg-protocols.html),
 [MOV external references](https://ffmpeg.org/ffmpeg-formats.html#mov_002fmp4_002f3gp).
+
+## File cleanup
+
+Deployed in backend/Upload image `e6e2d0074ea8f247975d08ede5007ddd6c634cbb`.
+The live dialog removed five known legacy acceptance uploads (16.9 MiB), while
+the owner's real upload and authenticated result download remained available.
+
+Open **File của bạn → Dọn dẹp file**. Select individual records, eligible records,
+or the suggested test filenames. Nothing is selected automatically. Review the
+actual stored source/result byte total and confirm permanent deletion. The UI
+sends one bounded request per record and reports individual failures without
+removing untouched entries from the list.
+
+Cleanup checks ownership, session and CSRF, generated UUID paths, active transfers,
+downloads and current job state. Queued, assigned, running, cancelled and
+unconfirmed submissions stay protected. An engine cleanup claim prevents a failed
+job from being retried while its files are being removed; re-upload is required
+after that claim. Engine failures never authorize deletion.
+
+Clearing queue history retains minimal `job_file_cleanup` metadata for upload
+jobs. Completed/failed records remain downloadable and cleanable from the portal
+after their queue rows are deleted. Cancelled records remain blocked. Legacy
+jobs deleted before this metadata existed require one administrative verification;
+an unexplained 404 is never treated as proof that a worker has stopped.

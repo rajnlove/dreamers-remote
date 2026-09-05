@@ -1,5 +1,30 @@
 # Project Status
 
+## 2026-09-05 — Upload storage cleanup deployed and exercised
+
+Backend and Upload images are now pinned to `e6e2d0074ea8f247975d08ede5007ddd6c634cbb`.
+Linux verification and all image builds passed in Actions run `33960139235`.
+The portal's **Dọn dẹp file** dialog lists actual stored bytes, supports explicit
+selection and review, and reports per-file results. Ownership/CSRF, active states,
+cancelled jobs, unknown history and retry-versus-cleanup checks are covered by
+the verification suite. Active downloads also block file deletion.
+
+Queue history deletion retains minimal upload cleanup metadata. An atomic cleanup
+claim blocks retry of a failed job whose files are being removed. Old untracked
+404s remain protected. For five known acceptance jobs (380–384), a one-time
+administrative metadata backfill checked their persisted idempotency keys, absent
+queue rows and idle queue against the recorded completed/failed acceptance results.
+The new public UI then deleted those five source/result folders and records,
+reporting **16.9 MiB** reclaimed. The two driver-recheck uploads were already
+removed; their completed history rows 386/387 were also removed through the normal
+admin API. Only the owner's real upload/job 385 remains. Its authenticated MP4
+range download still returns 206 with a valid MP4 header.
+
+Both server and web typechecks passed locally. Windows Node 20/esbuild runtime
+execution was blocked by parent-directory access errors even after a read grant;
+Linux CI provided the actual integration-test and build gate. No NAS media tools
+were run and no container privilege settings were changed.
+
 ## 2026-09-05 — Farm acceptance: all four workers passed H.264 encode/download
 
 All four Agents are online, advertise `upload_input_safety: "1"`, and pass the

@@ -48,7 +48,7 @@ ask the user for it if a future check needs to go beyond what's below.
   See PROJECT_STATUS.md for per-worker acceptance and limits of these checks.
 - **Purpose**: private authenticated chunk storage and a restricted bridge to the
   existing Job Engine for the public `/upload/` portal. No local media processing.
-- **Image**: `ghcr.io/rajnlove/dreamers-remote-upload:6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52` from
+- **Image**: `ghcr.io/rajnlove/dreamers-remote-upload:e6e2d0074ea8f247975d08ede5007ddd6c634cbb` from
   `docker/upload.Dockerfile`, added to the existing GitHub Actions image workflow.
 - **Stack/service**: `docker/upload-compose.yml`, service `upload`.
 - **Limits**: 0.5 CPU, 512 MiB RAM, no swap, 128 PIDs; non-root configured UID/GID,
