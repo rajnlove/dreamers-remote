@@ -3,6 +3,7 @@ import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Request, RequestHandler, Response } from "express";
 import WebSocket, { WebSocketServer } from "ws";
 import { getWorkstation } from "../workstation/repository.js";
+import { recordAudit } from "../audit/repository.js";
 
 const VNC_WS_PATH_RE = /^\/ws\/vnc\/(\d+)$/;
 
@@ -57,6 +58,30 @@ export function setupVncProxy(server: HttpServer, sessionMiddleware: RequestHand
       (socket as net.Socket).setNoDelay(true);
 
       wss.handleUpgrade(req, socket, head, (ws) => {
+        // M8: a remote session is a start/end pair, not one event — "who was
+        // on CGI-01 and for how long" is the question this answers. Recorded
+        // here rather than in bridgeToVnc so the workstation and the session
+        // (actor) are both still in scope; duration is derived from the pair
+        // rather than stored, so an end row missing after a server crash
+        // degrades to "session start with no recorded end" instead of a lie.
+        const startedAt = Date.now();
+        recordAudit({
+          action: "remote.start",
+          req: sessionReq,
+          targetType: "workstation",
+          targetId: workstation.id,
+          targetLabel: workstation.name,
+        });
+        ws.once("close", () => {
+          recordAudit({
+            action: "remote.end",
+            req: sessionReq,
+            targetType: "workstation",
+            targetId: workstation.id,
+            targetLabel: workstation.name,
+            detail: { durationSeconds: Math.round((Date.now() - startedAt) / 1000) },
+          });
+        });
         bridgeToVnc(ws, workstation.ip, workstation.vnc_port);
       });
     });

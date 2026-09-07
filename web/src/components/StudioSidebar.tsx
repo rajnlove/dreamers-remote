@@ -22,6 +22,7 @@ export default function StudioSidebar({ ready, error = false, total, online, job
   const failed = jobsReady ? jobs.filter(job => job.status === "FAILED").length : "—";
   const connected = ready && !error && jobsReady;
   const jobsPage = location.pathname === "/jobs";
+  const auditPage = location.pathname === "/audit";
   const section = location.hash.slice(1) || "dashboard";
   useEffect(() => {
     if (location.pathname === "/" && location.hash) {
@@ -39,8 +40,9 @@ export default function StudioSidebar({ ready, error = false, total, online, job
         <span>DREAMERS<small>REMOTE</small></span>
       </Link>
       <nav>
-        {sections.map(item => <Link key={item.id} to={{ pathname: "/", hash: `#${item.id}` }} className={`shared-nav ${!jobsPage && section === item.id ? "active" : ""}`} aria-current={!jobsPage && section === item.id ? "location" : undefined}><StudioIcon name={item.icon} />{t(item.label)}</Link>)}
+        {sections.map(item => <Link key={item.id} to={{ pathname: "/", hash: `#${item.id}` }} className={`shared-nav ${!jobsPage && !auditPage && section === item.id ? "active" : ""}`} aria-current={!jobsPage && !auditPage && section === item.id ? "location" : undefined}><StudioIcon name={item.icon} />{t(item.label)}</Link>)}
         <Link to="/jobs" className={`shared-nav ${jobsPage ? "active" : ""}`} aria-current={jobsPage ? "page" : undefined}><StudioIcon name="queue" />{t("navRenderQueue")}</Link>
+        <Link to="/audit" className={`shared-nav ${auditPage ? "active" : ""}`} aria-current={auditPage ? "page" : undefined}><StudioIcon name="log" />{t("navAuditLog")}</Link>
       </nav>
       <div className="shared-sidebar-bottom">
         <div className="shared-system">

@@ -15,6 +15,7 @@ import { isAgentOnline } from "../agent/onlineStatus.js";
 import { getMetrics } from "../agent/metricsCache.js";
 import { isAgentCommand, queueCommand } from "../agent/commands.js";
 import { requireAdmin } from "../auth/middleware.js";
+import { recordAudit } from "../audit/repository.js";
 import type { Workstation } from "../workstation/types.js";
 
 export const workstationsRouter = Router();
@@ -96,6 +97,14 @@ workstationsRouter.post("/", (req, res, next) => {
   try {
     const input = validateCreateInput(req.body);
     const created = createWorkstation(input);
+    recordAudit({
+      action: "workstation.create",
+      req,
+      targetType: "workstation",
+      targetId: created.id,
+      targetLabel: created.name,
+      detail: { ip: created.ip, hostname: created.hostname },
+    });
     res.status(201).json(created);
   } catch (err) {
     next(err);
@@ -108,6 +117,17 @@ workstationsRouter.patch("/:id", (req, res, next) => {
     const input = validateUpdateInput(req.body);
     const updated = updateWorkstation(id, input);
     if (!updated) throw new NotFoundError("Workstation not found");
+    // Field NAMES only, not a before/after dump: the interesting question
+    // months later is "who took CGI-01 out of the render pool", and the
+    // values are already visible on the workstation itself.
+    recordAudit({
+      action: "workstation.update",
+      req,
+      targetType: "workstation",
+      targetId: updated.id,
+      targetLabel: updated.name,
+      detail: { fields: Object.keys(input), ...(input.jobs_enabled === undefined ? {} : { jobs_enabled: input.jobs_enabled }) },
+    });
     res.json(updated);
   } catch (err) {
     next(err);
@@ -123,6 +143,7 @@ workstationsRouter.post("/:id/wake", async (req, res, next) => {
       throw new ValidationError("mac_address is not set for this workstation");
     }
     await sendMagicPacket(ws.mac_address);
+    recordAudit({ action: "workstation.wake", req, targetType: "workstation", targetId: ws.id, targetLabel: ws.name });
     res.json({ sent: true });
   } catch (err) {
     next(err);
@@ -137,6 +158,8 @@ workstationsRouter.post("/:id/agent-token", (req, res, next) => {
     const id = parseId(req.params.id);
     const ws = getWorkstation(id);
     if (!ws) throw new NotFoundError("Workstation not found");
+    // The token itself is never logged — only that one was issued.
+    recordAudit({ action: "workstation.agent_token", req, targetType: "workstation", targetId: ws.id, targetLabel: ws.name });
     res.json(createRegistrationToken(id));
   } catch (err) {
     next(err);
@@ -162,6 +185,14 @@ workstationsRouter.post("/:id/command", requireAdmin, (req, res, next) => {
     }
 
     const commandLogId = queueCommand(id, command, req.session.userId!);
+    recordAudit({
+      action: "workstation.command",
+      req,
+      targetType: "workstation",
+      targetId: ws.id,
+      targetLabel: ws.name,
+      detail: { command, commandLogId },
+    });
     res.status(202).json({ queued: true, commandLogId });
   } catch (err) {
     next(err);
@@ -171,8 +202,19 @@ workstationsRouter.post("/:id/command", requireAdmin, (req, res, next) => {
 workstationsRouter.delete("/:id", (req, res, next) => {
   try {
     const id = parseId(req.params.id);
+    // Read before deleting: after the row is gone there is no name left to
+    // snapshot, and a deletion with no label is the least useful audit row.
+    const existing = getWorkstation(id);
     const deleted = deleteWorkstation(id);
     if (!deleted) throw new NotFoundError("Workstation not found");
+    recordAudit({
+      action: "workstation.delete",
+      req,
+      targetType: "workstation",
+      targetId: id,
+      targetLabel: existing?.name,
+      detail: existing ? { ip: existing.ip, hostname: existing.hostname } : undefined,
+    });
     res.status(204).end();
   } catch (err) {
     next(err);

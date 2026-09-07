@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import RemotePage from "./pages/RemotePage";
 import WorkstationDetail from "./pages/WorkstationDetail";
 import JobsPage from "./pages/JobsPage";
+import AuditPage from "./pages/AuditPage";
 import Login from "./pages/Login";
 import { getCurrentUser, type CurrentUser } from "./api/auth";
 import { useLanguage } from "./i18n/LanguageContext";
@@ -49,6 +50,9 @@ export default function App() {
           element={user ? <WorkstationDetail /> : <Navigate to="/login" replace />}
         />
         <Route path="/jobs" element={user ? <JobsPage username={user.username} /> : <Navigate to="/login" replace />} />
+        {/* M8: admin-only server-side; a non-admin lands here and sees the
+            403 message rather than a hidden route they can't discover. */}
+        <Route path="/audit" element={user ? <AuditPage username={user.username} /> : <Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   );

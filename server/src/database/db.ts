@@ -109,6 +109,41 @@ db.exec(`
   )
 `);
 
+// M8: general audit log — who did what, when, from where. Deliberately
+// separate from command_log (P2-8), which tracks the delivery lifecycle of
+// one Agent command (pending -> sent -> ok/failed); this table records the
+// human action itself and never changes after insert.
+//
+// actor_username/target_label are SNAPSHOTS, not joins: an audit row must
+// still read correctly after the user or workstation it refers to is
+// renamed or deleted (a deletion is precisely the event you most want to
+// read later). actor_user_id stays nullable — a failed login has no
+// authenticated user, and the username there is attacker-supplied input,
+// stored only so repeated attempts against one account are visible.
+//
+// SECURITY (docs/ROADMAP.md M8): passwords, keystrokes and clipboard
+// content are NEVER written here. `detail` is a small JSON object of
+// non-sensitive context (which fields changed, why a wake failed); call
+// sites are responsible for what they put in it.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor_user_id INTEGER REFERENCES users(id),
+    actor_username TEXT,
+    target_type TEXT,
+    target_id INTEGER,
+    target_label TEXT,
+    ip TEXT,
+    detail TEXT
+  )
+`);
+
+// The list view is always "newest first, optionally filtered by action" —
+// one index covering the sort matches every query the API issues.
+db.exec("CREATE INDEX IF NOT EXISTS idx_audit_log_at ON audit_log(at DESC, id DESC)");
+
 // Phase 3 (P3-1): job data model. No scheduler yet (P3-3) — jobs just
 // sit QUEUED after creation for now. worker_id/gpu_slot stay unused
 // until P3-2/P3-3 assign them. status: QUEUED -> ASSIGNED -> RUNNING ->

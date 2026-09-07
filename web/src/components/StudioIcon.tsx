@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-export type StudioIconName = "dashboard" | "monitor" | "pulse" | "clock" | "queue" | "refresh" | "plus" | "cpu" | "memory" | "network" | "logout" | "arrow" | "close" | "power" | "check";
+export type StudioIconName = "dashboard" | "monitor" | "pulse" | "clock" | "queue" | "refresh" | "plus" | "cpu" | "memory" | "network" | "logout" | "arrow" | "close" | "power" | "check" | "log";
 const paths: Record<StudioIconName, ReactNode> = {
   dashboard: <><rect x="3" y="3" width="7" height="7" rx="1.4" /><rect x="14" y="3" width="7" height="7" rx="1.4" /><rect x="3" y="14" width="7" height="7" rx="1.4" /><rect x="14" y="14" width="7" height="7" rx="1.4" /></>,
   monitor: <><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8m-4-4v4" /></>,
@@ -17,6 +17,7 @@ const paths: Record<StudioIconName, ReactNode> = {
   close: <path d="m6 6 12 12M6 18 18 6" />,
   power: <><path d="M12 2v10M6 5a9 9 0 1 0 12 0" /></>,
   check: <path d="m5 12 4 4L19 6" />,
+  log: <><path d="M5 3h9l5 5v13H5z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h4" /></>,
 };
 
 export default function StudioIcon({ name, className = "" }: { name: StudioIconName; className?: string }) {

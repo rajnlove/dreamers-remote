@@ -6,6 +6,7 @@ import { authRouter } from "./api/auth.js";
 import { agentRouter } from "./api/agent.js";
 import { jobsRouter } from "./api/jobs.js";
 import { workersRouter } from "./api/workers.js";
+import { auditRouter } from "./api/audit.js";
 import { setupVncProxy } from "./remote/wsProxy.js";
 import { sessionMiddleware } from "./auth/session.js";
 import { requireAuth } from "./auth/middleware.js";
@@ -47,6 +48,8 @@ app.use("/api/workstations", requireAuth, workstationsRouter);
 app.use("/api/jobs", requireAuth, jobsRouter);
 // P3-2: read-only capability + GPU slot view, derived from Agent heartbeats.
 app.use("/api/workers", requireAuth, workersRouter);
+// M8: read-only audit log. The router gates itself with requireAdmin.
+app.use("/api/audit", requireAuth, auditRouter);
 // Not behind requireAuth — the Agent has no user session. Each route
 // authenticates itself (registration token / agent credential). See
 // docs/SECURITY.md and api/agent.ts.

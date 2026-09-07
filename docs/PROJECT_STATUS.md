@@ -1,5 +1,53 @@
 # Project Status
 
+## 2026-09-08 — M8: audit log
+
+The last open V1 milestone. `audit_log` records who did what, when and from
+where; nothing else in the system had a general trail (P2-8's `command_log`
+tracks the delivery lifecycle of one Agent command, not human actions).
+
+Recorded: `login.success`, `login.failure`, `logout`, `remote.start`,
+`remote.end`, `workstation.create/update/delete/wake/command/agent_token`.
+Remote sessions are a start/end **pair** — duration is derived from the pair
+rather than stored, so a server crash degrades to "start with no end" instead
+of a wrong number.
+
+**Never recorded** (docs/ROADMAP.md M8): passwords, keystrokes, clipboard
+content. A failed login stores the attempted username — so repeated attempts
+against one account are visible — and nothing else; the response still does
+not distinguish "no such user" from "wrong password". Agent registration
+tokens are logged as *issued*, never their value.
+
+Design notes:
+- `actor_username`/`target_label` are **snapshots, not joins**. A deletion is
+  precisely the event you most want to read months later, and a join would
+  render it as a dangling id.
+- `recordAudit()` is fire-and-forget inside a try/catch: a wake that worked
+  but whose log row failed is still a successful wake. Write failures go to
+  stderr so a broken trail is visible in container logs.
+- The action enum lives in `audit/actions.ts`, deliberately free of any DB
+  import, so the API's query validation and the unit tests do not need the
+  native SQLite binding (which does not load on the Windows workstation).
+- `GET /api/audit` is read-only and admin-only; there is no edit or delete
+  endpoint and none should be added. `GET /api/audit/actions` feeds the UI
+  filter so the dropdown cannot drift from the server enum.
+
+UI: new **Audit log / Nhật ký hệ thống** page at `/audit`, linked in the
+sidebar, reusing the Render Queue's table styling. Filter by action,
+50 per page, workstation targets link to their detail page, `detail` JSON is
+flattened to `key: value` pairs. Full vi/en translations.
+
+Tests: `src/audit/*.test.ts` added to the server test script — 4/4 pass. The
+8 pre-existing failures on this workstation are all native-binding (ABI)
+failures in suites that open SQLite, unchanged by this work. `typecheck` and
+`build` clean on both server and web. Not yet deployed — needs a backend
+image build plus a pin bump (see CONTAINERS.md); the web image tracks
+`:latest`.
+
+Still open from V1: **M7 (roles)**. `requireAdmin` currently means "the
+single seeded admin account", so the audit page is effectively visible to
+that account only until real roles exist.
+
 ## 2026-09-08 — Render pool on/off in the UI
 
 `workstations.jobs_enabled` has gated scheduling since P3-6, but nothing in
