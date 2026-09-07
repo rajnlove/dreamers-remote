@@ -320,6 +320,20 @@ export const translations = {
     restart: "RESTART",
     shutdown: "SHUTDOWN",
     agentOfflineNoCommand: "Agent offline — commands can't be sent",
+
+    // P3-6 render-pool gate (workstations.jobs_enabled) — separate from
+    // `enabled`, which gates monitoring/VNC. Wording avoids "disabled" so
+    // it can't be confused with the machine being switched off.
+    renderPoolLabel: "Render pool",
+    renderPoolIn: "Accepting jobs",
+    renderPoolOut: "Not accepting jobs",
+    renderPoolDisable: "STOP JOBS",
+    renderPoolEnable: "ALLOW JOBS",
+    renderPoolBadgeOut: "NO JOBS",
+    renderPoolBusy: "Saving...",
+    renderPoolUpdateFailed: "Could not change job assignment: {reason}",
+    renderPoolDisabledNotice: "{name} is out of the render pool. Running jobs finish; no new job is assigned.",
+    renderPoolEnabledNotice: "{name} is back in the render pool.",
     overviewHeading: "OVERVIEW",
     hostname: "Hostname",
     ipAddress: "IP",
@@ -659,6 +673,17 @@ export const translations = {
     restart: "KHỞI ĐỘNG LẠI",
     shutdown: "TẮT MÁY",
     agentOfflineNoCommand: "Agent offline — không gửi được lệnh",
+
+    renderPoolLabel: "Hàng đợi render",
+    renderPoolIn: "Đang nhận job",
+    renderPoolOut: "Không nhận job",
+    renderPoolDisable: "NGỪNG NHẬN JOB",
+    renderPoolEnable: "CHO NHẬN JOB",
+    renderPoolBadgeOut: "KHÔNG NHẬN JOB",
+    renderPoolBusy: "Đang lưu...",
+    renderPoolUpdateFailed: "Không đổi được trạng thái nhận job: {reason}",
+    renderPoolDisabledNotice: "Đã đưa {name} ra khỏi hàng đợi render. Job đang chạy vẫn chạy tiếp, không giao thêm job mới.",
+    renderPoolEnabledNotice: "{name} đã trở lại hàng đợi render.",
     overviewHeading: "TỔNG QUAN",
     hostname: "Tên máy",
     ipAddress: "IP",

@@ -70,6 +70,9 @@
 .studio-card-name:hover { color: #6eacff; }
 .studio-agent { margin-left: auto; font-size: 8px; line-height: 1.4; letter-spacing: .4px; padding: 3px 6px; border: 1px solid #4d5a6a; border-radius: 4px; color: #8e9aab; white-space: nowrap; }
 .studio-agent.online { border-color: #138452; color: #24eaa0; background: #052c171e; }
+/* P3-6: machine held out of the render pool (jobs_enabled = false). Amber,
+   not red — it is an intentional operator state, not a fault. */
+.studio-nojobs { margin-left: 6px; font-size: 8px; line-height: 1.4; letter-spacing: .4px; padding: 3px 6px; border: 1px solid #8a5a12; border-radius: 4px; color: #f4b740; background: #2c1c051e; white-space: nowrap; }
 .studio-card-address { color: #9aa8ba; font-size: 10px; margin-top: 5px!important; letter-spacing: .45px; }
 .studio-card-address>span { color: #66758a; padding: 0 6px; }
 .studio-desktop { position: relative; overflow: hidden; border: 1px solid #263346; border-radius: 5px; height: 120px; margin: 15px 0 16px; background: radial-gradient(ellipse at 50% 100%, #182b43 0%, #0a121d 75%); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
@@ -200,6 +203,7 @@
   .studio-workstation { padding: 15px; }
   .studio-card-name { font-size: 15px; }
   .studio-agent { font-size: 7px; padding: 3px 4px; }
+  .studio-nojobs { font-size: 7px; padding: 3px 4px; }
   .studio-card-header { gap: 7px; }
   .studio-metric { gap: 8px; grid-template-columns: 38px 1fr 32px; }
   .studio-page-footer>span:first-child { letter-spacing: 0; }
@@ -226,6 +230,7 @@
   .studio-workstation { padding: 18px; }
   .studio-card-name { font-size: 18px; }
   .studio-agent { font-size: 9px; padding: 3px 6px; }
+  .studio-nojobs { font-size: 9px; padding: 3px 6px; }
   .studio-desktop { height: 140px; }
   .studio-metric { font-size: 12px; grid-template-columns: 48px 1fr 38px; }
   .studio-metric strong { font-size: 12px; }

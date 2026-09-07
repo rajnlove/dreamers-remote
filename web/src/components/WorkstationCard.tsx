@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { wakeWorkstation } from "../api/workstations";
+import { setWorkstationJobsEnabled, wakeWorkstation } from "../api/workstations";
 import type { Workstation, WorkstationStatus } from "../types/workstation";
 import StudioIcon from "./StudioIcon";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -12,6 +12,9 @@ interface Props {
   workstation: Workstation;
   status: WorkstationStatus | undefined;
   stale?: boolean;
+  // P3-6: let the dashboard re-poll after a render-pool toggle so the
+  // card stops showing the pre-toggle state until the next 5s tick.
+  onChanged?: () => void;
 }
 
 function MetricBar({ label, value }: { label: string; value: number | null | undefined }) {
@@ -35,10 +38,11 @@ function MetricBar({ label, value }: { label: string; value: number | null | und
   );
 }
 
-export default function WorkstationCard({ username, workstation, status, stale = false }: Props) {
+export default function WorkstationCard({ username, workstation, status, stale = false, onChanged }: Props) {
   const { t } = useLanguage();
   const preview = useRemotePreview(username, workstation.id);
   const [waking, setWaking] = useState(false);
+  const [poolBusy, setPoolBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const online = status?.vncOnline && workstation.enabled;
   const agentOnline = status?.agentOnline && !stale;
@@ -73,6 +77,21 @@ export default function WorkstationCard({ username, workstation, status, stale =
     }
   }
 
+  async function toggleRenderPool() {
+    const next = !workstation.jobs_enabled;
+    setPoolBusy(true);
+    setMessage(null);
+    try {
+      const updated = await setWorkstationJobsEnabled(workstation.id, next);
+      setMessage(t(next ? "renderPoolEnabledNotice" : "renderPoolDisabledNotice", { name: updated.name }));
+      onChanged?.();
+    } catch (err) {
+      setMessage(t("renderPoolUpdateFailed", { reason: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setPoolBusy(false);
+    }
+  }
+
   return (
     <article className="studio-workstation" aria-label={workstation.name}>
       <header className="studio-card-header">
@@ -89,6 +108,11 @@ export default function WorkstationCard({ username, workstation, status, stale =
         >
           {stale ? t("unknownBadge") : agentOnline ? t("agentBadge") : t("noAgentBadge")}
         </span>
+        {!workstation.jobs_enabled && (
+          <span className="studio-nojobs" title={t("renderPoolOut")}>
+            {t("renderPoolBadgeOut")}
+          </span>
+        )}
       </header>
       <p className="studio-card-address">
         {workstation.ip}
@@ -196,6 +220,10 @@ export default function WorkstationCard({ username, workstation, status, stale =
             {waking ? t("sending") : t("wakeMachine")}
           </button>
         )}
+        <button className="studio-button secondary" onClick={toggleRenderPool} disabled={poolBusy}>
+          <StudioIcon name="power" />
+          {poolBusy ? t("renderPoolBusy") : workstation.jobs_enabled ? t("renderPoolDisable") : t("renderPoolEnable")}
+        </button>
         <Link className="studio-button secondary" to={`/workstations/${workstation.id}`}>
           {t("detailsButton")}
         </Link>

@@ -49,6 +49,20 @@ export function sendAgentCommand(id: number, command: AgentCommand): Promise<{ q
   });
 }
 
+/**
+ * P3-6 admin gate. Takes a machine out of / back into the render pool without
+ * touching `enabled` — monitoring, VNC and Wake-on-LAN keep working either way.
+ * The scheduler skips a disabled worker on its next tick; a job already running
+ * there is left to finish rather than being killed mid-encode.
+ */
+export function setWorkstationJobsEnabled(id: number, jobsEnabled: boolean): Promise<Workstation> {
+  return request<Workstation>(`/api/workstations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobs_enabled: jobsEnabled }),
+  });
+}
+
 export interface CreateWorkstationInput {
   name: string;
   hostname: string;

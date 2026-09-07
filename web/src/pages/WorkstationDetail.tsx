@@ -1,6 +1,12 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getWorkstation, getWorkstationMetrics, sendAgentCommand, type AgentCommand } from "../api/workstations";
+import {
+  getWorkstation,
+  getWorkstationMetrics,
+  sendAgentCommand,
+  setWorkstationJobsEnabled,
+  type AgentCommand,
+} from "../api/workstations";
 import type { Workstation, WorkstationStatus } from "../types/workstation";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
@@ -25,6 +31,7 @@ export default function WorkstationDetail() {
   const [confirmCommand, setConfirmCommand] = useState<AgentCommand | null>(null);
   const [commandBusy, setCommandBusy] = useState(false);
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
+  const [poolBusy, setPoolBusy] = useState(false);
 
   function formatLastSeen(iso: string | null): string {
     if (!iso) return t("neverSeen");
@@ -83,6 +90,26 @@ export default function WorkstationDetail() {
     }
   }
 
+  // P3-6 render-pool gate. Deliberately NOT behind a confirm dialog like
+  // restart/shutdown: it interrupts nothing (running jobs finish) and is
+  // undone by clicking again, so a prompt would only slow the common case
+  // of pulling a machine out before someone sits down at it.
+  async function toggleRenderPool() {
+    if (!workstation) return;
+    const next = !workstation.jobs_enabled;
+    setPoolBusy(true);
+    setCommandMessage(null);
+    try {
+      const updated = await setWorkstationJobsEnabled(workstation.id, next);
+      setWorkstation(updated);
+      setCommandMessage(t(next ? "renderPoolEnabledNotice" : "renderPoolDisabledNotice", { name: updated.name }));
+    } catch (err) {
+      setCommandMessage(t("renderPoolUpdateFailed", { reason: err instanceof Error ? err.message : String(err) }));
+    } finally {
+      setPoolBusy(false);
+    }
+  }
+
   const commandKey: Record<AgentCommand, TranslationKey> = { restart: "restart", shutdown: "shutdown" };
 
   return (
@@ -100,6 +127,17 @@ export default function WorkstationDetail() {
               {t("remoteButton")}
             </Link>
           )}
+          <button
+            className="btn"
+            disabled={!workstation || poolBusy}
+            onClick={toggleRenderPool}
+          >
+            {poolBusy
+              ? t("renderPoolBusy")
+              : workstation?.jobs_enabled
+                ? t("renderPoolDisable")
+                : t("renderPoolEnable")}
+          </button>
           <button
             className="btn"
             disabled={!status?.agentOnline || commandBusy}
@@ -143,6 +181,8 @@ export default function WorkstationDetail() {
               <span>{status?.vncOnline ? t("statusOnline") : t("statusOffline")}</span>
               <span className="detail-label">{t("agentLabel")}</span>
               <span>{status?.agentOnline ? t("statusOnline") : t("statusOffline")}</span>
+              <span className="detail-label">{t("renderPoolLabel")}</span>
+              <span>{workstation.jobs_enabled ? t("renderPoolIn") : t("renderPoolOut")}</span>
             </div>
           </section>
 

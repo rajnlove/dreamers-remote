@@ -1,5 +1,34 @@
 # Project Status
 
+## 2026-09-08 — Render pool on/off in the UI
+
+`workstations.jobs_enabled` has gated scheduling since P3-6, but nothing in
+the web app could read or change it — the only way to pull a machine out of
+the render pool was a manual PATCH. It is now a first-class control:
+
+- **Dashboard card** — an amber `NO JOBS` badge next to the agent badge when a
+  machine is held out, plus a toggle button in the card actions. The card
+  calls the dashboard's existing `refresh()` on success so it doesn't keep
+  showing the pre-toggle state until the next 5s poll.
+- **Workstation detail** — the same toggle in the header toolbar next to
+  Restart/Shutdown, and a `Render pool` row in Overview.
+- Both use `PATCH /api/workstations/:id` with `{ jobs_enabled }` (the existing
+  endpoint and validation — no API change).
+
+Deliberately **not** behind a confirmation dialog, unlike restart/shutdown: it
+interrupts nothing (the scheduler simply stops assigning; a job already
+running there finishes) and one more click undoes it. Wording avoids
+"disabled" in both languages so it can't be read as the machine being off —
+`enabled` (monitoring/VNC/WoL) is a separate flag and is untouched.
+
+Not a new state model: MASTER_PROJECT_SPEC.md §11's five-state machine
+(`AVAILABLE`/`BUSY`/`DISABLED`/`DEDICATED_WORKER`/`INTERACTIVE`) stays
+deferred as recorded under P3-6 — this only surfaces the boolean that already
+exists.
+
+Verified: `npm run typecheck` and `npm run build` clean. The web image tracks
+`:latest`, so this ships on the next image build with no pin bump.
+
 ## 2026-09-05 — Job provenance and audit metadata
 
 Every job can now say where it came from and what happened to it. Submitters

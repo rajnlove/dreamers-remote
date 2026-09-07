@@ -14,6 +14,10 @@ export interface Workstation {
   last_seen: string | null;
   agent_version: string | null;
   os: string | null;
+  // P3-6 admin gate: false takes the machine out of the render pool
+  // without touching `enabled` (monitoring/VNC stay on). scheduler.ts
+  // skips a worker with this off; a job already running is left alone.
+  jobs_enabled: boolean;
 }
 
 export interface CpuMetrics {
