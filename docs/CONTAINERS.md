@@ -85,15 +85,22 @@ ask the user for it if a future check needs to go beyond what's below.
   built from [server.Dockerfile](../docker/server.Dockerfile). Commit-SHA tag,
   never `:latest` — the same build also carries a `:latest` tag, which this
   deployment deliberately does not follow.
-  - **Pin bumped 2026-09-08** for M8 (audit log), from
-    `6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`. Built and pushed by Actions run
+  - **Deployed 2026-09-08** for M8 (audit log), replacing
+    `4000334e5f5ff84560880b6b75d3955d4b4a2b4d`. Built and pushed by Actions run
     [34184187008](https://github.com/rajnlove/dreamers-remote/actions/runs/34184187008),
     all four jobs green (`verify-upload` 34/34 tests, incl. the audit suite).
-  - **Not yet rolled out at the time of writing**: the live Dockge stack still
-    runs the previous pin until someone presses Update. Rollback is that
-    previous tag, unchanged — the new schema is additive
-    (`CREATE TABLE IF NOT EXISTS audit_log`), so an older image ignores the
-    extra table rather than failing on it.
+    Rolled out through Dockge (pull + recreate); the container came up clean
+    (`dreamers-remote-server listening on :8080`) and `/api/audit` answers
+    `401 Authentication required` where the previous image returned `404`,
+    which is what proves the new build is the one actually serving.
+  - This entry previously named `6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52` as
+    the live pin. That was **stale** — the running stack was already on
+    `4000334…`, deployed without updating this file. Read the pin off the
+    Dockge stack, not from here, when it matters.
+  - **Rollback**: `ghcr.io/rajnlove/dreamers-remote-server:4000334e5f5ff84560880b6b75d3955d4b4a2b4d`.
+    Safe with no database step — the schema change is additive
+    (`CREATE TABLE IF NOT EXISTS audit_log`), so the older image simply
+    ignores the extra table.
 - **Ports**: `8080` (API + WS proxy).
 - **Volumes**: `${DATA_ROOT}` bind-mounted to `/data` (SQLite file —
   `dreamers-remote.sqlite`).
