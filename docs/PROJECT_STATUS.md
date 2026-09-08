@@ -40,9 +40,18 @@ flattened to `key: value` pairs. Full vi/en translations.
 Tests: `src/audit/*.test.ts` added to the server test script — 4/4 pass. The
 8 pre-existing failures on this workstation are all native-binding (ABI)
 failures in suites that open SQLite, unchanged by this work. `typecheck` and
-`build` clean on both server and web. Not yet deployed — needs a backend
-image build plus a pin bump (see CONTAINERS.md); the web image tracks
-`:latest`.
+`build` clean on both server and web.
+
+**Deployed 2026-09-08.** Server pinned to
+`b93158693227351a4a8e7dff666ac42ecf13ff23` (Actions run 34184187008, all four
+jobs green, `verify-upload` 34/34 including the audit suite); web stack pulled
+the matching `:latest`. Verified from outside the box: `/api/audit` and
+`/api/audit/actions` answer `401 Authentication required` where the previous
+image returned `404`, the container log shows a clean start with no audit
+write failures, and the live JS bundle now contains the audit page and the
+render-pool control. The pin previously recorded in CONTAINERS.md
+(`6a6c9af9…`) was stale — the stack was actually on `4000334…`; corrected
+there.
 
 Still open from V1: **M7 (roles)**. `requireAdmin` currently means "the
 single seeded admin account", so the audit page is effectively visible to
@@ -74,8 +83,9 @@ Not a new state model: MASTER_PROJECT_SPEC.md §11's five-state machine
 deferred as recorded under P3-6 — this only surfaces the boolean that already
 exists.
 
-Verified: `npm run typecheck` and `npm run build` clean. The web image tracks
-`:latest`, so this ships on the next image build with no pin bump.
+Verified: `npm run typecheck` and `npm run build` clean. Shipped with the
+2026-09-08 web rollout (same `:latest` pull as the audit-log release) — the
+live bundle carries the toggle, the badge and their translations.
 
 ## 2026-09-05 — Job provenance and audit metadata
 
