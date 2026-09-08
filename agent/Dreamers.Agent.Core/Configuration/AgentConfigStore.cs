@@ -30,7 +30,12 @@ public sealed class AgentConfigStore
     /// Loads the existing config, or creates one with a freshly generated
     /// AgentId if none exists yet. If a config file exists but its AgentId
     /// is somehow missing/blank, only the AgentId is regenerated — every
-    /// other field (ServerUrl, UpdateIntervalSeconds, ...) is preserved.
+    /// other field (Servers, UpdateIntervalSeconds, ...) is preserved.
+    ///
+    /// Also normalizes the server list: an agent.json from an older Agent
+    /// has only the single ServerUrl field, which is migrated into a
+    /// one-entry Servers list owning jobs — an existing install keeps
+    /// behaving exactly as before after an upgrade.
     /// </summary>
     public AgentConfig LoadOrCreate()
     {
@@ -53,12 +58,62 @@ public sealed class AgentConfigStore
             config.AgentId = Guid.NewGuid().ToString();
         }
 
-        if (needsNewId || !fileExisted)
+        var changedServers = NormalizeServers(config);
+
+        if (needsNewId || changedServers || !fileExisted)
         {
             Save(config);
         }
 
         return config;
+    }
+
+    /// <summary>
+    /// Brings the server list into a state the rest of the Agent can rely
+    /// on, and reports whether anything had to change (so the caller can
+    /// persist it once rather than re-deriving on every start).
+    ///
+    /// Two rules:
+    ///
+    /// 1. An empty list is filled from the legacy ServerUrl and given
+    ///    ownership. Without this an upgraded Agent would come up with no
+    ///    servers at all and go silent.
+    /// 2. At most one owner survives. The list is hand-editable and the
+    ///    ownership rule is not enforceable at the JSON level, so two
+    ///    owners is a config a human can write. Keeping the first is
+    ///    arbitrary but deterministic; the alternative — trusting the file
+    ///    — is the id-collision this design exists to prevent.
+    /// </summary>
+    private static bool NormalizeServers(AgentConfig config)
+    {
+        var changed = false;
+
+        config.Servers.RemoveAll(s => string.IsNullOrWhiteSpace(s.Url));
+
+        if (config.Servers.Count == 0 && !string.IsNullOrWhiteSpace(config.ServerUrl))
+        {
+            config.Servers.Add(new AgentServerConfig { Url = config.ServerUrl, JobOwner = true });
+            changed = true;
+        }
+
+        var seenOwner = false;
+        foreach (var server in config.Servers)
+        {
+            if (!server.JobOwner)
+            {
+                continue;
+            }
+
+            if (seenOwner)
+            {
+                server.JobOwner = false;
+                changed = true;
+            }
+
+            seenOwner = true;
+        }
+
+        return changed;
     }
 
     public void Save(AgentConfig config)
