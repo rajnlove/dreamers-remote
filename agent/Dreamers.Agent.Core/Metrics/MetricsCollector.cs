@@ -18,15 +18,20 @@ public sealed class MetricsCollector
     private readonly GpuCollector _gpuCollector;
     private readonly DiskCollector _diskCollector;
     private readonly ProcessCollector _processCollector;
+    private readonly NasSpaceCollector? _nasSpaceCollector;
 
-    public MetricsCollector(ILogger<MetricsCollector> logger, MonitoredProcessesConfig processesConfig)
+    public MetricsCollector(
+        ILogger<MetricsCollector> logger,
+        MonitoredProcessesConfig processesConfig,
+        Configuration.AllowedPathsConfigStore allowedPathsStore)
         : this(
             logger,
             new CpuCollector(),
             new MemoryCollector(),
             new GpuCollector(),
             new DiskCollector(),
-            new ProcessCollector(processesConfig))
+            new ProcessCollector(processesConfig),
+            new NasSpaceCollector(allowedPathsStore))
     {
     }
 
@@ -36,7 +41,8 @@ public sealed class MetricsCollector
         MemoryCollector memoryCollector,
         GpuCollector gpuCollector,
         DiskCollector diskCollector,
-        ProcessCollector processCollector)
+        ProcessCollector processCollector,
+        NasSpaceCollector? nasSpaceCollector = null)
     {
         _logger = logger;
         _cpuCollector = cpuCollector;
@@ -44,6 +50,7 @@ public sealed class MetricsCollector
         _gpuCollector = gpuCollector;
         _diskCollector = diskCollector;
         _processCollector = processCollector;
+        _nasSpaceCollector = nasSpaceCollector;
     }
 
     public SystemMetricsSnapshot Collect()
@@ -115,6 +122,20 @@ public sealed class MetricsCollector
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Disk collector failed");
+        }
+
+        if (_nasSpaceCollector is not null)
+        {
+            try
+            {
+                snapshot.NasSpace = _nasSpaceCollector.Collect();
+            }
+            catch (Exception ex)
+            {
+                // Same posture as every other collector here: one failing
+                // source degrades that field, never the whole heartbeat.
+                _logger.LogWarning(ex, "NAS space collector failed");
+            }
         }
 
         try

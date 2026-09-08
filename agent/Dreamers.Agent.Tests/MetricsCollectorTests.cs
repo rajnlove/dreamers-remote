@@ -11,8 +11,17 @@ namespace Dreamers.Agent.Tests;
 // agent itself.
 public class MetricsCollectorTests
 {
-    private static MetricsCollector CreateCollector() =>
-        new(NullLogger<MetricsCollector>.Instance, new MonitoredProcessesConfig());
+    // Allow-paths store points at a fresh temp directory, so it loads an
+    // empty root list and the NAS collector makes no network calls — these
+    // tests must not depend on a reachable share.
+    private static MetricsCollector CreateCollector()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "dreamers-metrics-" + Guid.NewGuid().ToString("N"));
+        return new MetricsCollector(
+            NullLogger<MetricsCollector>.Instance,
+            new MonitoredProcessesConfig(),
+            new Dreamers.Agent.Core.Configuration.AllowedPathsConfigStore(dir));
+    }
 
     [Fact]
     public void Collect_ReturnsRealHostnameAndArchitecture()

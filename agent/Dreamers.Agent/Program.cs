@@ -175,11 +175,35 @@ async Task HandleRegisterAsync(string[] commandArgs)
 {
     if (commandArgs.Length < 2 || string.IsNullOrWhiteSpace(commandArgs[1]))
     {
-        Console.Error.WriteLine("Usage: DreamersAgent.exe register <registration-token>");
+        Console.Error.WriteLine("Usage: DreamersAgent.exe register <registration-token> [--server <url>] [--owner]");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("  --server <url>  Which server the token came from. Required when this Agent");
+        Console.Error.WriteLine("                  reports to more than one. Added to agent.json if new.");
+        Console.Error.WriteLine("  --owner         Make that server the one allowed to assign jobs. Exactly one");
+        Console.Error.WriteLine("                  server can own jobs; any previous owner is demoted.");
         return;
     }
 
-    if (await TryRegisterAsync(commandArgs[1]))
+    string? serverUrl = null;
+    var makeOwner = false;
+    for (var i = 2; i < commandArgs.Length; i++)
+    {
+        if (string.Equals(commandArgs[i], "--owner", StringComparison.OrdinalIgnoreCase))
+        {
+            makeOwner = true;
+        }
+        else if (string.Equals(commandArgs[i], "--server", StringComparison.OrdinalIgnoreCase) && i + 1 < commandArgs.Length)
+        {
+            serverUrl = commandArgs[++i];
+        }
+        else
+        {
+            Console.Error.WriteLine($"Unrecognized argument \"{commandArgs[i]}\".");
+            return;
+        }
+    }
+
+    if (await TryRegisterAsync(commandArgs[1], serverUrl, makeOwner))
     {
         Console.WriteLine("Restart the service to start sending heartbeats:");
         Console.WriteLine("  DreamersAgent.exe stop");
@@ -187,19 +211,74 @@ async Task HandleRegisterAsync(string[] commandArgs)
     }
 }
 
-async Task<bool> TryRegisterAsync(string token)
+// serverUrl/makeOwner default to "the single configured server, leave
+// ownership alone" so the install and interactive-setup flows keep
+// working unchanged on a machine that reports to one server.
+async Task<bool> TryRegisterAsync(string token, string? serverUrl = null, bool makeOwner = false)
 {
     var dir = AgentConfigStore.DefaultDataDirectory;
-    var cfg = new AgentConfigStore(dir).LoadOrCreate();
+    var store = new AgentConfigStore(dir);
+    var cfg = store.LoadOrCreate();
+
+    // Which server is this token for? Guessing would pair the machine with
+    // the wrong system and the error would surface much later, as a
+    // workstation that heartbeats but never receives work.
+    AgentServerConfig target;
+    if (serverUrl is not null)
+    {
+        var normalized = serverUrl.Trim().TrimEnd('/');
+        var existing = cfg.Servers.FirstOrDefault(
+            srv => string.Equals(srv.Url.TrimEnd('/'), normalized, StringComparison.OrdinalIgnoreCase));
+        if (existing is null)
+        {
+            existing = new AgentServerConfig { Url = normalized, JobOwner = false };
+            cfg.Servers.Add(existing);
+            Console.WriteLine($"Added {normalized} to agent.json.");
+        }
+
+        target = existing;
+    }
+    else if (cfg.Servers.Count == 1)
+    {
+        target = cfg.Servers[0];
+    }
+    else
+    {
+        Console.Error.WriteLine("This Agent reports to more than one server — say which token this is:");
+        foreach (var srv in cfg.Servers)
+        {
+            Console.Error.WriteLine($"  --server {srv.Url}{(srv.JobOwner ? "   (owns jobs)" : string.Empty)}");
+        }
+
+        return false;
+    }
+
+    if (makeOwner && !target.JobOwner)
+    {
+        // Exactly one owner, enforced here rather than left to the config
+        // file: job ids are per-server autoincrement, so two owners means
+        // two different jobs can arrive with the same id.
+        foreach (var srv in cfg.Servers)
+        {
+            srv.JobOwner = false;
+        }
+
+        target.JobOwner = true;
+        Console.WriteLine($"{target.Url} now owns jobs on this machine.");
+    }
 
     using var httpClient = new HttpClient();
-    var client = new ServerClient(httpClient, cfg);
+    var client = new ServerClient(httpClient, cfg, target.Url);
 
     try
     {
         var credential = await client.RegisterAsync(token);
-        new AgentCredentialStore(dir).Save(credential);
-        Console.WriteLine("Registered successfully.");
+        new AgentCredentialStore(dir, target.Url).Save(credential);
+        // Saved only after the server accepted the token: a half-written
+        // config pointing at a server this machine was never paired with
+        // is worse than no change at all.
+        store.Save(cfg);
+        Console.WriteLine($"Registered successfully with {target.Url}.");
         return true;
     }
     catch (Exception ex)

@@ -16,6 +16,13 @@ public sealed class SystemMetricsSnapshot
 
     public IReadOnlyList<DiskSnapshot> Disks { get; set; } = Array.Empty<DiskSnapshot>();
 
+    /// <summary>
+    /// Free space on the configured NAS roots. Empty when no roots are
+    /// allow-listed or none is reachable — the server must treat "no
+    /// data" as "unknown", never as "plenty of room".
+    /// </summary>
+    public IReadOnlyList<NasSpaceSnapshot> NasSpace { get; set; } = Array.Empty<NasSpaceSnapshot>();
+
     /// <summary>One entry per configured monitored_processes.json pattern, whether running or not.</summary>
     public IReadOnlyList<ProcessSnapshot> Processes { get; set; } = Array.Empty<ProcessSnapshot>();
 }

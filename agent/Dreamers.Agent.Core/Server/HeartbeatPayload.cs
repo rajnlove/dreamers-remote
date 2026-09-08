@@ -24,6 +24,10 @@ internal sealed record HeartbeatPayload
     public MemorySnapshot? Memory { get; init; }
     public IReadOnlyList<GpuSnapshot>? Gpus { get; init; }
     public IReadOnlyList<DiskSnapshot>? Disks { get; init; }
+    // Free space on the NAS roots this Agent is allowed to touch. The
+    // server cannot measure this itself — its container has no NAS mount
+    // — so the "NAS low space" alert depends entirely on this field.
+    public IReadOnlyList<NasSpaceSnapshot>? NasSpace { get; init; }
     public IReadOnlyList<ProcessSnapshot>? Processes { get; init; }
     // P3-2: what job types this Agent can execute — see WorkerCapabilities.
     public IReadOnlyList<string>? Capabilities { get; init; }
@@ -58,6 +62,7 @@ internal sealed record HeartbeatPayload
         Os = snapshot.OperatingSystem,
         OsVersion = snapshot.OsVersion,
         Architecture = snapshot.Architecture,
+        NasSpace = snapshot.NasSpace,
         UptimeSeconds = snapshot.Uptime?.TotalSeconds,
         AgentVersion = snapshot.AgentVersion,
         Cpu = snapshot.Cpu,
