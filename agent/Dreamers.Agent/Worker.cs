@@ -23,8 +23,7 @@ public sealed class Worker : BackgroundService
     private readonly ILogger<Worker> _logger;
     private readonly AgentConfig _config;
     private readonly MetricsCollector _metricsCollector;
-    private readonly AgentCredentialStore _credentialStore;
-    private readonly ServerClient _serverClient;
+    private readonly IReadOnlyList<ServerConnection> _servers;
     private readonly CommandExecutor _commandExecutor;
     private readonly IReadOnlyDictionary<string, IJobRunner> _jobRunners;
 
@@ -32,8 +31,7 @@ public sealed class Worker : BackgroundService
         ILogger<Worker> logger,
         AgentConfig config,
         MetricsCollector metricsCollector,
-        AgentCredentialStore credentialStore,
-        ServerClient serverClient,
+        IReadOnlyList<ServerConnection> servers,
         CommandExecutor commandExecutor,
         TestJobRunner testJobRunner,
         FfmpegJobRunner ffmpegJobRunner,
@@ -42,8 +40,7 @@ public sealed class Worker : BackgroundService
         _logger = logger;
         _config = config;
         _metricsCollector = metricsCollector;
-        _credentialStore = credentialStore;
-        _serverClient = serverClient;
+        _servers = servers;
         _commandExecutor = commandExecutor;
         // P4-2: one IJobRunner per job type this Agent knows how to run,
         // keyed by the same string used as the job's `type` and as a
@@ -60,16 +57,35 @@ public sealed class Worker : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation(
-            "Dreamers Agent starting. AgentId={AgentId} ServerUrl={ServerUrl} IntervalSeconds={IntervalSeconds}",
-            _config.AgentId, _config.ServerUrl, _config.UpdateIntervalSeconds);
+            "Dreamers Agent starting. AgentId={AgentId} Servers={ServerCount} IntervalSeconds={IntervalSeconds}",
+            _config.AgentId, _servers.Count, _config.UpdateIntervalSeconds);
 
-        var credential = _credentialStore.Load();
-        if (credential is null)
+        foreach (var server in _servers)
+        {
+            _logger.LogInformation(
+                "  {ServerUrl} — {Role}, {Registered}",
+                server.Url,
+                server.JobOwner ? "owns jobs" : "metrics and commands only",
+                server.Credential is null ? "NOT REGISTERED" : "registered");
+        }
+
+        // A machine reporting to two servers but paired with neither looks
+        // identical, in the dashboard, to one that is simply switched off.
+        // Say it once at startup, naming the server, so the fix is obvious.
+        foreach (var server in _servers.Where(s => s.Credential is null))
         {
             _logger.LogWarning(
-                "No agent credential found — this workstation is not registered with the server yet. " +
-                "Run \"DreamersAgent.exe register <token>\" to pair it (token comes from the dashboard admin). " +
-                "Metrics will still be collected and logged locally in the meantime.");
+                "No agent credential for {ServerUrl} — this workstation is not registered with that server yet. " +
+                "Run \"DreamersAgent.exe register <token> --server {ServerUrl}\" to pair it. " +
+                "Metrics are still collected and logged locally in the meantime.",
+                server.Url, server.Url);
+        }
+
+        if (_servers.All(s => !s.JobOwner))
+        {
+            _logger.LogWarning(
+                "No configured server owns jobs — this Agent will report metrics and accept restart/shutdown, " +
+                "but will never run a render job. Set \"jobOwner\": true on exactly one entry in agent.json.");
         }
 
         // P4-3: computed once here (Lazy, see WorkerCapabilities) and
@@ -170,96 +186,79 @@ public sealed class Worker : BackgroundService
                 _logger.LogError(ex, "Unhandled error during agent tick");
             }
 
-            if (snapshot is not null && credential is not null)
+            if (snapshot is not null)
             {
-                try
+                // P4-3H: every job any runner currently has in flight —
+                // was "the first non-finished snapshot" (singular) back
+                // when an Agent only ever ran one job at a time. See
+                // IJobRunner's doc comment. Computed once and reported to
+                // every server: both dashboards should show live progress,
+                // even though only one of them assigned the work.
+                var runningJobs = _jobRunners.Values
+                    .SelectMany(r => r.GetSnapshots())
+                    .Where(s => !s.Finished)
+                    .Select(s => new RunningJobStatus(s.JobId, s.Progress, s.Fps, s.EtaSeconds))
+                    .ToList();
+
+                foreach (var server in _servers)
                 {
-                    // P4-3H: every job any runner currently has in flight —
-                    // was "the first non-finished snapshot" (singular) back
-                    // when an Agent only ever ran one job at a time. See
-                    // IJobRunner's doc comment.
-                    var runningJobs = _jobRunners.Values
-                        .SelectMany(r => r.GetSnapshots())
-                        .Where(s => !s.Finished)
-                        .Select(s => new RunningJobStatus(s.JobId, s.Progress, s.Fps, s.EtaSeconds))
-                        .ToList();
-
-                    var heartbeat = await _serverClient.SendHeartbeatAsync(credential, snapshot, runningJobs, stoppingToken);
-                    _logger.LogDebug("Heartbeat sent.");
-
-                    if (heartbeat.Command is not null)
+                    if (server.Credential is null)
                     {
-                        await HandlePendingCommandAsync(credential, heartbeat.Command, stoppingToken);
+                        continue;
                     }
 
-                    // P3-5: a job we're running was cancelled server-side
-                    // (POST /api/jobs/:id/cancel) — stop it. Nothing to
-                    // report back; the server is already authoritative.
-                    // Broadcast each id to every runner (harmless no-op on
-                    // the ones not actually running that jobId) rather than
-                    // needing to know which runner owns which job.
-                    foreach (var cancelId in heartbeat.CancelJobIds)
+                    try
                     {
-                        _logger.LogInformation("Job {JobId} was cancelled — stopping", cancelId);
-                        foreach (var runner in _jobRunners.Values) runner.Cancel(cancelId);
-                    }
+                        var heartbeat = await server.Client.SendHeartbeatAsync(
+                            server.Credential, snapshot, runningJobs, stoppingToken);
+                        _logger.LogDebug("Heartbeat sent to {ServerUrl}.", server.Url);
 
-                    // P4-3H: start every newly assigned job — no more
-                    // "only one job across the whole Agent" gate (P3-4/
-                    // P4-2's original simplification). The server is the
-                    // sole authority on not double-booking a GPU slot
-                    // (job/scheduler.ts's per-slot busy tracking already
-                    // covers that), so each runner just needs to track
-                    // the jobs it's given independently by id — see
-                    // IJobRunner's doc comment. Confirmed against real
-                    // concurrent 2-GPU hardware (CGI-Render) 2026-09-02.
-                    foreach (var assignedJob in heartbeat.Jobs)
-                    {
-                        if (_jobRunners.TryGetValue(assignedJob.Type, out var runner))
+                        if (heartbeat.Command is not null)
                         {
-                            _logger.LogInformation(
-                                "Starting job {JobId} ({JobType}), requested via the dashboard{GpuSlot}",
-                                assignedJob.Id, assignedJob.Type,
-                                assignedJob.GpuSlot is { } slot ? $" on GPU slot {slot}" : string.Empty);
-                            runner.Start(assignedJob.Id, assignedJob.Input, assignedJob.GpuSlot);
+                            // Accepted from every server on purpose:
+                            // restarting a machine is workstation
+                            // administration, not job scheduling, and it
+                            // carries no state that two servers could
+                            // disagree about.
+                            await HandlePendingCommandAsync(server, heartbeat.Command, stoppingToken);
                         }
-                        else
-                        {
-                            // Shouldn't happen — the scheduler only assigns
-                            // by matching this Agent's own reported
-                            // capabilities (WorkerCapabilities) — but report
-                            // it as a failed job rather than leaving it
-                            // stuck ASSIGNED forever if it ever does.
-                            _logger.LogError("Assigned job {JobId} has type {JobType} with no registered runner on this Agent", assignedJob.Id, assignedJob.Type);
-                            await ReportUnrunnableJobAsync(credential, assignedJob.Id, assignedJob.Type, stoppingToken);
-                        }
+
+                        await HandleJobDirectivesAsync(server, heartbeat, stoppingToken);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Network blips, server restarts, DNS hiccups — all
+                        // expected occasionally on a LAN. Caught per server
+                        // so one being down cannot stop the Agent talking to
+                        // the other: if the render farm is unreachable, the
+                        // workstation dashboard must still see this machine,
+                        // and if the workstation server is unreachable, jobs
+                        // must still run.
+                        _logger.LogWarning(ex, "Failed to send heartbeat to {ServerUrl}", server.Url);
                     }
                 }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    // Network blips, server restarts, DNS hiccups — all
-                    // expected occasionally on a LAN. Local metrics were
-                    // already collected and logged above regardless; this
-                    // failure only affects what the dashboard sees, not the
-                    // agent's own health.
-                    _logger.LogWarning(ex, "Failed to send heartbeat to server");
-                }
 
-                // Independent of whether the heartbeat above succeeded —
-                // every finished job should get reported even if, say,
-                // this exact tick's heartbeat call happened to fail.
-                // P4-3H: a runner can have more than one finished-but-
-                // not-yet-reported job now (e.g. two ffmpeg jobs on two
-                // GPUs finishing around the same tick).
-                foreach (var runner in _jobRunners.Values)
+                // Results go only to the server that assigned the work —
+                // it is the only one holding that job id. Independent of
+                // whether the heartbeat above succeeded: a finished job
+                // should still be reported even if this exact tick's
+                // heartbeat happened to fail.
+                var owner = _servers.FirstOrDefault(s => s.JobOwner && s.Credential is not null);
+                if (owner is not null)
                 {
-                    foreach (var finished in runner.GetSnapshots().Where(s => s.Finished))
+                    // P4-3H: a runner can have more than one finished-but-
+                    // not-yet-reported job now (e.g. two ffmpeg jobs on two
+                    // GPUs finishing around the same tick).
+                    foreach (var runner in _jobRunners.Values)
                     {
-                        await ReportFinishedJobAsync(credential, runner, finished, stoppingToken);
+                        foreach (var finished in runner.GetSnapshots().Where(s => s.Finished))
+                        {
+                            await ReportFinishedJobAsync(owner, runner, finished, stoppingToken);
+                        }
                     }
                 }
             }
@@ -277,12 +276,81 @@ public sealed class Worker : BackgroundService
         _logger.LogInformation("Dreamers Agent stopping. AgentId={AgentId}", _config.AgentId);
     }
 
+    /// <summary>
+    /// Acts on the job assignments and cancellations in one server's
+    /// heartbeat response — but only when that server owns jobs.
+    ///
+    /// A non-owner sending work is not ignored quietly. Job ids are
+    /// per-server autoincrement, so obeying two servers would mean two
+    /// different jobs sharing an id and this Agent cancelling or
+    /// reporting results against the wrong one. When it happens the real
+    /// problem is upstream — someone left scheduling enabled on a server
+    /// that no longer owns this machine — and a silent drop would hide
+    /// exactly that, leaving jobs sitting ASSIGNED forever with no clue
+    /// why.
+    /// </summary>
+    private async Task HandleJobDirectivesAsync(ServerConnection server, HeartbeatResult heartbeat, CancellationToken cancellationToken)
+    {
+        if (!server.JobOwner)
+        {
+            if (heartbeat.Jobs.Count > 0 || heartbeat.CancelJobIds.Count > 0)
+            {
+                _logger.LogWarning(
+                    "{ServerUrl} sent {JobCount} job assignment(s) and {CancelCount} cancellation(s) but does not own jobs on this Agent — ignoring. " +
+                    "Disable job scheduling for this machine on that server (its render pool toggle), or make it the job owner in agent.json.",
+                    server.Url, heartbeat.Jobs.Count, heartbeat.CancelJobIds.Count);
+            }
+
+            return;
+        }
+
+        // P3-5: a job we're running was cancelled server-side
+        // (POST /api/jobs/:id/cancel) — stop it. Nothing to report back;
+        // the server is already authoritative. Broadcast each id to every
+        // runner (harmless no-op on the ones not actually running that
+        // jobId) rather than needing to know which runner owns which job.
+        foreach (var cancelId in heartbeat.CancelJobIds)
+        {
+            _logger.LogInformation("Job {JobId} was cancelled — stopping", cancelId);
+            foreach (var runner in _jobRunners.Values)
+            {
+                runner.Cancel(cancelId);
+            }
+        }
+
+        // P4-3H: start every newly assigned job — no more "only one job
+        // across the whole Agent" gate. The server is the sole authority
+        // on not double-booking a GPU slot (job/scheduler.ts's per-slot
+        // busy tracking already covers that), so each runner just needs
+        // to track the jobs it's given independently by id.
+        foreach (var assignedJob in heartbeat.Jobs)
+        {
+            if (_jobRunners.TryGetValue(assignedJob.Type, out var runner))
+            {
+                _logger.LogInformation(
+                    "Starting job {JobId} ({JobType}) from {ServerUrl}{GpuSlot}",
+                    assignedJob.Id, assignedJob.Type, server.Url,
+                    assignedJob.GpuSlot is { } slot ? $" on GPU slot {slot}" : string.Empty);
+                runner.Start(assignedJob.Id, assignedJob.Input, assignedJob.GpuSlot);
+            }
+            else
+            {
+                // Shouldn't happen — the scheduler only assigns by
+                // matching this Agent's own reported capabilities
+                // (WorkerCapabilities) — but report it as a failed job
+                // rather than leaving it stuck ASSIGNED forever.
+                _logger.LogError("Assigned job {JobId} has type {JobType} with no registered runner on this Agent", assignedJob.Id, assignedJob.Type);
+                await ReportUnrunnableJobAsync(server, assignedJob.Id, assignedJob.Type, cancellationToken);
+            }
+        }
+    }
+
     // P2-8: a restart/shutdown queued by an admin rides the heartbeat
     // response (see ServerClient.SendHeartbeatAsync) rather than being
     // pushed — the Agent has no inbound listener. Structured whitelist
     // only, never arbitrary shell: unrecognized command names are logged
     // and dropped, never executed. See docs/SECURITY.md.
-    private async Task HandlePendingCommandAsync(string credential, string commandName, CancellationToken cancellationToken)
+    private async Task HandlePendingCommandAsync(ServerConnection server, string commandName, CancellationToken cancellationToken)
     {
         if (!AgentCommandParser.TryParse(commandName, out var command))
         {
@@ -295,14 +363,14 @@ public sealed class Worker : BackgroundService
         try
         {
             _commandExecutor.Execute(command);
-            await _serverClient.SendCommandResultAsync(credential, commandName, ok: true, detail: null, cancellationToken);
+            await server.Client.SendCommandResultAsync(server.Credential!, commandName, ok: true, detail: null, cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to execute {Command}", command);
             try
             {
-                await _serverClient.SendCommandResultAsync(credential, commandName, ok: false, ex.Message, cancellationToken);
+                await server.Client.SendCommandResultAsync(server.Credential!, commandName, ok: false, ex.Message, cancellationToken);
             }
             catch (Exception reportEx)
             {
@@ -315,14 +383,14 @@ public sealed class Worker : BackgroundService
     // next job. Only resets on a successful report — if the POST fails
     // (network blip), the finished snapshot stays put and this is
     // retried on the next tick rather than the result being lost.
-    private async Task ReportFinishedJobAsync(string credential, IJobRunner runner, JobSnapshot finished, CancellationToken cancellationToken)
+    private async Task ReportFinishedJobAsync(ServerConnection server, IJobRunner runner, JobSnapshot finished, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
             "Job {JobId} finished: {Result}", finished.JobId, finished.Success ? "success" : $"failed ({finished.Error})");
 
         try
         {
-            await _serverClient.SendJobResultAsync(credential, finished.JobId, finished.Success, finished.Output, finished.Error, cancellationToken);
+            await server.Client.SendJobResultAsync(server.Credential!, finished.JobId, finished.Success, finished.Output, finished.Error, cancellationToken);
             runner.Reset(finished.JobId);
         }
         catch (Exception ex)
@@ -335,12 +403,12 @@ public sealed class Worker : BackgroundService
     // has no IJobRunner for (see the "Starting job" branch above) — report
     // it failed immediately rather than let it sit ASSIGNED forever with
     // nothing ever picking it up.
-    private async Task ReportUnrunnableJobAsync(string credential, int jobId, string jobType, CancellationToken cancellationToken)
+    private async Task ReportUnrunnableJobAsync(ServerConnection server, int jobId, string jobType, CancellationToken cancellationToken)
     {
         try
         {
-            await _serverClient.SendJobResultAsync(
-                credential, jobId, ok: false, output: null, error: $"This Agent has no runner registered for job type \"{jobType}\"", cancellationToken);
+            await server.Client.SendJobResultAsync(
+                server.Credential!, jobId, ok: false, output: null, error: $"This Agent has no runner registered for job type \"{jobType}\"", cancellationToken);
         }
         catch (Exception ex)
         {

@@ -83,33 +83,30 @@ var dataDirectory = AgentConfigStore.DefaultDataDirectory;
 var configStore = new AgentConfigStore(dataDirectory);
 var config = configStore.LoadOrCreate();
 
+// Upgrade path: a machine paired before the Agent supported more than
+// one server has its credential in the old shared file. Copy it onto the
+// per-server name so four already-registered workstations do not each
+// need a fresh token by hand after the rollout. No-op once done.
+AgentCredentialStore.MigrateLegacy(dataDirectory, config.ServerUrl);
+
 var processesConfigStore = new MonitoredProcessesConfigStore(dataDirectory);
 var processesConfig = processesConfigStore.LoadOrCreate();
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.AddSingleton(config);
-builder.Services.AddSingleton(processesConfig);
-builder.Services.AddSingleton(new AgentCredentialStore(dataDirectory));
 var allowedPathsStore = new AllowedPathsConfigStore(dataDirectory);
 var nasCredentialStore = new NasCredentialStore(dataDirectory);
 var topazConfigStore = new TopazConfigStore(dataDirectory);
-builder.Services.AddSingleton(allowedPathsStore);
-builder.Services.AddSingleton(nasCredentialStore);
-builder.Services.AddSingleton(topazConfigStore);
 // P4-3/P4-4: the "ffmpeg"/"topaz" capabilities (WorkerCapabilities.Current)
 // depend on health checks that need these stores — wired once here,
 // before the host (and its first heartbeat) starts, rather than
 // threading them through the static class's constructor (it's read
 // from a static context in HeartbeatPayload.FromSnapshot).
 Dreamers.Agent.Core.Worker.WorkerCapabilities.Initialize(nasCredentialStore, allowedPathsStore, topazConfigStore);
-builder.Services.AddSingleton<MetricsCollector>();
-builder.Services.AddSingleton<CommandExecutor>();
-builder.Services.AddSingleton<TestJobRunner>();
-builder.Services.AddSingleton<FfmpegJobRunner>();
-builder.Services.AddSingleton<TopazJobRunner>();
-builder.Services.AddHttpClient<ServerClient>();
-builder.Services.AddHostedService<Worker>();
+
+AgentServices.Register(
+    builder.Services, config, dataDirectory, processesConfig,
+    allowedPathsStore, nasCredentialStore, topazConfigStore);
 builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
 
 builder.Logging.ClearProviders();

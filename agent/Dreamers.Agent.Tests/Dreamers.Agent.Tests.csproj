@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Dreamers.Agent.Core\Dreamers.Agent.Core.csproj" />
+    <ProjectReference Include="..\Dreamers.Agent\Dreamers.Agent.csproj" />
   </ItemGroup>
 
 </Project>

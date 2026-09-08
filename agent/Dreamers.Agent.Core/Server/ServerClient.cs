@@ -22,11 +22,25 @@ public sealed class ServerClient
     private readonly HttpClient _httpClient;
     private readonly AgentConfig _config;
 
+    /// <summary>
+    /// Talks to the server named by the legacy <see cref="AgentConfig.ServerUrl"/>.
+    /// </summary>
     public ServerClient(HttpClient httpClient, AgentConfig config)
+        : this(httpClient, config, config.ServerUrl)
+    {
+    }
+
+    /// <summary>
+    /// Talks to one specific server. The Agent keeps one client per
+    /// configured server: AgentId is shared (it identifies the machine,
+    /// and the servers keep separate databases) while the base address
+    /// and the credential are not.
+    /// </summary>
+    public ServerClient(HttpClient httpClient, AgentConfig config, string baseUrl)
     {
         _httpClient = httpClient;
         _config = config;
-        _httpClient.BaseAddress = new Uri(config.ServerUrl);
+        _httpClient.BaseAddress = new Uri(baseUrl);
         _httpClient.Timeout = TimeSpan.FromSeconds(10);
     }
 
