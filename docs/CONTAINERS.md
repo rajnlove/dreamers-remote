@@ -78,9 +78,22 @@ ask the user for it if a future check needs to go beyond what's below.
 - **Status**: PRODUCTION
 - **Purpose**: Backend API (Express) + WebSocket VNC proxy (`/ws/vnc/:id`,
   `server/src/remote/wsProxy.ts`) + Wake-on-LAN sender + Agent endpoints
-  (`/api/agent/*`) + SQLite-backed workstation/user/command_log storage.
-- **Image**: `ghcr.io/rajnlove/dreamers-remote-server:6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`, built from
-  [server.Dockerfile](../docker/server.Dockerfile).
+  (`/api/agent/*`) + SQLite-backed workstation/user/command_log/audit_log
+  storage.
+- **Image**: `ghcr.io/rajnlove/dreamers-remote-server:b93158693227351a4a8e7dff666ac42ecf13ff23`
+  (digest `sha256:cab5d99bf83d5836b4c0ebab43c0bbfd4b4f76ed5e6448a0bb5ba0aa3d2e1ee1`),
+  built from [server.Dockerfile](../docker/server.Dockerfile). Commit-SHA tag,
+  never `:latest` — the same build also carries a `:latest` tag, which this
+  deployment deliberately does not follow.
+  - **Pin bumped 2026-09-08** for M8 (audit log), from
+    `6a6c9af97ddda3f19793ea9d99ec1fb5fc241a52`. Built and pushed by Actions run
+    [34184187008](https://github.com/rajnlove/dreamers-remote/actions/runs/34184187008),
+    all four jobs green (`verify-upload` 34/34 tests, incl. the audit suite).
+  - **Not yet rolled out at the time of writing**: the live Dockge stack still
+    runs the previous pin until someone presses Update. Rollback is that
+    previous tag, unchanged — the new schema is additive
+    (`CREATE TABLE IF NOT EXISTS audit_log`), so an older image ignores the
+    extra table rather than failing on it.
 - **Ports**: `8080` (API + WS proxy).
 - **Volumes**: `${DATA_ROOT}` bind-mounted to `/data` (SQLite file —
   `dreamers-remote.sqlite`).
