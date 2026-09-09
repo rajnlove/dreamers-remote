@@ -105,7 +105,7 @@ var topazConfigStore = new TopazConfigStore(dataDirectory);
 Dreamers.Agent.Core.Worker.WorkerCapabilities.Initialize(nasCredentialStore, allowedPathsStore, topazConfigStore);
 
 AgentServices.Register(
-    builder.Services, config, dataDirectory, processesConfig,
+    builder.Services, config, configStore, dataDirectory, processesConfig,
     allowedPathsStore, nasCredentialStore, topazConfigStore);
 builder.Services.AddWindowsService(options => options.ServiceName = ServiceName);
 

@@ -9,6 +9,16 @@ public enum AgentCommand
 {
     Restart,
     Shutdown,
+
+    /// <summary>
+    /// "From now on, take jobs from me." Sent by whichever server the
+    /// operator picked in its dashboard, so job ownership can be moved
+    /// without walking to the machine.
+    ///
+    /// Not an OS action like the two above — CommandExecutor never sees
+    /// it; Worker applies it to the config and to its own running state.
+    /// </summary>
+    ClaimJobs,
 }
 
 public static class AgentCommandParser
@@ -22,6 +32,9 @@ public static class AgentCommandParser
                 return true;
             case "shutdown":
                 command = AgentCommand.Shutdown;
+                return true;
+            case "claim-jobs":
+                command = AgentCommand.ClaimJobs;
                 return true;
             default:
                 command = default;

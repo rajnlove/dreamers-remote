@@ -24,6 +24,7 @@ public sealed class Worker : BackgroundService
     private readonly AgentConfig _config;
     private readonly MetricsCollector _metricsCollector;
     private readonly IReadOnlyList<ServerConnection> _servers;
+    private readonly AgentConfigStore _configStore;
     private readonly CommandExecutor _commandExecutor;
     private readonly IReadOnlyDictionary<string, IJobRunner> _jobRunners;
 
@@ -32,6 +33,7 @@ public sealed class Worker : BackgroundService
         AgentConfig config,
         MetricsCollector metricsCollector,
         IReadOnlyList<ServerConnection> servers,
+        AgentConfigStore configStore,
         CommandExecutor commandExecutor,
         TestJobRunner testJobRunner,
         FfmpegJobRunner ffmpegJobRunner,
@@ -41,6 +43,7 @@ public sealed class Worker : BackgroundService
         _config = config;
         _metricsCollector = metricsCollector;
         _servers = servers;
+        _configStore = configStore;
         _commandExecutor = commandExecutor;
         // P4-2: one IJobRunner per job type this Agent knows how to run,
         // keyed by the same string used as the job's `type` and as a
@@ -210,7 +213,8 @@ public sealed class Worker : BackgroundService
                     try
                     {
                         var heartbeat = await server.Client.SendHeartbeatAsync(
-                            server.Credential, snapshot, runningJobs, stoppingToken);
+                            server.Credential, snapshot, runningJobs,
+                            server.JobOwner, _config.JobOwner?.Url, stoppingToken);
                         _logger.LogDebug("Heartbeat sent to {ServerUrl}.", server.Url);
 
                         if (heartbeat.Command is not null)
@@ -295,10 +299,21 @@ public sealed class Worker : BackgroundService
         {
             if (heartbeat.Jobs.Count > 0 || heartbeat.CancelJobIds.Count > 0)
             {
+                var owner = _config.JobOwner?.Url ?? "no server";
                 _logger.LogWarning(
-                    "{ServerUrl} sent {JobCount} job assignment(s) and {CancelCount} cancellation(s) but does not own jobs on this Agent — ignoring. " +
-                    "Disable job scheduling for this machine on that server (its render pool toggle), or make it the job owner in agent.json.",
-                    server.Url, heartbeat.Jobs.Count, heartbeat.CancelJobIds.Count);
+                    "{ServerUrl} sent {JobCount} job assignment(s) and {CancelCount} cancellation(s) but this machine takes jobs from {Owner} — rejecting.",
+                    server.Url, heartbeat.Jobs.Count, heartbeat.CancelJobIds.Count, owner);
+
+                // Rejected explicitly, not dropped. The server marks a job
+                // RUNNING the moment it hands it over, so staying silent
+                // leaves it to time out 30s later as "the Agent died
+                // mid-job" — a misleading symptom that sends whoever reads
+                // it looking at the machine instead of at the setting that
+                // is actually wrong.
+                foreach (var assignedJob in heartbeat.Jobs)
+                {
+                    await ReportRejectedJobAsync(server, assignedJob.Id, owner, cancellationToken);
+                }
             }
 
             return;
@@ -358,6 +373,12 @@ public sealed class Worker : BackgroundService
             return;
         }
 
+        if (command == AgentCommand.ClaimJobs)
+        {
+            await ApplyJobOwnershipAsync(server, commandName, cancellationToken);
+            return;
+        }
+
         _logger.LogWarning("Executing {Command}, requested via the dashboard", command);
 
         try
@@ -379,6 +400,64 @@ public sealed class Worker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Moves job ownership to the server that asked for it.
+    ///
+    /// Applied in memory as well as on disk: ServerConnection reads
+    /// ownership straight off the shared AgentServerConfig objects, so the
+    /// change takes effect on the very next heartbeat. Requiring a service
+    /// restart would leave a window where the dashboard says one thing and
+    /// the Agent does another — which is the confusion this whole feature
+    /// exists to remove.
+    /// </summary>
+    private async Task ApplyJobOwnershipAsync(ServerConnection server, string commandName, CancellationToken cancellationToken)
+    {
+        var previous = _config.JobOwner?.Url;
+        if (previous == server.Url)
+        {
+            _logger.LogInformation("{ServerUrl} already owns jobs on this machine", server.Url);
+        }
+        else
+        {
+            // Exactly one owner. Two would mean two servers handing out
+            // ids from their own sequences, and this Agent cancelling or
+            // reporting results against the wrong job.
+            foreach (var entry in _config.Servers)
+            {
+                entry.JobOwner = false;
+            }
+
+            server.Config.JobOwner = true;
+
+            try
+            {
+                _configStore.Save(_config);
+            }
+            catch (Exception ex)
+            {
+                // The in-memory change still stands, so behaviour is
+                // correct until the next restart — but say so loudly,
+                // because a silent revert on reboot is exactly the kind of
+                // drift nobody thinks to look for.
+                _logger.LogError(ex, "Job ownership moved to {ServerUrl} but agent.json could not be written", server.Url);
+            }
+
+            _logger.LogWarning(
+                "Job ownership moved from {Previous} to {ServerUrl}, requested via the dashboard",
+                previous ?? "(none)", server.Url);
+        }
+
+        try
+        {
+            await server.Client.SendCommandResultAsync(
+                server.Credential!, commandName, ok: true, detail: $"jobs now owned by {server.Url}", cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to report claim-jobs result to {ServerUrl}", server.Url);
+        }
+    }
+
     // P3-4/P4-2: report a runner's finished result and free it up for the
     // next job. Only resets on a successful report — if the POST fails
     // (network blip), the finished snapshot stays put and this is
@@ -396,6 +475,25 @@ public sealed class Worker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to report job {JobId} result to server, will retry next tick", finished.JobId);
+        }
+    }
+
+    // Tells the non-owning server, in its own job record, why nothing is
+    // going to happen — so the reason shows up where someone is already
+    // looking, instead of only in this machine's log file.
+    private async Task ReportRejectedJobAsync(ServerConnection server, int jobId, string owner, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await server.Client.SendJobResultAsync(
+                server.Credential!, jobId, ok: false, output: null,
+                error: $"This machine takes jobs from {owner}, not {server.Url}. " +
+                       "Turn off job scheduling for it here, or claim ownership from this server.",
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to reject job {JobId} back to {ServerUrl}", jobId, server.Url);
         }
     }
 

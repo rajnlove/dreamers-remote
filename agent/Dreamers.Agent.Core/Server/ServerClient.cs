@@ -81,6 +81,8 @@ public sealed class ServerClient
         string credential,
         SystemMetricsSnapshot snapshot,
         IReadOnlyList<RunningJobStatus> runningJobs,
+        bool ownsJobs = false,
+        string? jobOwnerUrl = null,
         CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/agent/heartbeat");
@@ -95,6 +97,8 @@ public sealed class ServerClient
             // Legacy singular field for a server that hasn't been
             // redeployed with P4-3H's multi-job support yet.
             RunningJob = runningPayloads.Count > 0 ? runningPayloads[0] : null,
+            OwnsJobs = ownsJobs,
+            JobOwnerUrl = jobOwnerUrl,
         };
         request.Content = JsonContent.Create(payload, options: JsonOptions);
 

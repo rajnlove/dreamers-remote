@@ -23,6 +23,7 @@ public static class AgentServices
     public static void Register(
         IServiceCollection services,
         AgentConfig config,
+        AgentConfigStore configStore,
         string dataDirectory,
         MonitoredProcessesConfig processesConfig,
         AllowedPathsConfigStore allowedPathsStore,
@@ -30,6 +31,8 @@ public static class AgentServices
         TopazConfigStore topazConfigStore)
     {
         services.AddSingleton(config);
+        // Worker writes agent.json back when a server claims job ownership.
+        services.AddSingleton(configStore);
         services.AddSingleton(processesConfig);
         // Legacy single-file store, still used by the "register" command
         // path in Program.cs. Per-server stores are built below.

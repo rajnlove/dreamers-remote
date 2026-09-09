@@ -31,6 +31,7 @@ public sealed class AgentServicesTests
         AgentServices.Register(
             services,
             config,
+            new AgentConfigStore(dir),
             dir,
             new MonitoredProcessesConfig(),
             new AllowedPathsConfigStore(dir),

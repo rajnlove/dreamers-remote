@@ -28,6 +28,20 @@ internal sealed record HeartbeatPayload
     // server cannot measure this itself — its container has no NAS mount
     // — so the "NAS low space" alert depends entirely on this field.
     public IReadOnlyList<NasSpaceSnapshot>? NasSpace { get; init; }
+    // Whether the server receiving THIS heartbeat is the one allowed to
+    // assign jobs. Answered per recipient rather than as a URL for it to
+    // compare against itself: a server behind a bridge network does not
+    // reliably know its own external address, and a mismatch there would
+    // fail in the quiet direction.
+    //
+    // A server that assigns work to a machine listening to someone else
+    // marks the job RUNNING, never hears progress, and fails it 30s later
+    // as "the Agent died" — a confusing symptom for what is really a
+    // configuration problem. This lets a dashboard refuse up front.
+    public bool OwnsJobs { get; init; }
+
+    // The owner's address, for display only ("takes jobs from ...").
+    public string? JobOwnerUrl { get; init; }
     public IReadOnlyList<ProcessSnapshot>? Processes { get; init; }
     // P3-2: what job types this Agent can execute — see WorkerCapabilities.
     public IReadOnlyList<string>? Capabilities { get; init; }
