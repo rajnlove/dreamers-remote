@@ -373,9 +373,9 @@ public sealed class Worker : BackgroundService
             return;
         }
 
-        if (command == AgentCommand.ClaimJobs)
+        if (command is AgentCommand.ClaimJobs or AgentCommand.ReleaseJobs)
         {
-            await ApplyJobOwnershipAsync(server, commandName, cancellationToken);
+            await ApplyJobOwnershipAsync(server, command, commandName, cancellationToken);
             return;
         }
 
@@ -401,7 +401,18 @@ public sealed class Worker : BackgroundService
     }
 
     /// <summary>
-    /// Moves job ownership to the server that asked for it.
+    /// Moves job ownership in response to the dashboard switch.
+    ///
+    /// claim-jobs points ownership at the server that asked. release-jobs
+    /// is the other end of the same switch: the asking server steps down,
+    /// and the one other configured server takes over — that is the
+    /// "hand it back to the other dashboard" case. With no other server
+    /// configured, release-jobs simply clears ownership (a remote-access-
+    /// only machine, same state as a fresh agent.json with jobOwner:false).
+    /// The dual-server model never has more than two entries, so "the
+    /// other one" is unambiguous; if that ever changes, ownership is
+    /// cleared rather than guessed at and the operator claims it
+    /// explicitly from the dashboard they want.
     ///
     /// Applied in memory as well as on disk: ServerConnection reads
     /// ownership straight off the shared AgentServerConfig objects, so the
@@ -410,12 +421,27 @@ public sealed class Worker : BackgroundService
     /// the Agent does another — which is the confusion this whole feature
     /// exists to remove.
     /// </summary>
-    private async Task ApplyJobOwnershipAsync(ServerConnection server, string commandName, CancellationToken cancellationToken)
+    private async Task ApplyJobOwnershipAsync(
+        ServerConnection server, AgentCommand command, string commandName, CancellationToken cancellationToken)
     {
         var previous = _config.JobOwner?.Url;
-        if (previous == server.Url)
+
+        AgentServerConfig? target;
+        if (command == AgentCommand.ClaimJobs)
         {
-            _logger.LogInformation("{ServerUrl} already owns jobs on this machine", server.Url);
+            target = server.Config;
+        }
+        else
+        {
+            var others = _config.Servers.Where(s => !ReferenceEquals(s, server.Config)).ToList();
+            target = others.Count == 1 ? others[0] : null;
+        }
+
+        var targetUrl = target?.Url;
+        if (previous == targetUrl)
+        {
+            _logger.LogInformation(
+                "Job ownership already where {Command} would put it ({Target})", commandName, targetUrl ?? "(none)");
         }
         else
         {
@@ -427,7 +453,10 @@ public sealed class Worker : BackgroundService
                 entry.JobOwner = false;
             }
 
-            server.Config.JobOwner = true;
+            if (target is not null)
+            {
+                target.JobOwner = true;
+            }
 
             try
             {
@@ -439,22 +468,26 @@ public sealed class Worker : BackgroundService
                 // correct until the next restart — but say so loudly,
                 // because a silent revert on reboot is exactly the kind of
                 // drift nobody thinks to look for.
-                _logger.LogError(ex, "Job ownership moved to {ServerUrl} but agent.json could not be written", server.Url);
+                _logger.LogError(
+                    ex, "Job ownership moved to {Target} but agent.json could not be written", targetUrl ?? "(none)");
             }
 
             _logger.LogWarning(
-                "Job ownership moved from {Previous} to {ServerUrl}, requested via the dashboard",
-                previous ?? "(none)", server.Url);
+                "Job ownership moved from {Previous} to {Target}, requested via the dashboard ({Command})",
+                previous ?? "(none)", targetUrl ?? "(none)", commandName);
         }
 
+        var detail = target is not null
+            ? $"jobs now owned by {targetUrl}"
+            : "jobs released — no other server configured to take them";
         try
         {
             await server.Client.SendCommandResultAsync(
-                server.Credential!, commandName, ok: true, detail: $"jobs now owned by {server.Url}", cancellationToken);
+                server.Credential!, commandName, ok: true, detail: detail, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to report claim-jobs result to {ServerUrl}", server.Url);
+            _logger.LogWarning(ex, "Failed to report {Command} result to {ServerUrl}", commandName, server.Url);
         }
     }
 
