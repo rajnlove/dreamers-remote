@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Dreamers.Agent.Core.Configuration;
 
 /// <summary>
@@ -35,6 +37,13 @@ public sealed class AgentConfig
     /// A config with no owner still heartbeats and still accepts
     /// restart/shutdown — it simply runs no jobs, which is a legitimate
     /// state for a machine kept for remote access only.
+    ///
+    /// Derived from <see cref="Servers"/>, never persisted. Without
+    /// JsonIgnore it is written into agent.json as a duplicate copy of
+    /// the owning entry, which reads like a setting someone can edit —
+    /// and editing it would do nothing at all, because deserialization
+    /// has no setter to write it back to.
     /// </summary>
+    [JsonIgnore]
     public AgentServerConfig? JobOwner => Servers.FirstOrDefault(s => s.JobOwner);
 }

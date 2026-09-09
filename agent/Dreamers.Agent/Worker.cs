@@ -63,7 +63,7 @@ public sealed class Worker : BackgroundService
         foreach (var server in _servers)
         {
             _logger.LogInformation(
-                "  {ServerUrl} — {Role}, {Registered}",
+                "  {ServerUrl} - {Role}, {Registered}",
                 server.Url,
                 server.JobOwner ? "owns jobs" : "metrics and commands only",
                 server.Credential is null ? "NOT REGISTERED" : "registered");
