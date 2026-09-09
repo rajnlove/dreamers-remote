@@ -19,6 +19,17 @@ public enum AgentCommand
     /// it; Worker applies it to the config and to its own running state.
     /// </summary>
     ClaimJobs,
+
+    /// <summary>
+    /// The other end of the same switch: "stop taking jobs from me." Sent
+    /// by the server that currently owns jobs when the operator flips the
+    /// dashboard switch back to the other server. Worker hands ownership
+    /// to the one other configured server (the dual-server model never has
+    /// more), or clears it if this Agent only knows one server.
+    ///
+    /// Also not an OS action — Worker intercepts it alongside ClaimJobs.
+    /// </summary>
+    ReleaseJobs,
 }
 
 public static class AgentCommandParser
@@ -35,6 +46,9 @@ public static class AgentCommandParser
                 return true;
             case "claim-jobs":
                 command = AgentCommand.ClaimJobs;
+                return true;
+            case "release-jobs":
+                command = AgentCommand.ReleaseJobs;
                 return true;
             default:
                 command = default;
