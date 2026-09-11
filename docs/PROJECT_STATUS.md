@@ -1,5 +1,50 @@
 # Project Status
 
+## 2026-09-11 — Encoder v1 (Phase 4 FFmpeg/Topaz) RETIRED, replaced by Encoder v2 (separate system)
+
+User confirmed: encoding/processing has been developed into a v2 system
+**outside this repo**. Everything elsewhere in this file/ROADMAP.md
+about Phase 4 (P4-0 through P4-7: FFmpeg job type, Topaz worker, NAS
+credential, concurrent per-GPU execution, PHP/upload-portal
+integration, provenance/audit metadata, ...) describes v1, which is
+**no longer in use** — treat that whole narrative as historical, not a
+live task list. Do not resume/extend v1 encoder work here without an
+explicit new request.
+
+What changed in this repo: the Jobs page (`web/src/pages/JobsPage.tsx`,
+`/jobs`, sidebar label "Render queue") now shows a red "SERVER OFFLINE
+— Trang Jobs (Encoder v1) đã ngừng hoạt động, đã chuyển sang Encoder
+v2" banner, with the entire rest of the page (stats, search/filter,
+job table, "+ New job", Clear history, machine performance cards)
+wrapped in a `.jobs-offline-content` div: grayscale + `opacity:.35` +
+`pointer-events:none` — nothing on the page is clickable, browser-
+verified (button clicks produce no effect). The page's own
+data-fetching hooks (`listJobs`/`getWorkstationsStatus` polling) were
+left untouched/still running in the background — low-risk, not worth
+restructuring hooks in a component this involved just to stop a
+low-cost poll. The page is kept mounted/reachable (not deleted/
+unrouted), so the sidebar's existing "Render queue" link doesn't 404.
+
+**Explicitly NOT touched, per the user**: workstation monitoring
+(CPU/RAM/GPU/disk metrics for the studio workstations, shown on the
+Dashboard and the Jobs page's own now-dimmed "machine performance"
+section) — the Agent keeps collecting and reporting this exactly as
+before; only the encoder/job-engine *feature* is retired. All
+server-side job-engine code (`server/src/job/*`, the `jobs`/
+`audit_log`/etc. tables, `/api/jobs` routes) and the Agent's
+`Dreamers.Agent.Core/Ffmpeg`/`Topaz`/`Jobs` code are still present and
+untouched — only asked to hide the UI, not remove the underlying code.
+If a future request is "clean up the dead v1 code": ask first whether
+that means just the web page (done) or the server/Agent code too,
+since removing the latter is a much bigger, harder-to-reverse change
+(DB schema, Agent binary behavior on real workstations, and this repo
+now has substantial *other* work — M8 audit log, upload portal, job
+provenance, multi-server agent architecture — layered on top of/
+alongside the same tables and Agent code, so "remove the encoder"
+needs to be scoped carefully against all of that, not assumed simple).
+
+---
+
 ## 2026-09-08 — M8: audit log
 
 The last open V1 milestone. `audit_log` records who did what, when and from

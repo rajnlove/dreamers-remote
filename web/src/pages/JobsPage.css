@@ -33,3 +33,7 @@
 .queue-topbar-actions .queue-user { margin-left:0; padding:0; }
 @media(max-width:900px) { .queue-topbar { gap:16px; } .queue-topbar-actions { gap:14px; padding-right:18px; } }
 @media(max-width:680px) { .queue-topbar-actions { padding:0 16px; gap:12px; } }
+
+/* Encoder v1 retirement -- Jobs page shown as permanently offline (see JobsPage.tsx) */
+.offline-banner{margin:20px 32px 0;padding:14px 18px;border-radius:8px;background:rgba(231,76,60,.12);border:1px solid #e74c3c;color:#ff8a80;font-weight:600;letter-spacing:.03em;font-size:12px}
+.jobs-offline-content{filter:grayscale(1);opacity:.35;pointer-events:none;user-select:none}

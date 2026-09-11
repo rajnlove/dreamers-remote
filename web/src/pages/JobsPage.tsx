@@ -397,10 +397,22 @@ export default function JobsPage({ username }: { username: string }) {
   const statIcons: Record<Tab, string> = { All: "▤", Running: "↗", Completed: "✓", Pending: "◷", Failed: "×", Paused: "◷", Cancelled: "×" };
   const statTabs: Tab[] = ["All", "Running", "Completed", "Pending", "Failed"];
 
+  // Encoder v1 (this whole page) is retired -- encoding moved to a
+  // separate Encoder v2 system outside this repo. Rather than rip out
+  // the page (StudioSidebar/other pages still link to it, and its
+  // logic is complex -- audit trail, password-gated delete, i18n), it's
+  // kept mounted but visually shown as permanently offline: a clear
+  // banner plus the rest of the page dimmed + pointer-events:none (see
+  // .offline-banner/.jobs-offline-content in JobsPage.css) so nothing
+  // in it is clickable. Data-fetching hooks above are untouched and
+  // still poll in the background -- low-cost, and not worth risking a
+  // rules-of-hooks change to a component this involved.
   return (
     <div className="queue-app">
       <StudioSidebar ready={machines !== null} error={machineError} total={machines?.length ?? 0} online={machines?.filter(machine => machine.agentOnline).length ?? 0} jobs={jobs} jobsError={!!error} />
       <div className="queue-workspace">
+      <div className="offline-banner">SERVER OFFLINE — Trang Jobs (Encoder v1) đã ngừng hoạt động, đã chuyển sang Encoder v2</div>
+      <div className="jobs-offline-content" aria-hidden="true">
       <header className="queue-topbar">
 
         <div className="queue-breadcrumb">
@@ -756,6 +768,7 @@ export default function JobsPage({ username }: { username: string }) {
           {t("queueFooterTag")} <span>{t("queueFooterNote")}</span>
         </div>
       </main>
+      </div>
       </div>
       {pendingConfirm && (
         <div className="password-overlay">
